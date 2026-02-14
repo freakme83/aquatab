@@ -4,6 +4,7 @@ const TARGET_REACHED_RADIUS = 18;
 const FACE_SWITCH_COS = 0.2;
 const MAX_TURN_RATE = 1.45;
 const DESIRED_TURN_RATE = 2.1;
+const SPEED_MULTIPLIER = 1.5;
 const FISH_BUILD_STAMP = new Date().toISOString();
 
 console.log(`[aquatab] Fish module loaded: ${import.meta.url} | BUILD: ${FISH_BUILD_STAMP}`);
@@ -60,8 +61,9 @@ export class Fish {
     this.headingAngle = clampAngleForFacing(initialHeading, this.facing);
     this.desiredAngle = this.headingAngle;
 
-    this.currentSpeed = this.#baseSpeed() * rand(0.92, 1.04);
+    this.currentSpeed = this.#baseSpeed() * rand(0.9, 1.06);
     this.cruisePhase = rand(0, TAU);
+    this.cruiseRate = rand(0.35, 0.7);
 
     this.target = this.#pickTarget();
   }
@@ -101,10 +103,10 @@ export class Fish {
     this.desiredAngle = moveTowardsAngle(this.desiredAngle, constrainedDesired, DESIRED_TURN_RATE * dt);
     this.headingAngle = moveTowardsAngle(this.headingAngle, this.desiredAngle, MAX_TURN_RATE * dt);
 
-    this.cruisePhase = normalizeAngle(this.cruisePhase + dt * 0.55);
-    const cruiseFactor = 0.88 + Math.sin(this.cruisePhase) * 0.06;
+    this.cruisePhase = normalizeAngle(this.cruisePhase + dt * this.cruiseRate);
+    const cruiseFactor = 1 + Math.sin(this.cruisePhase) * 0.18;
     const desiredSpeed = this.#baseSpeed() * cruiseFactor;
-    this.currentSpeed += (desiredSpeed - this.currentSpeed) * Math.min(1, dt * 0.9);
+    this.currentSpeed += (desiredSpeed - this.currentSpeed) * Math.min(1, dt * 0.8);
 
     this.position.x += Math.cos(this.headingAngle) * this.currentSpeed * dt;
     this.position.y += Math.sin(this.headingAngle) * this.currentSpeed * dt;
@@ -123,24 +125,30 @@ export class Fish {
   }
 
   #baseSpeed() {
-    return 20 + this.size * 0.9 * this.speedFactor;
+    return (20 + this.size * 0.9 * this.speedFactor) * SPEED_MULTIPLIER;
   }
 
   #movementBounds() {
     const margin = this.size * 0.62;
+    const sandCeiling = this.bounds.height - (this.bounds.sandHeight ?? 0);
+    const bottomOffset = Math.max(2, this.size * 0.18);
+    const maxY = Math.max(margin, sandCeiling - bottomOffset);
+
     return {
       minX: margin,
       maxX: Math.max(margin, this.bounds.width - margin),
       minY: margin,
-      maxY: Math.max(margin, this.bounds.height - margin)
+      maxY
     };
   }
 
   #pickTarget() {
     const inset = clamp(Math.min(this.bounds.width, this.bounds.height) * 0.04, 8, 18);
+    const swimHeight = Math.max(inset, this.bounds.height - (this.bounds.sandHeight ?? 0) - inset);
+
     return {
       x: rand(inset, Math.max(inset, this.bounds.width - inset)),
-      y: rand(inset, Math.max(inset, this.bounds.height - inset))
+      y: rand(inset, Math.max(inset, swimHeight))
     };
   }
 

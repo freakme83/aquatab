@@ -5,6 +5,7 @@
 
 const TAU = Math.PI * 2;
 const rand = (min, max) => min + Math.random() * (max - min);
+const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 const BUILD_STAMP = new Date().toISOString();
 
 export class Renderer {
@@ -18,6 +19,13 @@ export class Renderer {
     this.quality = 'high';
     this.debugBounds = false;
 
+    this.sandPalette = {
+      base: '#c3a06a',
+      shade: '#b08955',
+      highlight: '#d8bb86',
+      speck: 'rgba(102, 77, 38, 0.26)'
+    };
+
     this.waterParticles = this.#createParticles(70);
 
     this.backgroundCanvas = document.createElement('canvas');
@@ -30,6 +38,11 @@ export class Renderer {
 
   setDebugBounds(enabled) {
     this.debugBounds = Boolean(enabled);
+  }
+
+  setSandPalette(palette = {}) {
+    this.sandPalette = { ...this.sandPalette, ...palette };
+    this.#buildStaticLayers();
   }
 
   resize(width, height) {
@@ -101,6 +114,8 @@ export class Renderer {
     bctx.fillStyle = bg;
     bctx.fillRect(0, 0, w, h);
 
+    this.#drawSandLayer(bctx, w, h);
+
     this.vignetteCanvas.width = w;
     this.vignetteCanvas.height = h;
     const vctx = this.vignetteCanvas.getContext('2d');
@@ -110,6 +125,51 @@ export class Renderer {
     vctx.clearRect(0, 0, w, h);
     vctx.fillStyle = v;
     vctx.fillRect(0, 0, w, h);
+  }
+
+  #sandHeightPixels() {
+    const worldHeight = Math.max(1, this.world.bounds.height);
+    const sandHeight = Math.max(0, this.world.bounds.sandHeight || 0);
+    return (sandHeight / worldHeight) * this.tankRect.height;
+  }
+
+  #drawSandLayer(ctx, width, height) {
+    const sandHeight = clamp(this.#sandHeightPixels(), 18, height * 0.34);
+    const topY = Math.max(0, height - sandHeight);
+
+    const path = new Path2D();
+    path.moveTo(0, topY);
+
+    const wave1 = Math.max(3, sandHeight * 0.08);
+    const wave2 = Math.max(4, sandHeight * 0.1);
+    path.bezierCurveTo(width * 0.2, topY - wave1, width * 0.37, topY + wave2, width * 0.52, topY + wave1);
+    path.bezierCurveTo(width * 0.68, topY - wave2, width * 0.84, topY + wave1, width, topY - wave1 * 0.5);
+    path.lineTo(width, height);
+    path.lineTo(0, height);
+    path.closePath();
+
+    const sandGradient = ctx.createLinearGradient(0, topY - 3, 0, height);
+    sandGradient.addColorStop(0, this.sandPalette.highlight);
+    sandGradient.addColorStop(0.45, this.sandPalette.base);
+    sandGradient.addColorStop(1, this.sandPalette.shade);
+
+    ctx.fillStyle = sandGradient;
+    ctx.fill(path);
+
+    ctx.strokeStyle = 'rgba(255, 239, 189, 0.22)';
+    ctx.lineWidth = 1.2;
+    ctx.stroke(path);
+
+    const grains = Math.floor((width * sandHeight) / 1400);
+    ctx.fillStyle = this.sandPalette.speck;
+    for (let i = 0; i < grains; i += 1) {
+      const gx = rand(0, width);
+      const gy = rand(topY + 2, height);
+      const gr = rand(0.35, 1.1);
+      ctx.beginPath();
+      ctx.arc(gx, gy, gr, 0, TAU);
+      ctx.fill();
+    }
   }
 
   #drawTankDropShadow(ctx) {
