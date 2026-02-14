@@ -15,14 +15,24 @@ export class Renderer {
     this.dpr = window.devicePixelRatio || 1;
     this.tankRect = { x: 0, y: 0, width: 0, height: 0 };
 
-    this.waterParticles = this.#createParticles(120);
+    this.quality = 'high';
+    this.waterParticles = this.#createParticles(100);
+
+    this.vignetteCanvas = document.createElement('canvas');
+    this.grainCanvas = document.createElement('canvas');
+    this.causticsSprite = this.#createCausticsSprite();
+
     this.causticSeeds = this.#createCausticSeeds();
-    this.grainPattern = this.#createGrainPattern();
+    this.causticsState = this.causticSeeds.map(() => ({ x: 0, y: 0, r: 0, a: 0 }));
+    this.causticsLastUpdate = 0;
+  }
+
+  setQuality(quality) {
+    this.quality = quality;
   }
 
   resize(width, height) {
     this.dpr = window.devicePixelRatio || 1;
-
     this.canvas.width = Math.floor(width * this.dpr);
     this.canvas.height = Math.floor(height * this.dpr);
 
@@ -33,6 +43,8 @@ export class Renderer {
       width: Math.max(100, width - margin * 2),
       height: Math.max(100, height - margin * 2)
     };
+
+    this.#buildStaticOverlays();
 
     for (const p of this.waterParticles) {
       p.x = Math.min(width, Math.max(0, p.x));
@@ -57,8 +69,8 @@ export class Renderer {
     this.#drawWaterParticles(ctx, delta);
     this.#drawBubbles(ctx);
     this.#drawFishSchool(ctx, time);
-    this.#drawVignette(ctx);
-    this.#drawFilmGrain(ctx);
+    this.#drawCachedVignette(ctx);
+    this.#drawCachedGrain(ctx, time);
     ctx.restore();
 
     this.#drawInnerEdge(ctx);
@@ -66,16 +78,68 @@ export class Renderer {
     this.#drawTankFrame(ctx);
   }
 
+  #createParticles(count) {
+    return Array.from({ length: count }, () => ({
+      x: rand(0, this.canvas.width || 900),
+      y: rand(0, this.canvas.height || 640),
+      r: rand(0.4, 1.4),
+      alpha: rand(0.03, 0.1),
+      speed: rand(3, 10)
+    }));
+  }
+
+  #buildStaticOverlays() {
+    const w = Math.max(1, Math.floor(this.tankRect.width));
+    const h = Math.max(1, Math.floor(this.tankRect.height));
+
+    this.vignetteCanvas.width = w;
+    this.vignetteCanvas.height = h;
+    const vctx = this.vignetteCanvas.getContext('2d');
+    const v = vctx.createRadialGradient(w * 0.5, h * 0.46, w * 0.2, w * 0.5, h * 0.46, w * 0.75);
+    v.addColorStop(0, 'rgba(0,0,0,0)');
+    v.addColorStop(1, 'rgba(0,0,0,0.16)');
+    vctx.clearRect(0, 0, w, h);
+    vctx.fillStyle = v;
+    vctx.fillRect(0, 0, w, h);
+
+    this.grainCanvas.width = w;
+    this.grainCanvas.height = h;
+    const gctx = this.grainCanvas.getContext('2d');
+    const img = gctx.createImageData(w, h);
+    for (let i = 0; i < img.data.length; i += 4) {
+      const g = Math.floor(rand(95, 165));
+      img.data[i] = g;
+      img.data[i + 1] = g;
+      img.data[i + 2] = g;
+      img.data[i + 3] = 255;
+    }
+    gctx.putImageData(img, 0, 0);
+  }
+
+  #createCausticsSprite() {
+    const c = document.createElement('canvas');
+    c.width = 256;
+    c.height = 256;
+    const ctx = c.getContext('2d');
+    const g = ctx.createRadialGradient(128, 128, 24, 128, 128, 128);
+    g.addColorStop(0, 'rgba(200,236,255,0.55)');
+    g.addColorStop(1, 'rgba(200,236,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 256, 256);
+    return c;
+  }
+
+  #createCausticSeeds() {
+    return [
+      { phaseX: rand(0, TAU), phaseY: rand(0, TAU), size: 0.48, alpha: 0.13, speed: 0.00011 },
+      { phaseX: rand(0, TAU), phaseY: rand(0, TAU), size: 0.36, alpha: 0.12, speed: 0.00014 },
+      { phaseX: rand(0, TAU), phaseY: rand(0, TAU), size: 0.42, alpha: 0.1, speed: 0.0001 }
+    ];
+  }
+
   #drawTankDropShadow(ctx) {
     const { x, y, width, height } = this.tankRect;
-    const g = ctx.createRadialGradient(
-      x + width * 0.5,
-      y + height + 8,
-      width * 0.2,
-      x + width * 0.5,
-      y + height + 8,
-      width * 0.8
-    );
+    const g = ctx.createRadialGradient(x + width * 0.5, y + height + 8, width * 0.2, x + width * 0.5, y + height + 8, width * 0.8);
     g.addColorStop(0, 'rgba(0,0,0,0.22)');
     g.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = g;
@@ -91,7 +155,6 @@ export class Renderer {
 
   #drawWaterBase(ctx) {
     const { x, y, width, height } = this.tankRect;
-
     const deep = ctx.createLinearGradient(0, y, 0, y + height);
     deep.addColorStop(0, '#11324b');
     deep.addColorStop(0.5, '#0c2c45');
@@ -99,57 +162,37 @@ export class Renderer {
     ctx.fillStyle = deep;
     ctx.fillRect(x, y, width, height);
 
-    const topGlow = ctx.createRadialGradient(
-      x + width * 0.3,
-      y + height * 0.08,
-      20,
-      x + width * 0.3,
-      y + height * 0.08,
-      width * 0.8
-    );
+    const topGlow = ctx.createRadialGradient(x + width * 0.3, y + height * 0.08, 20, x + width * 0.3, y + height * 0.08, width * 0.8);
     topGlow.addColorStop(0, 'rgba(200,235,255,0.11)');
     topGlow.addColorStop(1, 'rgba(200,235,255,0.01)');
     ctx.fillStyle = topGlow;
     ctx.fillRect(x, y, width, height);
   }
 
-  #createCausticSeeds() {
-    return [
-      { phaseX: rand(0, TAU), phaseY: rand(0, TAU), size: 0.48, alpha: 0.07, speed: 0.00011 },
-      { phaseX: rand(0, TAU), phaseY: rand(0, TAU), size: 0.36, alpha: 0.06, speed: 0.00014 },
-      { phaseX: rand(0, TAU), phaseY: rand(0, TAU), size: 0.42, alpha: 0.05, speed: 0.0001 }
-    ];
-  }
-
   #drawCaustics(ctx, time) {
-    const { x, y, width, height } = this.tankRect;
-
-    for (const seed of this.causticSeeds) {
-      const cx = x + width * (0.5 + Math.sin(time * seed.speed + seed.phaseX) * 0.27);
-      const cy = y + height * (0.33 + Math.cos(time * (seed.speed * 0.92) + seed.phaseY) * 0.18);
-      const radius = Math.max(width, height) * seed.size;
-
-      const patch = ctx.createRadialGradient(cx, cy, radius * 0.15, cx, cy, radius);
-      patch.addColorStop(0, `rgba(200,236,255,${seed.alpha})`);
-      patch.addColorStop(1, 'rgba(200,236,255,0)');
-      ctx.fillStyle = patch;
-      ctx.fillRect(x, y, width, height);
+    if (time - this.causticsLastUpdate > 33) {
+      this.causticsLastUpdate = time;
+      const { x, y, width, height } = this.tankRect;
+      this.causticSeeds.forEach((seed, i) => {
+        this.causticsState[i].x = x + width * (0.5 + Math.sin(time * seed.speed + seed.phaseX) * 0.27);
+        this.causticsState[i].y = y + height * (0.33 + Math.cos(time * (seed.speed * 0.92) + seed.phaseY) * 0.18);
+        this.causticsState[i].r = Math.max(width, height) * seed.size;
+        this.causticsState[i].a = seed.alpha;
+      });
     }
-  }
 
-  #createParticles(count) {
-    return Array.from({ length: count }, () => ({
-      x: rand(0, this.canvas.width || 900),
-      y: rand(0, this.canvas.height || 640),
-      r: rand(0.4, 1.4),
-      alpha: rand(0.03, 0.11),
-      speed: rand(3, 10)
-    }));
+    for (const c of this.causticsState) {
+      const diameter = c.r * 2;
+      ctx.globalAlpha = this.quality === 'high' ? c.a : c.a * 0.55;
+      ctx.drawImage(this.causticsSprite, c.x - c.r, c.y - c.r, diameter, diameter);
+    }
+    ctx.globalAlpha = 1;
   }
 
   #drawWaterParticles(ctx, delta) {
-    const { x, y, width, height } = this.tankRect;
+    if (this.quality === 'low') return;
 
+    const { x, y, width, height } = this.tankRect;
     for (const p of this.waterParticles) {
       p.y -= p.speed * delta;
       if (p.y < y - 4 || p.x < x || p.x > x + width) {
@@ -208,10 +251,6 @@ export class Renderer {
     ctx.translate(position.x, position.y);
     ctx.rotate(heading);
 
-    ctx.shadowColor = 'rgba(0,0,0,0.14)';
-    ctx.shadowBlur = 5;
-    ctx.shadowOffsetY = 1.2;
-
     const bodyPath = new Path2D();
     bodyPath.ellipse(0, 0, bodyLength * 0.5, bodyHeight * 0.5, 0, 0, TAU);
 
@@ -228,9 +267,8 @@ export class Renderer {
     this.#drawFishTexture(ctx, bodyLength, bodyHeight, fish);
     ctx.restore();
 
-    ctx.shadowBlur = 0;
     ctx.lineWidth = 0.8;
-    ctx.strokeStyle = 'rgba(205, 230, 245, 0.18)';
+    ctx.strokeStyle = 'rgba(205, 230, 245, 0.14)';
     ctx.stroke(bodyPath);
 
     ctx.fillStyle = `hsl(${fish.colorHue + tint - 7}deg 42% ${light - 12}%)`;
@@ -257,9 +295,10 @@ export class Renderer {
   #drawFishTexture(ctx, bodyLength, bodyHeight, fish) {
     const seed = Math.sin(fish.size * 1.7 + fish.colorHue * 0.1) * 0.5 + 0.5;
 
-    ctx.globalAlpha = 0.1;
+    ctx.globalAlpha = this.quality === 'high' ? 0.1 : 0.05;
     ctx.strokeStyle = 'rgba(255,255,255,0.78)';
     ctx.lineWidth = 1;
+
     for (let i = 0; i < 4; i += 1) {
       const t = i / 3;
       const y = (t - 0.5) * bodyHeight * 0.84;
@@ -270,59 +309,31 @@ export class Renderer {
       ctx.stroke();
     }
 
-    ctx.globalAlpha = 0.07;
-    for (let i = 0; i < 7; i += 1) {
-      ctx.fillStyle = 'rgba(255,255,255,0.5)';
-      ctx.fillRect(rand(-bodyLength * 0.35, bodyLength * 0.32), rand(-bodyHeight * 0.3, bodyHeight * 0.3), 1, 1);
+    if (this.quality === 'high') {
+      ctx.globalAlpha = 0.07;
+      for (let i = 0; i < 6; i += 1) {
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.fillRect(rand(-bodyLength * 0.35, bodyLength * 0.32), rand(-bodyHeight * 0.3, bodyHeight * 0.3), 1, 1);
+      }
     }
+
     ctx.globalAlpha = 1;
   }
 
-  #drawVignette(ctx) {
-    const { x, y, width, height } = this.tankRect;
-    const v = ctx.createRadialGradient(
-      x + width * 0.5,
-      y + height * 0.46,
-      width * 0.18,
-      x + width * 0.5,
-      y + height * 0.46,
-      width * 0.74
-    );
-    v.addColorStop(0, 'rgba(0,0,0,0)');
-    v.addColorStop(1, 'rgba(0,0,0,0.16)');
-    ctx.fillStyle = v;
-    ctx.fillRect(x, y, width, height);
+  #drawCachedVignette(ctx) {
+    const { x, y } = this.tankRect;
+    ctx.drawImage(this.vignetteCanvas, x, y);
   }
 
-  #createGrainPattern() {
-    const noiseCanvas = document.createElement('canvas');
-    noiseCanvas.width = 96;
-    noiseCanvas.height = 96;
-    const nctx = noiseCanvas.getContext('2d');
-    const image = nctx.createImageData(96, 96);
+  #drawCachedGrain(ctx, time) {
+    if (this.quality === 'low') return;
+    const { x, y } = this.tankRect;
+    const shiftX = ((time * 0.02) % 4) | 0;
+    const shiftY = ((time * 0.017) % 4) | 0;
 
-    for (let i = 0; i < image.data.length; i += 4) {
-      const g = Math.floor(rand(96, 165));
-      image.data[i] = g;
-      image.data[i + 1] = g;
-      image.data[i + 2] = g;
-      image.data[i + 3] = 255;
-    }
-
-    nctx.putImageData(image, 0, 0);
-    return this.ctx.createPattern(noiseCanvas, 'repeat');
-  }
-
-  #drawFilmGrain(ctx) {
-    if (!this.grainPattern) return;
-
-    const { x, y, width, height } = this.tankRect;
-    ctx.save();
     ctx.globalAlpha = 0.045;
-    ctx.fillStyle = this.grainPattern;
-    ctx.translate(rand(-18, 18), rand(-18, 18));
-    ctx.fillRect(x - 28, y - 28, width + 56, height + 56);
-    ctx.restore();
+    ctx.drawImage(this.grainCanvas, x + shiftX - 2, y + shiftY - 2);
+    ctx.globalAlpha = 1;
   }
 
   #drawInnerEdge(ctx) {

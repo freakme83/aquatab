@@ -13,16 +13,22 @@ export class Panel {
 
     this.fpsStat = this.root.querySelector('[data-stat="fps"]');
     this.fishCountStat = this.root.querySelector('[data-stat="fishCount"]');
+    this.qualityStat = this.root.querySelector('[data-stat="quality"]');
+    this.autoIndicator = this.root.querySelector('[data-auto-indicator]');
 
     this.fishSlider = this.root.querySelector('[data-control="fishCount"]');
     this.speedSlider = this.root.querySelector('[data-control="simSpeed"]');
     this.toggleButton = this.root.querySelector('[data-control="togglePause"]');
+    this.qualityButton = this.root.querySelector('[data-control="toggleQuality"]');
 
     this.fishValue = this.root.querySelector('[data-value="fishCount"]');
     this.speedValue = this.root.querySelector('[data-value="simSpeed"]');
 
+    this.deckToggle = document.getElementById('deckToggle');
+
     this.#bindTabs();
     this.#bindControls();
+    this.#bindDeckToggle();
   }
 
   #bindTabs() {
@@ -60,18 +66,44 @@ export class Panel {
       const isPaused = this.handlers.onPauseToggle();
       this.toggleButton.textContent = isPaused ? 'Resume' : 'Pause';
     });
+
+    this.qualityButton.addEventListener('click', () => {
+      const quality = this.handlers.onQualityToggle();
+      this.#setQualityText(quality);
+    });
   }
 
-  sync({ fishCount, speedMultiplier, paused }) {
+  #bindDeckToggle() {
+    if (!this.deckToggle) return;
+    this.deckToggle.addEventListener('click', () => {
+      const isOpen = this.root.dataset.open === 'true';
+      this.root.dataset.open = isOpen ? 'false' : 'true';
+      this.deckToggle.setAttribute('aria-expanded', String(!isOpen));
+    });
+  }
+
+  #setQualityText(quality) {
+    const label = quality === 'low' ? 'Low' : 'High';
+    this.qualityStat.textContent = label;
+    this.qualityButton.textContent = `Quality: ${label}`;
+  }
+
+  sync({ fishCount, speedMultiplier, paused, quality }) {
     this.fishSlider.value = String(fishCount);
     this.speedSlider.value = String(speedMultiplier);
     this.fishValue.textContent = String(fishCount);
     this.speedValue.textContent = `${speedMultiplier.toFixed(1)}x`;
     this.toggleButton.textContent = paused ? 'Resume' : 'Pause';
+    this.#setQualityText(quality);
   }
 
-  updateStats({ fps, fishCount }) {
+  setAutoQualityIndicator(show) {
+    this.autoIndicator.hidden = !show;
+  }
+
+  updateStats({ fps, fishCount, quality }) {
     this.fpsStat.textContent = String(Math.round(fps));
     this.fishCountStat.textContent = String(fishCount);
+    this.#setQualityText(quality);
   }
 }
