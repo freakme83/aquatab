@@ -31,6 +31,9 @@ export class Fish {
     this.colorHue = options.colorHue ?? rand(12, 38);
     this.turnRate = rand(1.8, 3.2);
     this.wanderTimer = 0;
+
+    this.renderTilt = 0;
+    this.renderFacing = this.velocity.x < 0 ? -1 : 1;
   }
 
   #steeringMargin() {
@@ -74,6 +77,7 @@ export class Fish {
     this.position.y += ny * this.currentSpeed * delta;
 
     this.#avoidWalls();
+    this.#updateRenderOrientation(delta);
   }
 
   #desiredDirection() {
