@@ -44,6 +44,13 @@ const panel = new Panel(panelRoot, {
 
 renderer.setQuality(quality);
 
+
+canvas.addEventListener('click', (event) => {
+  const worldPoint = renderer.toWorldPoint(event.clientX, event.clientY);
+  if (!worldPoint) return;
+  world.spawnFood(worldPoint.x, worldPoint.y);
+});
+
 panel.sync({
   fishCount: world.fish.length,
   speedMultiplier: world.speedMultiplier,
