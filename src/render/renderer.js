@@ -176,7 +176,7 @@ export class Renderer {
   }
 
   #drawFish(ctx, fish, position, time) {
-    const heading = fish.heading();
+    const orientation = fish.heading();
     const bodyLength = fish.size * 1.32;
     const bodyHeight = fish.size * 0.73;
     const tailWag = Math.sin(time * 0.004 + position.x * 0.008) * fish.size * 0.13;
@@ -186,7 +186,8 @@ export class Renderer {
 
     ctx.save();
     ctx.translate(position.x, position.y);
-    ctx.rotate(heading);
+    ctx.rotate(orientation.tilt);
+    ctx.scale(orientation.facing, 1);
 
     const bodyPath = new Path2D();
     bodyPath.ellipse(0, 0, bodyLength * 0.5, bodyHeight * 0.5, 0, 0, TAU);
