@@ -3,7 +3,7 @@
  * Responsibility: local steering, smooth speed changes, and safe movement bounds.
  */
 
-const TAU = Math.PI * 2;
+const MAX_TILT = Math.PI / 3;
 
 const rand = (min, max) => min + Math.random() * (max - min);
 
@@ -22,6 +22,9 @@ export class Fish {
     this.colorHue = options.colorHue ?? rand(12, 38);
     this.turnRate = rand(1.8, 3.2);
     this.wanderTimer = 0;
+
+    this.renderTilt = 0;
+    this.renderFacing = this.velocity.x < 0 ? -1 : 1;
   }
 
   #randomTarget() {
@@ -59,6 +62,7 @@ export class Fish {
     this.position.y += ny * this.currentSpeed * delta;
 
     this.#avoidWalls();
+    this.#updateRenderOrientation(delta);
   }
 
   #desiredDirection() {
@@ -113,7 +117,21 @@ export class Fish {
   }
 
   heading() {
-    return Math.atan2(this.velocity.y, this.velocity.x) || rand(0, TAU);
+    return {
+      tilt: this.renderTilt,
+      facing: this.renderFacing
+    };
+  }
+
+  #updateRenderOrientation(delta) {
+    if (Math.abs(this.velocity.x) > 0.001) {
+      this.renderFacing = this.velocity.x < 0 ? -1 : 1;
+    }
+
+    const forwardX = Math.max(0.001, this.velocity.x * this.renderFacing);
+    const targetTilt = Math.max(-MAX_TILT, Math.min(MAX_TILT, Math.atan2(this.velocity.y, forwardX)));
+    const easing = Math.min(1, delta * 7);
+    this.renderTilt += (targetTilt - this.renderTilt) * easing;
   }
 
   #distanceToTarget() {
