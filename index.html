@@ -27,6 +27,7 @@
         <div class="tab-buttons" role="tablist">
           <button class="tab-button active" data-tab="stats" role="tab" aria-selected="true">Stats</button>
           <button class="tab-button" data-tab="controls" role="tab" aria-selected="false">Controls</button>
+          <button class="tab-button" data-tab="fish" role="tab" aria-selected="false">Fish</button>
         </div>
 
         <section class="tab-content active" data-content="stats" role="tabpanel">
@@ -53,6 +54,11 @@
             <button type="button" data-control="togglePause">Pause</button>
             <button type="button" data-control="toggleQuality">Quality: High</button>
           </div>
+        </section>
+
+        <section class="tab-content" data-content="fish" role="tabpanel">
+          <h2>Fish Inspector</h2>
+          <div class="fish-inspector" data-fish-inspector></div>
         </section>
       </aside>
     </main>

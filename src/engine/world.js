@@ -9,7 +9,9 @@ const MAX_TILT = Math.PI / 3;
 const rand = (min, max) => min + Math.random() * (max - min);
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 const FOOD_DEFAULT_AMOUNT = 1;
-const FOOD_DEFAULT_TTL = 55;
+const FOOD_DEFAULT_TTL = 120;
+const FOOD_FALL_ACCEL = 26;
+const FOOD_FALL_DAMPING = 0.78;
 
 function makeBubble(bounds) {
   return {
@@ -29,6 +31,9 @@ export class World {
     this.food = [];
     this.bubbles = [];
     this.nextFoodId = 1;
+    this.nextFishId = 1;
+    this.simTimeSec = 0;
+    this.selectedFishId = null;
 
     this.paused = false;
     this.speedMultiplier = 1;
@@ -84,6 +89,8 @@ export class World {
     }
 
     return new Fish(this.bounds, {
+      id: this.nextFishId++,
+      spawnTimeSec: this.simTimeSec,
       size,
       position: { x: spawn.x, y: spawn.y },
       headingAngle: this.#randomHeading(),
@@ -118,7 +125,8 @@ export class World {
       x: clampedX,
       y: clampedY,
       amount: Math.max(0.1, amount),
-      ttl
+      ttl,
+      vy: rand(4, 14)
     });
   }
 
@@ -135,6 +143,26 @@ export class World {
     return consumed;
   }
 
+
+  selectFish(fishId) {
+    const found = this.fish.find((f) => f.id === fishId);
+    this.selectedFishId = found ? found.id : null;
+    return this.selectedFishId;
+  }
+
+  getSelectedFish() {
+    return this.fish.find((f) => f.id === this.selectedFishId) ?? null;
+  }
+
+  findFishAt(x, y) {
+    for (let i = this.fish.length - 1; i >= 0; i -= 1) {
+      const fish = this.fish[i];
+      const dist = Math.hypot(x - fish.position.x, y - fish.position.y);
+      if (dist <= fish.size * 0.8) return fish;
+    }
+    return null;
+  }
+
   setFishCount(count) {
     const clamped = Math.max(1, Math.min(50, Math.round(count)));
 
@@ -143,6 +171,10 @@ export class World {
     }
     while (this.fish.length > clamped) {
       this.fish.pop();
+    }
+
+    if (!this.fish.some((f) => f.id === this.selectedFishId)) {
+      this.selectedFishId = this.fish[0]?.id ?? null;
     }
   }
 
@@ -159,6 +191,7 @@ export class World {
     if (this.paused) return;
 
     const delta = rawDelta * this.speedMultiplier;
+    this.simTimeSec += delta;
 
     for (const fish of this.fish) fish.updateMetabolism(delta);
     for (const fish of this.fish) fish.decideBehavior(this, delta);
@@ -171,9 +204,19 @@ export class World {
 
 
   #updateFood(delta) {
+    const bottomY = this.#swimHeight();
+
     for (let i = this.food.length - 1; i >= 0; i -= 1) {
       const item = this.food[i];
       if (Number.isFinite(item.ttl)) item.ttl -= delta;
+
+      item.vy += FOOD_FALL_ACCEL * delta;
+      item.y += item.vy * delta;
+      if (item.y >= bottomY) {
+        item.y = bottomY;
+        item.vy *= FOOD_FALL_DAMPING;
+      }
+
       if (Number.isFinite(item.ttl) && item.ttl <= 0) this.food.splice(i, 1);
     }
   }

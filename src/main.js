@@ -39,7 +39,8 @@ const panel = new Panel(panelRoot, {
     quality = quality === 'high' ? 'low' : 'high';
     renderer.setQuality(quality);
     return quality;
-  }
+  },
+  onFishSelect: (fishId) => world.selectFish(fishId)
 });
 
 renderer.setQuality(quality);
@@ -48,6 +49,14 @@ renderer.setQuality(quality);
 canvas.addEventListener('click', (event) => {
   const worldPoint = renderer.toWorldPoint(event.clientX, event.clientY);
   if (!worldPoint) return;
+
+  const clickedFish = world.findFishAt(worldPoint.x, worldPoint.y);
+  if (clickedFish) {
+    world.selectFish(clickedFish.id);
+    panel.selectTab('fish');
+    return;
+  }
+
   world.spawnFood(worldPoint.x, worldPoint.y);
 });
 
@@ -85,6 +94,7 @@ function tick(now) {
   renderer.render(now, rawDelta);
 
   panel.updateStats({ fps, fishCount: world.fish.length, quality });
+  panel.updateFishInspector(world.fish, world.selectedFishId, world.simTimeSec);
 
   // TODO: Phase 2 - add event queue for feeding and item interactions.
   requestAnimationFrame(tick);

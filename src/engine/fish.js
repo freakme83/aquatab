@@ -5,9 +5,9 @@ const FACE_SWITCH_COS = 0.2;
 const MAX_TURN_RATE = 1.45;
 const DESIRED_TURN_RATE = 2.1;
 const SPEED_MULTIPLIER = 1.5;
-const FOOD_REACH_RADIUS = 16;
+const FOOD_REACH_RADIUS = 8;
 const DEAD_SINK_SPEED = 30;
-const METABOLISM_COST_PER_PIXEL = 0.000022;
+const METABOLISM_COST_PER_PIXEL = 0.000021;
 const HUNGRY_THRESHOLD = 0.35;
 const STARVING_THRESHOLD = 0.72;
 const FOOD_VISION_RADIUS = {
@@ -59,6 +59,9 @@ export class Fish {
   constructor(bounds, options = {}) {
     this.bounds = bounds;
 
+    this.id = options.id ?? 0;
+    this.spawnTimeSec = options.spawnTimeSec ?? 0;
+
     this.size = options.size ?? rand(14, 30);
     this.colorHue = options.colorHue ?? rand(8, 42);
     this.speedFactor = options.speedFactor ?? rand(0.42, 0.68);
@@ -88,6 +91,8 @@ export class Fish {
     this.hungerState = 'FED';
     this.lifeState = 'ALIVE';
     this.behavior = { mode: 'wander', targetFoodId: null, speedBoost: 1 };
+    this.eatAnimTimer = 0;
+    this.eatAnimDuration = 0.22;
   }
 
   setBounds(bounds) {
@@ -109,6 +114,10 @@ export class Fish {
   }
 
   updateMetabolism(dt) {
+    if (!Number.isFinite(dt) || dt <= 0) return;
+
+    this.eatAnimTimer = Math.max(0, this.eatAnimTimer - dt);
+
     if (this.lifeState === 'DEAD') {
       this.energy01 = 0;
       this.hunger01 = 1;
@@ -207,11 +216,34 @@ export class Fish {
     const targetFood = world?.food?.find((entry) => entry.id === this.behavior.targetFoodId);
     if (!targetFood) return;
 
-    const dist = Math.hypot(targetFood.x - this.position.x, targetFood.y - this.position.y);
+    const head = this.headPoint();
+    const dist = Math.hypot(targetFood.x - head.x, targetFood.y - head.y);
     if (dist > FOOD_REACH_RADIUS) return;
 
-    const consumed = world.consumeFood(targetFood.id, 0.6);
+    const consumed = world.consumeFood(targetFood.id, 0.42);
+    if (consumed <= 0) return;
+    this.eatAnimTimer = this.eatAnimDuration;
     this.eat(consumed);
+  }
+
+
+  ageSeconds(simTimeSec) {
+    return Math.max(0, simTimeSec - this.spawnTimeSec);
+  }
+
+  mouthOpen01() {
+    if (this.eatAnimTimer <= 0) return 0;
+    const progress = 1 - this.eatAnimTimer / this.eatAnimDuration;
+    return Math.sin(progress * Math.PI);
+  }
+
+  headPoint() {
+    const bodyLength = this.size * 1.32;
+    const headOffset = bodyLength * 0.22;
+    return {
+      x: this.position.x + Math.cos(this.headingAngle) * headOffset,
+      y: this.position.y + Math.sin(this.headingAngle) * headOffset
+    };
   }
 
   debugMovementBounds() {

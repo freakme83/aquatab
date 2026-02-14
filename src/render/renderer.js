@@ -251,15 +251,15 @@ export class Renderer {
     for (const item of this.world.food) {
       const x = this.tankRect.x + item.x * sx;
       const y = this.tankRect.y + item.y * sy;
-      const radius = 2.3 + item.amount * 2;
+      const radius = 1.4 + item.amount * 1.1;
 
       ctx.beginPath();
-      ctx.fillStyle = 'rgba(246, 214, 116, 0.92)';
+      ctx.fillStyle = 'rgba(146, 228, 148, 0.95)';
       ctx.arc(x, y, radius, 0, TAU);
       ctx.fill();
 
       ctx.beginPath();
-      ctx.fillStyle = 'rgba(255, 245, 205, 0.45)';
+      ctx.fillStyle = 'rgba(221, 255, 226, 0.52)';
       ctx.arc(x - radius * 0.2, y - radius * 0.2, radius * 0.45, 0, TAU);
       ctx.fill();
     }
@@ -299,6 +299,12 @@ export class Renderer {
     ctx.fillStyle = isDead ? 'hsl(0deg 0% 56%)' : `hsl(${fish.colorHue + tint}deg 52% ${light}%)`;
     ctx.fill(bodyPath);
 
+    if (fish.id === this.world.selectedFishId) {
+      ctx.strokeStyle = 'rgba(152, 230, 255, 0.8)';
+      ctx.lineWidth = 1.1;
+      ctx.stroke(bodyPath);
+    }
+
     if (this.quality === 'high') {
       this.#drawFishTexture(ctx, bodyLength, bodyHeight, fish);
     }
@@ -324,6 +330,23 @@ export class Renderer {
     ctx.beginPath();
     ctx.arc(bodyLength * 0.24, -bodyHeight * 0.12, fish.size * 0.034, 0, TAU);
     ctx.fill();
+
+
+    const mouthOpen = fish.mouthOpen01?.() ?? 0;
+    const mouthSize = fish.size * 0.05 + mouthOpen * fish.size * 0.055;
+    const mouthX = bodyLength * 0.49;
+
+    ctx.fillStyle = 'rgba(18, 28, 34, 0.8)';
+    if (mouthOpen > 0.02) {
+      ctx.beginPath();
+      ctx.moveTo(mouthX, 0);
+      ctx.lineTo(mouthX + mouthSize * 1.2, mouthSize * 0.9);
+      ctx.lineTo(mouthX + mouthSize * 1.2, -mouthSize * 0.9);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      ctx.fillRect(mouthX - 0.6, -0.35, 1.2, 0.7);
+    }
 
     ctx.restore();
   }
