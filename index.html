@@ -1,1 +1,62 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Zen Aquarium Sim</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="page-layout">
+      <section class="tank-stage" aria-label="Aquarium stage">
+        <div class="tank-shell">
+          <canvas id="aquariumCanvas" aria-label="Zen Aquarium"></canvas>
+        </div>
+      </section>
 
+      <button class="deck-toggle" id="deckToggle" type="button" aria-expanded="false" aria-controls="panelRoot">
+        Controls
+      </button>
+
+      <aside class="ui-deck" id="panelRoot" aria-label="Simulation panel" data-open="false">
+        <header class="deck-header">
+          <h1>Zen Aquarium</h1>
+          <p>Focus companion</p>
+        </header>
+
+        <div class="tab-buttons" role="tablist">
+          <button class="tab-button active" data-tab="stats" role="tab" aria-selected="true">Stats</button>
+          <button class="tab-button" data-tab="controls" role="tab" aria-selected="false">Controls</button>
+        </div>
+
+        <section class="tab-content active" data-content="stats" role="tabpanel">
+          <h2>Stats</h2>
+          <div class="stat-row"><span>FPS</span><strong data-stat="fps">0</strong></div>
+          <div class="stat-row"><span>Fish</span><strong data-stat="fishCount">0</strong></div>
+          <div class="stat-row"><span>Quality</span><strong data-stat="quality">High</strong></div>
+        </section>
+
+        <section class="tab-content" data-content="controls" role="tabpanel">
+          <h2>Controls</h2>
+
+          <label class="control-group">
+            <span>Fish Count: <strong data-value="fishCount">20</strong></span>
+            <input type="range" min="1" max="50" value="20" step="1" data-control="fishCount" />
+          </label>
+
+          <label class="control-group">
+            <span>Sim Speed: <strong data-value="simSpeed">1.0x</strong></span>
+            <input type="range" min="0.5" max="3" value="1" step="0.1" data-control="simSpeed" />
+          </label>
+
+          <div class="button-row split">
+            <button type="button" data-control="togglePause">Pause</button>
+            <button type="button" data-control="toggleQuality">Quality: High</button>
+          </div>
+        </section>
+      </aside>
+    </main>
+
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>
