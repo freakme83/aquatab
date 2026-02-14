@@ -14,6 +14,8 @@ const panelRoot = document.getElementById('panelRoot');
 
 const world = new World(1, 1, INITIAL_FISH_COUNT);
 const renderer = new Renderer(canvas, world);
+const debugBounds = new URLSearchParams(window.location.search).get('debugBounds') === '1';
+renderer.setDebugBounds(debugBounds);
 
 let quality = 'high';
 
