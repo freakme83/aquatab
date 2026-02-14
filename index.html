@@ -558,6 +558,10 @@
       this.turnLean = 0;
       this.wallTimer = 0;
 
+      // sürü davranışı: kısa aktif pencere + daha uzun soğuma
+      this.shoalState = Math.random() < 0.45 ? "active" : "cooldown";
+      this.shoalTimer = this.shoalState === "active" ? rand(1.6, 3.2) : rand(4.5, 9.0);
+
       // ✅ Organik hız ritmi
       this.speedPhase = Math.random()*Math.PI*2;
       this.speedRate  = rand(0.55, 0.95);       // ritim hızı
@@ -589,8 +593,8 @@
     }
 
     applyShoalField(d,dtSec){
-      const range = 130;
-      const repelRange = 28;
+      const range = 120;
+      const repelRange = 26;
       let nearCount = 0;
       let alignX = 0, alignY = 0;
       let centerX = 0, centerY = 0;
@@ -616,20 +620,40 @@
         }
       }
 
-      if(!nearCount) return;
+      // kişisel alanı her durumda koru; dip dibe takılmayı kırar
+      if(repelX || repelY){
+        this.vx += (repelX*0.075) * dtSec * 60;
+        this.vy += (repelY*0.075) * dtSec * 60;
+      }
+
+      // sürü penceresi: kısa süre aktif, sonrasında daha uzun ara
+      this.shoalTimer -= dtSec;
+      if(this.shoalTimer<=0){
+        if(this.shoalState === "active"){
+          this.shoalState = "cooldown";
+          this.shoalTimer = rand(6.0, 12.0);
+        }else{
+          this.shoalState = "active";
+          this.shoalTimer = rand(1.2, 2.7);
+        }
+      }
+
+      if(!nearCount || this.shoalState !== "active") return;
 
       alignX /= nearCount;
       alignY /= nearCount;
       centerX = centerX/nearCount - this.x;
       centerY = centerY/nearCount - this.y;
 
-      const hungerMul = d.hState === "fed" ? 1 : (d.hState === "hungry" ? 0.58 : 0.34);
-      const sepMul = 0.05 * hungerMul;
-      const aliMul = 0.032 * hungerMul;
-      const cohMul = 0.016 * hungerMul;
+      const hungerMul = d.hState === "fed" ? 0.85 : (d.hState === "hungry" ? 0.45 : 0.22);
+      const sepMul = 0.018 * hungerMul;
+      const aliMul = 0.013 * hungerMul;
+      const cohMul = 0.006 * hungerMul;
 
-      this.vx += (repelX*sepMul + alignX*aliMul + centerX*cohMul) * dtSec * 60;
-      this.vy += (repelY*sepMul + alignY*aliMul + centerY*cohMul) * dtSec * 60;
+      this.vx += (alignX*aliMul + centerX*cohMul) * dtSec * 60;
+      this.vy += (alignY*aliMul + centerY*cohMul) * dtSec * 60;
+      this.vx += (repelX*sepMul) * dtSec * 60;
+      this.vy += (repelY*sepMul) * dtSec * 60;
     }
 
     applyTankAwareness(dtSec){
