@@ -282,9 +282,9 @@ export class Renderer {
     const orientation = fish.heading();
     const bodyLength = fish.size * 1.32;
     const bodyHeight = fish.size * 0.73;
-    const tailWag = Math.sin(time * 0.004 + position.x * 0.008) * fish.size * 0.13;
-
     const isDead = fish.lifeState === 'DEAD';
+    const isSkeleton = fish.lifeState === 'SKELETON';
+    const tailWag = isDead || isSkeleton ? 0 : Math.sin(time * 0.004 + position.x * 0.008) * fish.size * 0.13;
     const tint = Math.sin((fish.colorHue + fish.size) * 0.14) * 3;
     const light = 54 + Math.sin(fish.size * 0.33) * 4;
 
@@ -296,7 +296,7 @@ export class Renderer {
     const bodyPath = new Path2D();
     bodyPath.ellipse(0, 0, bodyLength * 0.5, bodyHeight * 0.5, 0, 0, TAU);
 
-    ctx.fillStyle = isDead ? 'hsl(0deg 0% 56%)' : `hsl(${fish.colorHue + tint}deg 52% ${light}%)`;
+    ctx.fillStyle = isSkeleton ? 'hsl(36deg 8% 72%)' : (isDead ? 'hsl(0deg 0% 56%)' : `hsl(${fish.colorHue + tint}deg 52% ${light}%)`);
     ctx.fill(bodyPath);
 
     if (fish.id === this.world.selectedFishId) {
@@ -305,7 +305,7 @@ export class Renderer {
       ctx.stroke(bodyPath);
     }
 
-    if (this.quality === 'high') {
+    if (this.quality === 'high' && !isSkeleton) {
       this.#drawFishTexture(ctx, bodyLength, bodyHeight, fish);
     }
 
@@ -313,7 +313,7 @@ export class Renderer {
     ctx.strokeStyle = 'rgba(205, 230, 245, 0.13)';
     ctx.stroke(bodyPath);
 
-    ctx.fillStyle = isDead ? 'hsl(0deg 0% 42%)' : `hsl(${fish.colorHue + tint - 8}deg 40% ${light - 12}%)`;
+    ctx.fillStyle = isSkeleton ? 'hsl(35deg 9% 54%)' : (isDead ? 'hsl(0deg 0% 42%)' : `hsl(${fish.colorHue + tint - 8}deg 40% ${light - 12}%)`);
     ctx.beginPath();
     ctx.moveTo(-bodyLength * 0.52, 0);
     ctx.lineTo(-bodyLength * 0.84, bodyHeight * 0.35 + tailWag);
@@ -321,18 +321,19 @@ export class Renderer {
     ctx.closePath();
     ctx.fill();
 
-    ctx.fillStyle = 'rgba(255,255,255,0.7)';
-    ctx.beginPath();
-    ctx.arc(bodyLength * 0.22, -bodyHeight * 0.12, fish.size * 0.07, 0, TAU);
-    ctx.fill();
+    if (!isSkeleton) {
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      ctx.beginPath();
+      ctx.arc(bodyLength * 0.22, -bodyHeight * 0.12, fish.size * 0.07, 0, TAU);
+      ctx.fill();
 
-    ctx.fillStyle = isDead ? '#47515a' : '#0c1f2f';
-    ctx.beginPath();
-    ctx.arc(bodyLength * 0.24, -bodyHeight * 0.12, fish.size * 0.034, 0, TAU);
-    ctx.fill();
+      ctx.fillStyle = isDead ? '#47515a' : '#0c1f2f';
+      ctx.beginPath();
+      ctx.arc(bodyLength * 0.24, -bodyHeight * 0.12, fish.size * 0.034, 0, TAU);
+      ctx.fill();
+    }
 
-
-    const mouthOpen = fish.mouthOpen01?.() ?? 0;
+    const mouthOpen = isSkeleton ? 0 : (fish.mouthOpen01?.() ?? 0);
     const mouthSize = fish.size * 0.05 + mouthOpen * fish.size * 0.055;
     const mouthX = bodyLength * 0.49;
 
