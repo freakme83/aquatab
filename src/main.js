@@ -40,7 +40,9 @@ const panel = new Panel(panelRoot, {
     renderer.setQuality(quality);
     return quality;
   },
-  onFishSelect: (fishId) => world.selectFish(fishId)
+  onFishSelect: (fishId) => world.toggleFishSelection(fishId),
+  onFishRename: (fishId, name) => world.renameFish(fishId, name),
+  onFishDiscard: (fishId) => world.discardFish(fishId)
 });
 
 renderer.setQuality(quality);
@@ -52,7 +54,7 @@ canvas.addEventListener('click', (event) => {
 
   const clickedFish = world.findFishAt(worldPoint.x, worldPoint.y);
   if (clickedFish) {
-    world.selectFish(clickedFish.id);
+    world.toggleFishSelection(clickedFish.id);
     panel.selectTab('fish');
     return;
   }

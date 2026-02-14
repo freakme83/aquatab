@@ -113,7 +113,9 @@ export class Panel {
       .map((fish) => {
         const selectedClass = fish.id === selectedFishId ? ' selected' : '';
         const state = `${fish.lifeState} · ${fish.hungerState}`;
-        return `<button type="button" class="fish-row${selectedClass}" data-fish-id="${fish.id}">#${fish.id} · ${fish.sex} · ${state}</button>`;
+        const rawLabel = fish.name?.trim() ? `${fish.name} (#${fish.id})` : `#${fish.id}`;
+        const label = this.#escapeHtml(rawLabel);
+        return `<button type="button" class="fish-row${selectedClass}" data-fish-id="${fish.id}">${label} · ${fish.sex} · ${state}</button>`;
       })
       .join('');
 
@@ -132,20 +134,48 @@ export class Panel {
         this.handlers.onFishSelect?.(Number(el.dataset.fishId));
       });
     });
+
+    const nameInput = this.fishInspector.querySelector('[data-fish-name-input]');
+    if (nameInput && selectedFish) {
+      nameInput.addEventListener('change', () => {
+        this.handlers.onFishRename?.(selectedFish.id, nameInput.value);
+      });
+    }
+
+    const discardButton = this.fishInspector.querySelector('[data-fish-discard]');
+    if (discardButton && selectedFish) {
+      discardButton.addEventListener('click', () => {
+        this.handlers.onFishDiscard?.(selectedFish.id);
+      });
+    }
+  }
+
+  #escapeHtml(value) {
+    return String(value)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;');
+  }
+
+  #escapeAttribute(value) {
+    return this.#escapeHtml(value).replaceAll('"', '&quot;');
   }
 
   #fishDetailsMarkup(fish, simTimeSec) {
     const ageSec = Math.round(fish.ageSeconds(simTimeSec));
     const mm = String(Math.floor(ageSec / 60)).padStart(2, '0');
     const ss = String(ageSec % 60).padStart(2, '0');
+    const canDiscard = fish.lifeState !== 'ALIVE';
 
     return `
       <div class="stat-row"><span>ID</span><strong>#${fish.id}</strong></div>
+      <label class="control-group fish-name-group"><span>İsim</span><input type="text" maxlength="24" value="${this.#escapeAttribute(fish.name ?? '')}" data-fish-name-input placeholder="Balık ismi" /></label>
       <div class="stat-row"><span>Cinsiyet</span><strong>${fish.sex}</strong></div>
       <div class="stat-row"><span>Life</span><strong>${fish.lifeState}</strong></div>
       <div class="stat-row"><span>Hunger</span><strong>${fish.hungerState} (${Math.round(fish.hunger01 * 100)}%)</strong></div>
       <div class="stat-row"><span>Wellbeing</span><strong>${Math.round(fish.wellbeing01 * 100)}%</strong></div>
       <div class="stat-row"><span>Akvaryum Süresi</span><strong>${mm}:${ss}</strong></div>
+      ${canDiscard ? '<div class="button-row"><button type="button" data-fish-discard>At</button></div>' : ''}
     `;
   }
 }

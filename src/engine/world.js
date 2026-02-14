@@ -10,8 +10,10 @@ const rand = (min, max) => min + Math.random() * (max - min);
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 const FOOD_DEFAULT_AMOUNT = 1;
 const FOOD_DEFAULT_TTL = 120;
-const FOOD_FALL_ACCEL = 26;
-const FOOD_FALL_DAMPING = 0.78;
+const FOOD_FALL_ACCEL = 4;
+const FOOD_FALL_DAMPING = 0.15;
+const FISH_DEAD_TO_SKELETON_SEC = 120;
+const FISH_SKELETON_TO_REMOVE_SEC = 120;
 
 function makeBubble(bounds) {
   return {
@@ -150,6 +152,29 @@ export class World {
     return this.selectedFishId;
   }
 
+  toggleFishSelection(fishId) {
+    if (this.selectedFishId === fishId) {
+      this.selectedFishId = null;
+      return null;
+    }
+    return this.selectFish(fishId);
+  }
+
+  renameFish(fishId, name) {
+    const fish = this.fish.find((entry) => entry.id === fishId);
+    if (!fish) return false;
+    fish.name = String(name ?? '').trim().slice(0, 24);
+    return true;
+  }
+
+  discardFish(fishId) {
+    const index = this.fish.findIndex((entry) => entry.id === fishId && entry.lifeState !== 'ALIVE');
+    if (index < 0) return false;
+    this.fish.splice(index, 1);
+    if (this.selectedFishId === fishId) this.selectedFishId = null;
+    return true;
+  }
+
   getSelectedFish() {
     return this.fish.find((f) => f.id === this.selectedFishId) ?? null;
   }
@@ -198,8 +223,32 @@ export class World {
     for (const fish of this.fish) fish.applySteering(delta);
     for (const fish of this.fish) fish.tryConsumeFood(this);
 
+    this.#updateFishLifeState();
     this.#updateFood(delta);
     this.#updateBubbles(delta);
+  }
+
+  #updateFishLifeState() {
+    for (let i = this.fish.length - 1; i >= 0; i -= 1) {
+      const fish = this.fish[i];
+      if (fish.lifeState === 'DEAD') {
+        if (fish.deadAtSec == null) fish.deadAtSec = this.simTimeSec;
+        if (this.simTimeSec - fish.deadAtSec >= FISH_DEAD_TO_SKELETON_SEC) {
+          fish.lifeState = 'SKELETON';
+          fish.skeletonAtSec = this.simTimeSec;
+          fish.behavior = { mode: 'deadSink', targetFoodId: null, speedBoost: 1 };
+        }
+        continue;
+      }
+
+      if (fish.lifeState === 'SKELETON') {
+        if (fish.skeletonAtSec == null) fish.skeletonAtSec = this.simTimeSec;
+        if (this.simTimeSec - fish.skeletonAtSec >= FISH_SKELETON_TO_REMOVE_SEC) {
+          this.fish.splice(i, 1);
+          if (this.selectedFishId === fish.id) this.selectedFishId = null;
+        }
+      }
+    }
   }
 
 
@@ -215,6 +264,8 @@ export class World {
       if (item.y >= bottomY) {
         item.y = bottomY;
         item.vy *= FOOD_FALL_DAMPING;
+      } else {
+        item.vy = Math.min(item.vy, 18);
       }
 
       if (Number.isFinite(item.ttl) && item.ttl <= 0) this.food.splice(i, 1);
