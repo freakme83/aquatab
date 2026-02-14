@@ -94,7 +94,7 @@ body::before {
 
 .tab-buttons {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   border-bottom: 1px solid var(--deck-border);
 }
 
@@ -216,4 +216,44 @@ input[type='range'] {
     opacity: 1;
     pointer-events: auto;
   }
+}
+
+
+.fish-inspector {
+  display: grid;
+  gap: 10px;
+}
+
+.fish-list {
+  display: grid;
+  gap: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.fish-row {
+  border: 1px solid var(--deck-border);
+  background: rgba(22, 41, 61, 0.55);
+  color: var(--text-main);
+  border-radius: 8px;
+  padding: 6px 8px;
+  text-align: left;
+  cursor: pointer;
+  font-size: 0.78rem;
+}
+
+.fish-row.selected {
+  border-color: rgba(140, 220, 255, 0.82);
+  background: rgba(56, 117, 167, 0.35);
+}
+
+.fish-detail {
+  border-top: 1px solid var(--deck-border);
+  padding-top: 8px;
+}
+
+.fish-empty {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.82rem;
 }

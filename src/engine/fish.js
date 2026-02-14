@@ -5,6 +5,19 @@ const FACE_SWITCH_COS = 0.2;
 const MAX_TURN_RATE = 1.45;
 const DESIRED_TURN_RATE = 2.1;
 const SPEED_MULTIPLIER = 1.5;
+const FOOD_REACH_RADIUS = 8;
+const DEAD_SINK_SPEED = 30;
+const METABOLISM_COST_PER_PIXEL = 0.000021;
+const HUNGRY_THRESHOLD = 0.35;
+const STARVING_THRESHOLD = 0.72;
+const FOOD_VISION_RADIUS = {
+  HUNGRY: 120,
+  STARVING: 215
+};
+const FOOD_SPEED_BOOST = {
+  HUNGRY: 1.26,
+  STARVING: 1
+};
 const FISH_BUILD_STAMP = new Date().toISOString();
 
 console.log(`[aquatab] Fish module loaded: ${import.meta.url} | BUILD: ${FISH_BUILD_STAMP}`);
@@ -46,6 +59,9 @@ export class Fish {
   constructor(bounds, options = {}) {
     this.bounds = bounds;
 
+    this.id = options.id ?? 0;
+    this.spawnTimeSec = options.spawnTimeSec ?? 0;
+
     this.size = options.size ?? rand(14, 30);
     this.colorHue = options.colorHue ?? rand(8, 42);
     this.speedFactor = options.speedFactor ?? rand(0.42, 0.68);
@@ -66,6 +82,17 @@ export class Fish {
     this.cruiseRate = rand(0.35, 0.7);
 
     this.target = this.#pickTarget();
+    this.lastDistanceMoved = 0;
+
+    this.sex = Math.random() < 0.5 ? 'female' : 'male';
+    this.energy01 = 1;
+    this.hunger01 = 0;
+    this.wellbeing01 = 1;
+    this.hungerState = 'FED';
+    this.lifeState = 'ALIVE';
+    this.behavior = { mode: 'wander', targetFoodId: null, speedBoost: 1 };
+    this.eatAnimTimer = 0;
+    this.eatAnimDuration = 0.22;
   }
 
   setBounds(bounds) {
@@ -86,10 +113,68 @@ export class Fish {
     return { tilt: localTilt, facing: stableFacing };
   }
 
-  update(dt) {
+  updateMetabolism(dt) {
     if (!Number.isFinite(dt) || dt <= 0) return;
 
-    if (this.#shouldRetarget()) this.target = this.#pickTarget();
+    this.eatAnimTimer = Math.max(0, this.eatAnimTimer - dt);
+
+    if (this.lifeState === 'DEAD') {
+      this.energy01 = 0;
+      this.hunger01 = 1;
+      this.wellbeing01 = 0;
+      this.hungerState = 'STARVING';
+      return;
+    }
+
+    const energyDelta = this.lastDistanceMoved * METABOLISM_COST_PER_PIXEL;
+    this.energy01 = clamp(this.energy01 - energyDelta, 0, 1);
+    this.hunger01 = 1 - this.energy01;
+    this.wellbeing01 = clamp(1 - this.hunger01 ** 1.3, 0, 1);
+
+    if (this.hunger01 >= STARVING_THRESHOLD) this.hungerState = 'STARVING';
+    else if (this.hunger01 >= HUNGRY_THRESHOLD) this.hungerState = 'HUNGRY';
+    else this.hungerState = 'FED';
+
+    if (this.energy01 <= 0) {
+      this.lifeState = 'DEAD';
+      this.currentSpeed = 0;
+      this.behavior = { mode: 'deadSink', targetFoodId: null, speedBoost: 1 };
+    }
+  }
+
+  decideBehavior(world) {
+    if (this.lifeState === 'DEAD') {
+      this.behavior = { mode: 'deadSink', targetFoodId: null, speedBoost: 1 };
+      return;
+    }
+
+    if (this.hungerState === 'FED') {
+      this.behavior = { mode: 'wander', targetFoodId: null, speedBoost: 1 };
+      return;
+    }
+
+    const visibleFood = this.#findNearestFood(world?.food ?? []);
+    if (!visibleFood) {
+      this.behavior = { mode: 'wander', targetFoodId: null, speedBoost: 1 };
+      return;
+    }
+
+    this.behavior = {
+      mode: 'seekFood',
+      targetFoodId: visibleFood.id,
+      speedBoost: FOOD_SPEED_BOOST[this.hungerState] ?? 1
+    };
+    this.target = { x: visibleFood.x, y: visibleFood.y };
+  }
+
+  applySteering(dt) {
+    if (this.behavior.mode === 'deadSink') {
+      this.#applyDeadSink(dt);
+      this.lastDistanceMoved = 0;
+      return;
+    }
+
+    if (this.behavior.mode === 'wander' && this.#shouldRetarget()) this.target = this.#pickTarget();
 
     const seek = this.#seekVector();
     const avoidance = this.#wallAvoidanceVector();
@@ -105,13 +190,60 @@ export class Fish {
 
     this.cruisePhase = normalizeAngle(this.cruisePhase + dt * this.cruiseRate);
     const cruiseFactor = 1 + Math.sin(this.cruisePhase) * 0.18;
-    const desiredSpeed = this.#baseSpeed() * cruiseFactor;
+    const speedBoost = this.behavior.mode === 'seekFood' ? this.behavior.speedBoost : 1;
+    const desiredSpeed = this.#baseSpeed() * cruiseFactor * speedBoost;
     this.currentSpeed += (desiredSpeed - this.currentSpeed) * Math.min(1, dt * 0.8);
 
+    const prevX = this.position.x;
+    const prevY = this.position.y;
     this.position.x += Math.cos(this.headingAngle) * this.currentSpeed * dt;
     this.position.y += Math.sin(this.headingAngle) * this.currentSpeed * dt;
 
     this.#resolveCollisions();
+    this.lastDistanceMoved = Math.hypot(this.position.x - prevX, this.position.y - prevY);
+  }
+
+  eat(foodAmount) {
+    if (this.lifeState === 'DEAD') return;
+
+    const recovered = clamp(foodAmount * 0.26, 0, 1);
+    this.energy01 = clamp(this.energy01 + recovered, 0, 1);
+    this.hunger01 = 1 - this.energy01;
+  }
+
+  tryConsumeFood(world) {
+    if (this.behavior.mode !== 'seekFood' || !this.behavior.targetFoodId) return;
+    const targetFood = world?.food?.find((entry) => entry.id === this.behavior.targetFoodId);
+    if (!targetFood) return;
+
+    const head = this.headPoint();
+    const dist = Math.hypot(targetFood.x - head.x, targetFood.y - head.y);
+    if (dist > FOOD_REACH_RADIUS) return;
+
+    const consumed = world.consumeFood(targetFood.id, 0.42);
+    if (consumed <= 0) return;
+    this.eatAnimTimer = this.eatAnimDuration;
+    this.eat(consumed);
+  }
+
+
+  ageSeconds(simTimeSec) {
+    return Math.max(0, simTimeSec - this.spawnTimeSec);
+  }
+
+  mouthOpen01() {
+    if (this.eatAnimTimer <= 0) return 0;
+    const progress = 1 - this.eatAnimTimer / this.eatAnimDuration;
+    return Math.sin(progress * Math.PI);
+  }
+
+  headPoint() {
+    const bodyLength = this.size * 1.32;
+    const headOffset = bodyLength * 0.22;
+    return {
+      x: this.position.x + Math.cos(this.headingAngle) * headOffset,
+      y: this.position.y + Math.sin(this.headingAngle) * headOffset
+    };
   }
 
   debugMovementBounds() {
@@ -126,6 +258,33 @@ export class Fish {
 
   #baseSpeed() {
     return (20 + this.size * 0.9 * this.speedFactor) * SPEED_MULTIPLIER;
+  }
+
+  #findNearestFood(foodList) {
+    const visionRadius = FOOD_VISION_RADIUS[this.hungerState] ?? 0;
+    if (visionRadius <= 0) return null;
+
+    let best = null;
+    let bestDist = Infinity;
+
+    for (const food of foodList) {
+      const dist = Math.hypot(food.x - this.position.x, food.y - this.position.y);
+      if (dist > visionRadius || dist >= bestDist) continue;
+      best = food;
+      bestDist = dist;
+    }
+
+    return best;
+  }
+
+  #applyDeadSink(dt) {
+    const movement = this.#movementBounds();
+    this.currentSpeed = 0;
+    this.desiredAngle = Math.PI / 2;
+    this.headingAngle = this.desiredAngle;
+
+    this.position.y = Math.min(movement.maxY, this.position.y + DEAD_SINK_SPEED * dt);
+    this.position.x = clamp(this.position.x, movement.minX, movement.maxX);
   }
 
   #movementBounds() {

@@ -66,6 +66,20 @@ export class Renderer {
     }
   }
 
+  toWorldPoint(clientX, clientY) {
+    const rect = this.canvas.getBoundingClientRect();
+    const localX = clientX - rect.left;
+    const localY = clientY - rect.top;
+
+    const { x, y, width, height } = this.tankRect;
+    if (localX < x || localX > x + width || localY < y || localY > y + height) return null;
+
+    return {
+      x: ((localX - x) / width) * this.world.bounds.width,
+      y: ((localY - y) / height) * this.world.bounds.height
+    };
+  }
+
   render(time, delta) {
     const ctx = this.ctx;
     const w = this.canvas.width / this.dpr;
@@ -81,6 +95,7 @@ export class Renderer {
     this.#drawCachedBackground(ctx);
     this.#drawWaterParticles(ctx, delta);
     this.#drawBubbles(ctx);
+    this.#drawFood(ctx);
     this.#drawFishSchool(ctx, time);
     this.#drawCachedVignette(ctx);
     this.#drawRuntimeStamp(ctx);
@@ -229,6 +244,27 @@ export class Renderer {
     }
   }
 
+  #drawFood(ctx) {
+    const sx = this.tankRect.width / this.world.bounds.width;
+    const sy = this.tankRect.height / this.world.bounds.height;
+
+    for (const item of this.world.food) {
+      const x = this.tankRect.x + item.x * sx;
+      const y = this.tankRect.y + item.y * sy;
+      const radius = 1.4 + item.amount * 1.1;
+
+      ctx.beginPath();
+      ctx.fillStyle = 'rgba(146, 228, 148, 0.95)';
+      ctx.arc(x, y, radius, 0, TAU);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.fillStyle = 'rgba(221, 255, 226, 0.52)';
+      ctx.arc(x - radius * 0.2, y - radius * 0.2, radius * 0.45, 0, TAU);
+      ctx.fill();
+    }
+  }
+
   #drawFishSchool(ctx, time) {
     const sx = this.tankRect.width / this.world.bounds.width;
     const sy = this.tankRect.height / this.world.bounds.height;
@@ -248,6 +284,7 @@ export class Renderer {
     const bodyHeight = fish.size * 0.73;
     const tailWag = Math.sin(time * 0.004 + position.x * 0.008) * fish.size * 0.13;
 
+    const isDead = fish.lifeState === 'DEAD';
     const tint = Math.sin((fish.colorHue + fish.size) * 0.14) * 3;
     const light = 54 + Math.sin(fish.size * 0.33) * 4;
 
@@ -259,8 +296,14 @@ export class Renderer {
     const bodyPath = new Path2D();
     bodyPath.ellipse(0, 0, bodyLength * 0.5, bodyHeight * 0.5, 0, 0, TAU);
 
-    ctx.fillStyle = `hsl(${fish.colorHue + tint}deg 52% ${light}%)`;
+    ctx.fillStyle = isDead ? 'hsl(0deg 0% 56%)' : `hsl(${fish.colorHue + tint}deg 52% ${light}%)`;
     ctx.fill(bodyPath);
+
+    if (fish.id === this.world.selectedFishId) {
+      ctx.strokeStyle = 'rgba(152, 230, 255, 0.8)';
+      ctx.lineWidth = 1.1;
+      ctx.stroke(bodyPath);
+    }
 
     if (this.quality === 'high') {
       this.#drawFishTexture(ctx, bodyLength, bodyHeight, fish);
@@ -270,7 +313,7 @@ export class Renderer {
     ctx.strokeStyle = 'rgba(205, 230, 245, 0.13)';
     ctx.stroke(bodyPath);
 
-    ctx.fillStyle = `hsl(${fish.colorHue + tint - 8}deg 40% ${light - 12}%)`;
+    ctx.fillStyle = isDead ? 'hsl(0deg 0% 42%)' : `hsl(${fish.colorHue + tint - 8}deg 40% ${light - 12}%)`;
     ctx.beginPath();
     ctx.moveTo(-bodyLength * 0.52, 0);
     ctx.lineTo(-bodyLength * 0.84, bodyHeight * 0.35 + tailWag);
@@ -283,10 +326,27 @@ export class Renderer {
     ctx.arc(bodyLength * 0.22, -bodyHeight * 0.12, fish.size * 0.07, 0, TAU);
     ctx.fill();
 
-    ctx.fillStyle = '#0c1f2f';
+    ctx.fillStyle = isDead ? '#47515a' : '#0c1f2f';
     ctx.beginPath();
     ctx.arc(bodyLength * 0.24, -bodyHeight * 0.12, fish.size * 0.034, 0, TAU);
     ctx.fill();
+
+
+    const mouthOpen = fish.mouthOpen01?.() ?? 0;
+    const mouthSize = fish.size * 0.05 + mouthOpen * fish.size * 0.055;
+    const mouthX = bodyLength * 0.49;
+
+    ctx.fillStyle = 'rgba(18, 28, 34, 0.8)';
+    if (mouthOpen > 0.02) {
+      ctx.beginPath();
+      ctx.moveTo(mouthX, 0);
+      ctx.lineTo(mouthX + mouthSize * 1.2, mouthSize * 0.9);
+      ctx.lineTo(mouthX + mouthSize * 1.2, -mouthSize * 0.9);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      ctx.fillRect(mouthX - 0.6, -0.35, 1.2, 0.7);
+    }
 
     ctx.restore();
   }

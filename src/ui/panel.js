@@ -22,6 +22,7 @@ export class Panel {
 
     this.fishValue = this.root.querySelector('[data-value="fishCount"]');
     this.speedValue = this.root.querySelector('[data-value="simSpeed"]');
+    this.fishInspector = this.root.querySelector('[data-fish-inspector]');
 
     this.deckToggle = document.getElementById('deckToggle');
 
@@ -33,19 +34,21 @@ export class Panel {
   #bindTabs() {
     this.tabButtons.forEach((button) => {
       button.addEventListener('click', () => {
-        const tabName = button.dataset.tab;
-
-        for (const b of this.tabButtons) {
-          const active = b === button;
-          b.classList.toggle('active', active);
-          b.setAttribute('aria-selected', String(active));
-        }
-
-        for (const content of this.tabContents) {
-          content.classList.toggle('active', content.dataset.content === tabName);
-        }
+        this.selectTab(button.dataset.tab);
       });
     });
+  }
+
+  selectTab(tabName) {
+    for (const b of this.tabButtons) {
+      const active = b.dataset.tab === tabName;
+      b.classList.toggle('active', active);
+      b.setAttribute('aria-selected', String(active));
+    }
+
+    for (const content of this.tabContents) {
+      content.classList.toggle('active', content.dataset.content === tabName);
+    }
   }
 
   #bindControls() {
@@ -100,5 +103,49 @@ export class Panel {
     this.fpsStat.textContent = String(Math.round(fps));
     this.fishCountStat.textContent = String(fishCount);
     this.#setQualityText(quality);
+  }
+
+  updateFishInspector(fishList, selectedFishId, simTimeSec) {
+    if (!this.fishInspector) return;
+
+    const sorted = [...fishList].sort((a, b) => a.id - b.id);
+    const listHtml = sorted
+      .map((fish) => {
+        const selectedClass = fish.id === selectedFishId ? ' selected' : '';
+        const state = `${fish.lifeState} · ${fish.hungerState}`;
+        return `<button type="button" class="fish-row${selectedClass}" data-fish-id="${fish.id}">#${fish.id} · ${fish.sex} · ${state}</button>`;
+      })
+      .join('');
+
+    const selectedFish = sorted.find((fish) => fish.id === selectedFishId) ?? null;
+    const detailHtml = selectedFish
+      ? this.#fishDetailsMarkup(selectedFish, simTimeSec)
+      : '<p class="fish-empty">Bir balık seçin.</p>';
+
+    this.fishInspector.innerHTML = `
+      <div class="fish-list">${listHtml}</div>
+      <div class="fish-detail">${detailHtml}</div>
+    `;
+
+    this.fishInspector.querySelectorAll('[data-fish-id]').forEach((el) => {
+      el.addEventListener('click', () => {
+        this.handlers.onFishSelect?.(Number(el.dataset.fishId));
+      });
+    });
+  }
+
+  #fishDetailsMarkup(fish, simTimeSec) {
+    const ageSec = Math.round(fish.ageSeconds(simTimeSec));
+    const mm = String(Math.floor(ageSec / 60)).padStart(2, '0');
+    const ss = String(ageSec % 60).padStart(2, '0');
+
+    return `
+      <div class="stat-row"><span>ID</span><strong>#${fish.id}</strong></div>
+      <div class="stat-row"><span>Cinsiyet</span><strong>${fish.sex}</strong></div>
+      <div class="stat-row"><span>Life</span><strong>${fish.lifeState}</strong></div>
+      <div class="stat-row"><span>Hunger</span><strong>${fish.hungerState} (${Math.round(fish.hunger01 * 100)}%)</strong></div>
+      <div class="stat-row"><span>Wellbeing</span><strong>${Math.round(fish.wellbeing01 * 100)}%</strong></div>
+      <div class="stat-row"><span>Akvaryum Süresi</span><strong>${mm}:${ss}</strong></div>
+    `;
   }
 }

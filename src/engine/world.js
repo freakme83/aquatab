@@ -8,6 +8,10 @@ import { Fish } from './fish.js';
 const MAX_TILT = Math.PI / 3;
 const rand = (min, max) => min + Math.random() * (max - min);
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+const FOOD_DEFAULT_AMOUNT = 1;
+const FOOD_DEFAULT_TTL = 120;
+const FOOD_FALL_ACCEL = 26;
+const FOOD_FALL_DAMPING = 0.78;
 
 function makeBubble(bounds) {
   return {
@@ -24,7 +28,12 @@ export class World {
   constructor(width, height, initialFishCount = 20) {
     this.bounds = { width, height, sandHeight: this.#computeSandHeight(height) };
     this.fish = [];
+    this.food = [];
     this.bubbles = [];
+    this.nextFoodId = 1;
+    this.nextFishId = 1;
+    this.simTimeSec = 0;
+    this.selectedFishId = null;
 
     this.paused = false;
     this.speedMultiplier = 1;
@@ -80,6 +89,8 @@ export class World {
     }
 
     return new Fish(this.bounds, {
+      id: this.nextFishId++,
+      spawnTimeSec: this.simTimeSec,
       size,
       position: { x: spawn.x, y: spawn.y },
       headingAngle: this.#randomHeading(),
@@ -93,10 +104,63 @@ export class World {
     this.bounds.sandHeight = this.#computeSandHeight(height);
 
     for (const fish of this.fish) fish.setBounds(this.bounds);
+    for (const food of this.food) {
+      food.x = Math.min(Math.max(0, food.x), width);
+      food.y = Math.min(Math.max(0, food.y), Math.max(0, this.#swimHeight()));
+    }
+
     for (const bubble of this.bubbles) {
       bubble.x = Math.min(Math.max(0, bubble.x), width);
       bubble.y = Math.min(Math.max(0, bubble.y), height + 40);
     }
+  }
+
+
+  spawnFood(x, y, amount = FOOD_DEFAULT_AMOUNT, ttl = FOOD_DEFAULT_TTL) {
+    const clampedX = clamp(x, 0, this.bounds.width);
+    const clampedY = clamp(y, 0, this.#swimHeight());
+
+    this.food.push({
+      id: this.nextFoodId++,
+      x: clampedX,
+      y: clampedY,
+      amount: Math.max(0.1, amount),
+      ttl,
+      vy: rand(4, 14)
+    });
+  }
+
+  consumeFood(foodId, amountToConsume = 0.5) {
+    const food = this.food.find((entry) => entry.id === foodId);
+    if (!food) return 0;
+
+    const consumed = Math.min(food.amount, Math.max(0.05, amountToConsume));
+    food.amount -= consumed;
+    if (food.amount <= 0.001) {
+      this.food = this.food.filter((entry) => entry.id !== foodId);
+    }
+
+    return consumed;
+  }
+
+
+  selectFish(fishId) {
+    const found = this.fish.find((f) => f.id === fishId);
+    this.selectedFishId = found ? found.id : null;
+    return this.selectedFishId;
+  }
+
+  getSelectedFish() {
+    return this.fish.find((f) => f.id === this.selectedFishId) ?? null;
+  }
+
+  findFishAt(x, y) {
+    for (let i = this.fish.length - 1; i >= 0; i -= 1) {
+      const fish = this.fish[i];
+      const dist = Math.hypot(x - fish.position.x, y - fish.position.y);
+      if (dist <= fish.size * 0.8) return fish;
+    }
+    return null;
   }
 
   setFishCount(count) {
@@ -107,6 +171,10 @@ export class World {
     }
     while (this.fish.length > clamped) {
       this.fish.pop();
+    }
+
+    if (!this.fish.some((f) => f.id === this.selectedFishId)) {
+      this.selectedFishId = this.fish[0]?.id ?? null;
     }
   }
 
@@ -123,11 +191,34 @@ export class World {
     if (this.paused) return;
 
     const delta = rawDelta * this.speedMultiplier;
+    this.simTimeSec += delta;
 
-    for (const fish of this.fish) fish.update(delta);
+    for (const fish of this.fish) fish.updateMetabolism(delta);
+    for (const fish of this.fish) fish.decideBehavior(this, delta);
+    for (const fish of this.fish) fish.applySteering(delta);
+    for (const fish of this.fish) fish.tryConsumeFood(this);
+
+    this.#updateFood(delta);
     this.#updateBubbles(delta);
+  }
 
-    // TODO: Phase 2 - add hunger/metabolism update tick here.
+
+  #updateFood(delta) {
+    const bottomY = this.#swimHeight();
+
+    for (let i = this.food.length - 1; i >= 0; i -= 1) {
+      const item = this.food[i];
+      if (Number.isFinite(item.ttl)) item.ttl -= delta;
+
+      item.vy += FOOD_FALL_ACCEL * delta;
+      item.y += item.vy * delta;
+      if (item.y >= bottomY) {
+        item.y = bottomY;
+        item.vy *= FOOD_FALL_DAMPING;
+      }
+
+      if (Number.isFinite(item.ttl) && item.ttl <= 0) this.food.splice(i, 1);
+    }
   }
 
   #seedBubbles() {
@@ -137,6 +228,11 @@ export class World {
 
   #updateBubbles(delta) {
     const { width, height } = this.bounds;
+
+    for (const food of this.food) {
+      food.x = Math.min(Math.max(0, food.x), width);
+      food.y = Math.min(Math.max(0, food.y), Math.max(0, this.#swimHeight()));
+    }
 
     for (const bubble of this.bubbles) {
       bubble.y -= bubble.speed * delta;
