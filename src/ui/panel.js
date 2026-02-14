@@ -7,6 +7,7 @@ export class Panel {
   constructor(rootElement, handlers) {
     this.root = rootElement;
     this.handlers = handlers;
+    this.nameDraftByFishId = new Map();
 
     this.tabButtons = [...this.root.querySelectorAll('.tab-button')];
     this.tabContents = [...this.root.querySelectorAll('.tab-content')];
@@ -108,12 +109,17 @@ export class Panel {
   updateFishInspector(fishList, selectedFishId, simTimeSec) {
     if (!this.fishInspector) return;
 
+    const activeInput = this.fishInspector.querySelector('[data-fish-name-input]:focus');
+    if (activeInput) return;
+
     const sorted = [...fishList].sort((a, b) => a.id - b.id);
     const listHtml = sorted
       .map((fish) => {
         const selectedClass = fish.id === selectedFishId ? ' selected' : '';
         const state = `${fish.lifeState} · ${fish.hungerState}`;
-        const rawLabel = fish.name?.trim() ? `${fish.name} (#${fish.id})` : `#${fish.id}`;
+        const liveName = fish.name?.trim() || '';
+        const draftName = this.nameDraftByFishId.get(fish.id) ?? liveName;
+        const rawLabel = draftName ? `${draftName} (#${fish.id})` : `#${fish.id}`;
         const label = this.#escapeHtml(rawLabel);
         return `<button type="button" class="fish-row${selectedClass}" data-fish-id="${fish.id}">${label} · ${fish.sex} · ${state}</button>`;
       })
@@ -137,8 +143,20 @@ export class Panel {
 
     const nameInput = this.fishInspector.querySelector('[data-fish-name-input]');
     if (nameInput && selectedFish) {
-      nameInput.addEventListener('change', () => {
+      const commit = () => {
         this.handlers.onFishRename?.(selectedFish.id, nameInput.value);
+        this.nameDraftByFishId.set(selectedFish.id, nameInput.value.trim());
+      };
+
+      nameInput.addEventListener('input', () => {
+        this.nameDraftByFishId.set(selectedFish.id, nameInput.value);
+      });
+      nameInput.addEventListener('blur', commit);
+      nameInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          nameInput.blur();
+        }
       });
     }
 
@@ -166,10 +184,12 @@ export class Panel {
     const mm = String(Math.floor(ageSec / 60)).padStart(2, '0');
     const ss = String(ageSec % 60).padStart(2, '0');
     const canDiscard = fish.lifeState !== 'ALIVE';
+    const liveName = fish.name?.trim() || '';
+    const draftName = this.nameDraftByFishId.get(fish.id) ?? liveName;
 
     return `
       <div class="stat-row"><span>ID</span><strong>#${fish.id}</strong></div>
-      <label class="control-group fish-name-group"><span>İsim</span><input type="text" maxlength="24" value="${this.#escapeAttribute(fish.name ?? '')}" data-fish-name-input placeholder="Balık ismi" /></label>
+      <label class="control-group fish-name-group"><span>İsim</span><input type="text" maxlength="24" value="${this.#escapeAttribute(draftName)}" data-fish-name-input placeholder="Balık ismi" /></label>
       <div class="stat-row"><span>Cinsiyet</span><strong>${fish.sex}</strong></div>
       <div class="stat-row"><span>Life</span><strong>${fish.lifeState}</strong></div>
       <div class="stat-row"><span>Hunger</span><strong>${fish.hungerState} (${Math.round(fish.hunger01 * 100)}%)</strong></div>

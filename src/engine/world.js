@@ -10,7 +10,7 @@ const rand = (min, max) => min + Math.random() * (max - min);
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 const FOOD_DEFAULT_AMOUNT = 1;
 const FOOD_DEFAULT_TTL = 120;
-const FOOD_FALL_ACCEL = 4;
+const FOOD_FALL_ACCEL = 8;
 const FOOD_FALL_DAMPING = 0.15;
 const FISH_DEAD_TO_SKELETON_SEC = 120;
 const FISH_SKELETON_TO_REMOVE_SEC = 120;
@@ -45,13 +45,12 @@ export class World {
   }
 
 
-  #computeSandHeight(height) {
-    const raw = height * 0.13;
-    return clamp(raw, 26, 78);
+  #computeSandHeight(_height) {
+    return 0;
   }
 
   #swimHeight() {
-    return Math.max(40, this.bounds.height - this.bounds.sandHeight);
+    return Math.max(40, this.bounds.height);
   }
   #spawnMargin() {
     const base = Math.min(this.bounds.width, this.bounds.height) * 0.03;
@@ -128,7 +127,7 @@ export class World {
       y: clampedY,
       amount: Math.max(0.1, amount),
       ttl,
-      vy: rand(4, 14)
+      vy: rand(8, 20)
     });
   }
 
@@ -265,7 +264,7 @@ export class World {
         item.y = bottomY;
         item.vy *= FOOD_FALL_DAMPING;
       } else {
-        item.vy = Math.min(item.vy, 18);
+        item.vy = Math.min(item.vy, 26);
       }
 
       if (Number.isFinite(item.ttl) && item.ttl <= 0) this.food.splice(i, 1);

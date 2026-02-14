@@ -222,7 +222,7 @@ export class Fish {
     const head = this.headPoint();
     const distHead = Math.hypot(targetFood.x - head.x, targetFood.y - head.y);
     const distBody = Math.hypot(targetFood.x - this.position.x, targetFood.y - this.position.y);
-    const nearBottom = targetFood.y >= this.bounds.height - (this.bounds.sandHeight ?? 0) - 4;
+    const nearBottom = targetFood.y >= this.bounds.height - 8;
     const reachRadius = nearBottom ? FOOD_REACH_RADIUS * 1.7 : FOOD_REACH_RADIUS;
     if (Math.min(distHead, distBody) > reachRadius) return;
 
@@ -295,9 +295,8 @@ export class Fish {
 
   #movementBounds() {
     const margin = this.size * 0.62;
-    const sandCeiling = this.bounds.height - (this.bounds.sandHeight ?? 0);
     const bottomOffset = Math.max(2, this.size * 0.18);
-    const maxY = Math.max(margin, sandCeiling - bottomOffset);
+    const maxY = Math.max(margin, this.bounds.height - bottomOffset);
 
     return {
       minX: margin,
@@ -309,7 +308,7 @@ export class Fish {
 
   #pickTarget() {
     const inset = clamp(Math.min(this.bounds.width, this.bounds.height) * 0.04, 8, 18);
-    const swimHeight = Math.max(inset, this.bounds.height - (this.bounds.sandHeight ?? 0) - inset);
+    const swimHeight = Math.max(inset, this.bounds.height - inset);
 
     return {
       x: rand(inset, Math.max(inset, this.bounds.width - inset)),
