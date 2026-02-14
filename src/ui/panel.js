@@ -14,7 +14,6 @@ export class Panel {
     this.fpsStat = this.root.querySelector('[data-stat="fps"]');
     this.fishCountStat = this.root.querySelector('[data-stat="fishCount"]');
     this.qualityStat = this.root.querySelector('[data-stat="quality"]');
-    this.autoIndicator = this.root.querySelector('[data-auto-indicator]');
 
     this.fishSlider = this.root.querySelector('[data-control="fishCount"]');
     this.speedSlider = this.root.querySelector('[data-control="simSpeed"]');
@@ -95,10 +94,6 @@ export class Panel {
     this.speedValue.textContent = `${speedMultiplier.toFixed(1)}x`;
     this.toggleButton.textContent = paused ? 'Resume' : 'Pause';
     this.#setQualityText(quality);
-  }
-
-  setAutoQualityIndicator(show) {
-    this.autoIndicator.hidden = !show;
   }
 
   updateStats({ fps, fishCount, quality }) {

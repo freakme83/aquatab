@@ -143,9 +143,6 @@ h2 {
   color: var(--text-main);
 }
 
-.auto-row strong {
-  color: #ffd199;
-}
 
 input[type='range'] {
   width: 100%;

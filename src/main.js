@@ -16,8 +16,6 @@ const world = new World(1, 1, INITIAL_FISH_COUNT);
 const renderer = new Renderer(canvas, world);
 
 let quality = 'high';
-let autoLowMode = false;
-let lowFpsAccum = 0;
 
 const panel = new Panel(panelRoot, {
   onFishCountChange: (value) => world.setFishCount(value),
@@ -26,9 +24,6 @@ const panel = new Panel(panelRoot, {
   onQualityToggle: () => {
     quality = quality === 'high' ? 'low' : 'high';
     renderer.setQuality(quality);
-    autoLowMode = false;
-    panel.setAutoQualityIndicator(false);
-    lowFpsAccum = 0;
     return quality;
   }
 });
@@ -63,18 +58,6 @@ function tick(now) {
   if (rawDelta > 0) {
     const instantFps = 1 / rawDelta;
     fps += (instantFps - fps) * 0.1;
-  }
-
-  if (!autoLowMode && quality === 'high') {
-    if (fps < 55) lowFpsAccum += rawDelta;
-    else lowFpsAccum = Math.max(0, lowFpsAccum - rawDelta * 0.5);
-
-    if (lowFpsAccum >= 2) {
-      quality = 'low';
-      autoLowMode = true;
-      renderer.setQuality(quality);
-      panel.setAutoQualityIndicator(true);
-    }
   }
 
   world.update(rawDelta);
