@@ -1,6 +1,9 @@
 const TAU = Math.PI * 2;
 const MAX_TILT = Math.PI / 3;
 const TARGET_REACHED_RADIUS = 18;
+const FACE_SWITCH_COS = 0.2;
+const MAX_TURN_RATE = 1.45;
+const DESIRED_TURN_RATE = 2.1;
 const FISH_BUILD_STAMP = new Date().toISOString();
 
 console.log(`[aquatab] Fish module loaded: ${import.meta.url} | BUILD: ${FISH_BUILD_STAMP}`);
@@ -25,9 +28,15 @@ function moveTowardsAngle(current, target, maxStep) {
   return normalizeAngle(current + Math.sign(delta) * maxStep);
 }
 
-function clampAngleToTilt(angle) {
-  const facingRight = Math.cos(angle) >= 0;
-  const base = facingRight ? 0 : Math.PI;
+function resolveFacingByCos(angle, previousFacing) {
+  const cosValue = Math.cos(angle);
+  if (cosValue > FACE_SWITCH_COS) return 1;
+  if (cosValue < -FACE_SWITCH_COS) return -1;
+  return previousFacing;
+}
+
+function clampAngleForFacing(angle, facing) {
+  const base = facing === -1 ? Math.PI : 0;
   const relative = normalizeAngle(angle - base);
   return normalizeAngle(base + clamp(relative, -MAX_TILT, MAX_TILT));
 }
@@ -38,15 +47,22 @@ export class Fish {
 
     this.size = options.size ?? rand(14, 30);
     this.colorHue = options.colorHue ?? rand(8, 42);
-    this.speedFactor = options.speedFactor ?? rand(0.55, 0.88);
+    this.speedFactor = options.speedFactor ?? rand(0.42, 0.68);
 
     this.position = options.position
       ? { x: options.position.x, y: options.position.y }
       : { x: bounds.width * 0.5, y: bounds.height * 0.5 };
 
-    this.headingAngle = clampAngleToTilt(options.headingAngle ?? rand(-MAX_TILT, MAX_TILT));
+    this.facing = Math.random() < 0.5 ? -1 : 1;
+    const initialHeading = options.headingAngle ?? (this.facing === -1 ? Math.PI : 0);
+    this.facing = resolveFacingByCos(initialHeading, this.facing);
+
+    this.headingAngle = clampAngleForFacing(initialHeading, this.facing);
     this.desiredAngle = this.headingAngle;
-    this.currentSpeed = this.#baseSpeed() * rand(0.85, 1.05);
+
+    this.currentSpeed = this.#baseSpeed() * rand(0.92, 1.04);
+    this.cruisePhase = rand(0, TAU);
+
     this.target = this.#pickTarget();
   }
 
@@ -59,8 +75,13 @@ export class Fish {
   }
 
   heading() {
-    const tilt = clampAngleToTilt(this.headingAngle);
-    return { tilt, facing: Math.cos(tilt) >= 0 ? 1 : -1 };
+    const stableFacing = resolveFacingByCos(this.headingAngle, this.facing);
+    this.facing = stableFacing;
+
+    const base = stableFacing === -1 ? Math.PI : 0;
+    const localTilt = clamp(normalizeAngle(this.headingAngle - base), -MAX_TILT, MAX_TILT);
+
+    return { tilt: localTilt, facing: stableFacing };
   }
 
   update(dt) {
@@ -74,13 +95,16 @@ export class Fish {
     const desiredY = seek.y + avoidance.y;
 
     const rawDesiredAngle = Math.atan2(desiredY, desiredX);
-    this.desiredAngle = clampAngleToTilt(rawDesiredAngle);
+    this.facing = resolveFacingByCos(rawDesiredAngle, this.facing);
 
-    const maxTurnRate = 2.8;
-    this.headingAngle = moveTowardsAngle(this.headingAngle, this.desiredAngle, maxTurnRate * dt);
+    const constrainedDesired = clampAngleForFacing(rawDesiredAngle, this.facing);
+    this.desiredAngle = moveTowardsAngle(this.desiredAngle, constrainedDesired, DESIRED_TURN_RATE * dt);
+    this.headingAngle = moveTowardsAngle(this.headingAngle, this.desiredAngle, MAX_TURN_RATE * dt);
 
-    const desiredSpeed = this.#baseSpeed() * (0.8 + Math.random() * 0.08);
-    this.currentSpeed += (desiredSpeed - this.currentSpeed) * Math.min(1, dt * 1.4);
+    this.cruisePhase = normalizeAngle(this.cruisePhase + dt * 0.55);
+    const cruiseFactor = 0.88 + Math.sin(this.cruisePhase) * 0.06;
+    const desiredSpeed = this.#baseSpeed() * cruiseFactor;
+    this.currentSpeed += (desiredSpeed - this.currentSpeed) * Math.min(1, dt * 0.9);
 
     this.position.x += Math.cos(this.headingAngle) * this.currentSpeed * dt;
     this.position.y += Math.sin(this.headingAngle) * this.currentSpeed * dt;
@@ -99,7 +123,7 @@ export class Fish {
   }
 
   #baseSpeed() {
-    return 34 + this.size * 1.55 * this.speedFactor;
+    return 20 + this.size * 0.9 * this.speedFactor;
   }
 
   #movementBounds() {
@@ -185,7 +209,8 @@ export class Fish {
     if (hitY) this.headingAngle = -this.headingAngle;
 
     if (hitX || hitY) {
-      this.headingAngle = clampAngleToTilt(this.headingAngle);
+      this.facing = resolveFacingByCos(this.headingAngle, this.facing);
+      this.headingAngle = clampAngleForFacing(this.headingAngle, this.facing);
       this.desiredAngle = this.headingAngle;
       this.target = this.#pickTarget();
       this.currentSpeed = Math.max(this.currentSpeed, this.#baseSpeed() * 0.95);

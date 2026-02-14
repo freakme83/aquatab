@@ -74,7 +74,7 @@ export class World {
       size,
       position: { x: spawn.x, y: spawn.y },
       headingAngle: this.#randomHeading(),
-      speedFactor: rand(0.56, 0.86)
+      speedFactor: rand(0.42, 0.68)
     });
   }
 
