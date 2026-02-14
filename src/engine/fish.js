@@ -204,6 +204,21 @@ export class Fish {
     });
   }
 
+  #debugLog(delta) {
+    if (!DEBUG_FISH || this.id !== 1) return;
+    this.debugLogCooldown -= delta;
+    if (this.debugLogCooldown > 0) return;
+    this.debugLogCooldown = 0.6;
+
+    // eslint-disable-next-line no-console
+    console.debug('[fish-debug]', {
+      headingDeg: (this.headingAngle * 180) / Math.PI,
+      desiredDeg: (this.desiredAngle * 180) / Math.PI,
+      speed: this.currentSpeed,
+      target: { ...this.target }
+    });
+  }
+
   heading() {
     return this.headingAngle;
   }
