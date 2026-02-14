@@ -15,6 +15,7 @@ export class Renderer {
     this.dpr = window.devicePixelRatio || 1;
     this.tankRect = { x: 0, y: 0, width: 0, height: 0 };
     this.quality = 'high';
+    this.debugBounds = false;
 
     this.waterParticles = this.#createParticles(70);
 
@@ -24,6 +25,10 @@ export class Renderer {
 
   setQuality(quality) {
     this.quality = quality;
+  }
+
+  setDebugBounds(enabled) {
+    this.debugBounds = Boolean(enabled);
   }
 
   resize(width, height) {
@@ -68,6 +73,7 @@ export class Renderer {
     ctx.restore();
 
     this.#drawTankFrame(ctx);
+    if (this.debugBounds) this.#drawDebugBounds(ctx);
   }
 
   #createParticles(count) {
@@ -254,6 +260,34 @@ export class Renderer {
     ctx.fillText('RENDERER: CLEAN_BASE v1', x + 10, y + 18);
   }
 
+
+  #drawDebugBounds(ctx) {
+    const { x, y, width, height } = this.tankRect;
+
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 209, 102, 0.9)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeRect(x + 0.5, y + 0.5, width - 1, height - 1);
+
+    const sampleFish = this.world.fish[0];
+    if (sampleFish && typeof sampleFish.debugMovementBounds === 'function') {
+      const bounds = sampleFish.debugMovementBounds();
+      const sx = width / this.world.bounds.width;
+      const sy = height / this.world.bounds.height;
+
+      ctx.strokeStyle = 'rgba(123, 255, 182, 0.9)';
+      ctx.strokeRect(
+        x + bounds.x * sx + 0.5,
+        y + bounds.y * sy + 0.5,
+        Math.max(0, bounds.width * sx - 1),
+        Math.max(0, bounds.height * sy - 1)
+      );
+    }
+
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
   #drawTankFrame(ctx) {
     const { x, y, width, height } = this.tankRect;
 
