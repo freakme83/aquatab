@@ -11,8 +11,20 @@ const INITIAL_FISH_COUNT = 20;
 
 const canvas = document.getElementById('aquariumCanvas');
 const panelRoot = document.getElementById('panelRoot');
+const tankShell = canvas.closest('.tank-shell');
 
-const world = new World(1, 1, INITIAL_FISH_COUNT);
+function measureCanvasSize() {
+  const rect = canvas.getBoundingClientRect();
+  const hostRect = tankShell?.getBoundingClientRect();
+
+  return {
+    width: Math.max(1, Math.floor(rect.width || hostRect?.width || canvas.clientWidth || 1)),
+    height: Math.max(1, Math.floor(rect.height || hostRect?.height || canvas.clientHeight || 1))
+  };
+}
+
+const initialSize = measureCanvasSize();
+const world = new World(initialSize.width, initialSize.height, INITIAL_FISH_COUNT);
 const renderer = new Renderer(canvas, world);
 const debugBounds = new URLSearchParams(window.location.search).get('debugBounds') === '1';
 renderer.setDebugBounds(debugBounds);
@@ -40,15 +52,15 @@ panel.sync({
 });
 
 function resize() {
-  const width = Math.max(1, Math.floor(canvas.clientWidth));
-  const height = Math.max(1, Math.floor(canvas.clientHeight));
+  const { width, height } = measureCanvasSize();
   world.resize(width, height);
   renderer.resize(width, height);
 }
 
 window.addEventListener('resize', resize);
-new ResizeObserver(resize).observe(canvas);
+new ResizeObserver(resize).observe(tankShell || canvas);
 resize();
+requestAnimationFrame(resize);
 
 let lastTime = performance.now();
 let fps = 60;

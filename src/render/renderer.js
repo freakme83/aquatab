@@ -5,6 +5,7 @@
 
 const TAU = Math.PI * 2;
 const rand = (min, max) => min + Math.random() * (max - min);
+const BUILD_STAMP = new Date().toISOString();
 
 export class Renderer {
   constructor(canvas, world) {
@@ -258,6 +259,7 @@ export class Renderer {
     ctx.font = '600 11px Inter, Segoe UI, sans-serif';
     ctx.fillStyle = 'rgba(230, 245, 255, 0.76)';
     ctx.fillText('RENDERER: CLEAN_BASE v1', x + 10, y + 18);
+    ctx.fillText(`BUILD: ${BUILD_STAMP}`, x + 10, y + 34);
   }
 
 
