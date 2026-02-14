@@ -28,20 +28,15 @@
       box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
       overflow: hidden;
       display: grid;
-      grid-template-columns: 1fr 320px; /* sağ panel sabit */
+      grid-template-columns: 1fr 320px;
     }
 
-    /* SOL: akvaryum sahnesi */
-    #scene {
-      position: relative;
-      overflow: hidden;
-    }
+    #scene { position: relative; overflow: hidden; }
     canvas { display: block; }
 
     #sand {
       position: absolute;
-      bottom: 0;
-      left: 0;
+      bottom: 0; left: 0;
       width: 100%;
       height: 60px;
       background: #ca8a04;
@@ -65,7 +60,6 @@
       pointer-events: none;
     }
 
-    /* SAĞ: sürekli açık “Zen Panel” */
     #sidepanel {
       border-left: 1px solid rgba(255,255,255,0.12);
       background: rgba(15, 23, 42, 0.92);
@@ -75,11 +69,7 @@
       flex-direction: column;
       gap: 12px;
     }
-    .tabbar {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-    }
+    .tabbar { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .tabbtn {
       border: 1px solid rgba(255,255,255,0.12);
       background: rgba(30, 41, 59, 0.55);
@@ -98,27 +88,12 @@
       padding: 12px;
       background: rgba(2,6,23,0.25);
     }
-    .panel h2 {
-      margin: 0 0 10px 0;
-      font-size: 1.05rem;
-      font-weight: 800;
-      letter-spacing: 0.2px;
-    }
-    .kv {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 6px 10px;
-      font-size: 0.86rem;
-    }
+    .panel h2 { margin: 0 0 10px 0; font-size: 1.05rem; font-weight: 800; }
+    .kv { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; font-size: 0.86rem; }
     .muted { opacity: 0.75; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
 
-    .btnrow {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      margin-top: 10px;
-    }
+    .btnrow { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
     .btn {
       border: 1px solid rgba(255,255,255,0.12);
       background: rgba(30,41,59,0.55);
@@ -151,7 +126,6 @@
     .shopbtn:hover { background: rgba(30,41,59,0.55); transform: translateY(-1px); }
     .shopbtn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
 
-    /* baloncuklar */
     .bubble {
       position: absolute;
       background: rgba(255, 255, 255, 0.20);
@@ -181,7 +155,6 @@
     }
     .hidden { display: none; }
 
-    /* küçük: tek kolon */
     @media (max-width: 980px) {
       #aquarium-wrapper { grid-template-columns: 1fr; height: 82vh; }
       #sidepanel { display: none; }
@@ -191,14 +164,12 @@
 
 <body>
   <div id="aquarium-wrapper">
-    <!-- SOL: SAHNE -->
     <div id="scene">
       <canvas id="aquariumCanvas"></canvas>
       <div id="sand"></div>
       <div id="aquarium-timer">Süre: 00:00</div>
     </div>
 
-    <!-- SAĞ: ZEN PANEL (sürekli açık) -->
     <aside id="sidepanel">
       <div class="tabbar">
         <button id="tabStats" class="tabbtn active" onclick="setTab('stats')">Durum</button>
@@ -268,33 +239,21 @@
   <div id="notif" class="notification hidden"></div>
 
 <script>
-  // =========================
-  // DOM
-  // =========================
-  const wrapper = document.getElementById("aquarium-wrapper");
   const scene = document.getElementById("scene");
   const canvas = document.getElementById("aquariumCanvas");
   const ctx = canvas.getContext("2d");
 
-  // =========================
-  // SIM PARAMS
-  // =========================
   const MATURITY_TIME = 10 * 60 * 1000;
   const MAX_LIFE = 25 * 60 * 1000;
   const PREGNANCY_TIME = 5 * 60 * 1000;
 
-  // Dışkı sistemi
   const POOP_DELAY_MIN = 12 * 1000;
   const POOP_DELAY_MAX = 28 * 1000;
-  const POOP_DIRT_IMPACT = 0.45;   // bir dışkı temizlikten ne kadar götürür
-  const EAT_DIRT_IMPACT = 0.08;    // her yem yeme anı küçük kirlilik
+  const POOP_DIRT_IMPACT = 0.45;
+  const EAT_DIRT_IMPACT = 0.08;
 
-  // Zenginleşme / ekonomi
   const MONEY_PER_CREATURE_PER_SEC = 0.007;
 
-  // =========================
-  // STATE MODIFIERS
-  // =========================
   const STATE_MODS = {
     hunger: {
       fed:    { move: 1.00, metabolism: 1.00, fertility: 1.00, deathRisk: 0.0 },
@@ -317,9 +276,6 @@
     }
   };
 
-  // =========================
-  // GLOBAL STATE
-  // =========================
   let state = {
     money: 100,
     temp: 24,
@@ -334,9 +290,22 @@
     startTime: Date.now()
   };
 
-  // =========================
-  // ENV MODS
-  // =========================
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function rand(a, b) { return a + Math.random() * (b - a); }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+
+  function showNotification(t) {
+    const n = document.getElementById("notif");
+    n.innerText = t;
+    n.classList.remove("hidden");
+    setTimeout(() => n.classList.add("hidden"), 2600);
+  }
+
+  function formatTime(ms) {
+    const s = Math.floor(ms / 1000);
+    return `${Math.floor(s/60).toString().padStart(2,'0')}:${(s%60).toString().padStart(2,'0')}`;
+  }
+
   function envMods(temp, cleanliness) {
     const dt = Math.abs(temp - 24);
     const tempStress = Math.max(0, (dt - 4) / 10);
@@ -375,35 +344,22 @@
     return { ...out, hState };
   }
 
-  // =========================
-  // UTILS
-  // =========================
-  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
-  function rand(a, b) { return a + Math.random() * (b - a); }
-  function lerp(a, b, t) { return a + (b - a) * t; }
-
-  function showNotification(t) {
-    const n = document.getElementById("notif");
-    n.innerText = t;
-    n.classList.remove("hidden");
-    setTimeout(() => n.classList.add("hidden"), 2600);
-  }
-
-  function formatTime(ms) {
-    const s = Math.floor(ms / 1000);
-    return `${Math.floor(s/60).toString().padStart(2,'0')}:${(s%60).toString().padStart(2,'0')}`;
-  }
-
-  // Fenotip: tek sayı (0..1) → renk tonunu etkiler, eşleşme uyumu da buradan
   function phenotypeToColor(p) {
-    // 0..1 => mavi(210) ile pembe(330) arasında gezin
     const hue = lerp(210, 330, p);
     return `hsl(${hue} 85% 70%)`;
   }
 
-  // =========================
-  // CREATURE
-  // =========================
+  function angleDiff(a, b) {
+    let d = (b - a + Math.PI) % (Math.PI * 2) - Math.PI;
+    if (d < -Math.PI) d += Math.PI * 2;
+    return d;
+  }
+  function moveTowardAngle(a, b, maxStep) {
+    const d = angleDiff(a, b);
+    if (Math.abs(d) <= maxStep) return b;
+    return a + Math.sign(d) * maxStep;
+  }
+
   class Creature {
     constructor(x, y, gender, opts = {}) {
       this.id = Math.random().toString(36).slice(2, 10);
@@ -414,33 +370,28 @@
       this.gender = gender ?? (Math.random() > 0.5 ? "M" : "F");
       this.trait = opts.trait ?? ["slow", "normal", "fast"][Math.floor(Math.random() * 3)];
 
-      // fenotip (0..1)
       this.pheno = clamp(opts.pheno ?? Math.random(), 0, 1);
       this.color = phenotypeToColor(this.pheno);
 
-      this.vx = (Math.random() - 0.5) * 2.8;
-      this.vy = (Math.random() - 0.5) * 2.8;
+      this.vx = (Math.random() - 0.5) * 2.2;
+      this.vy = (Math.random() - 0.5) * 2.2;
 
       this.bornTime = Date.now();
       this.lifeSpan = 15 * 60 * 1000 + Math.random() * (10 * 60 * 1000);
 
-      // Başlangıç enerji: yavrular “tok” başlar (100). Zamanla düşer.
-      this.energy = 100;
-
+      this.energy = 100; // başlangıç tok
       this.size = 2;
+
       this.isPregnant = false;
       this.lastBreedAttempt = 0;
       this.pregnancyStartTime = 0;
 
-      // Movement memory (yön tutarlılığı için)
       this.heading = Math.random() * Math.PI * 2;
-      this.wanderAngle = (Math.random() - 0.5) * 0.8;
+      this.wanderAngle = (Math.random() - 0.5) * 0.4;
 
-      // dışkı takvimi
       this.nextPoopAt = Date.now() + rand(POOP_DELAY_MIN, POOP_DELAY_MAX);
     }
 
-    // Arrival steering: hedefe yaklaşırken yavaşlar (dt normalize)
     applyArrivalSteering(tx, ty, maxSpeed, maxForce, dtSec) {
       const dx = tx - this.x;
       const dy = ty - this.y;
@@ -456,7 +407,7 @@
       let sy = desiredVy - this.vy;
 
       const sm = Math.hypot(sx, sy) || 1e-6;
-      const normalizedForce = maxForce * dtSec * 60; // 60fps bazlı
+      const normalizedForce = maxForce * dtSec * 60;
 
       if (sm > normalizedForce) {
         sx = (sx / sm) * normalizedForce;
@@ -467,121 +418,60 @@
       this.vy += sy;
     }
 
-    // Wander steering: organik ama yön tutarlı gezinti
+    // ✅ YENİ: wander artık "heading" odaklı (spin azaltır)
     applyWanderSteering(d, dtSec) {
       const speed = Math.hypot(this.vx, this.vy);
+      if (speed > 0.08) this.heading = Math.atan2(this.vy, this.vx);
 
-      // heading güncelle
-      if (speed > 0.05) this.heading = Math.atan2(this.vy, this.vx);
+      // tokken daha “gezgin”
+      const turnRate = (d.hState === "fed" ? 1.1 : 0.7) * dtSec;  // rad/s
+      const jitter = (d.hState === "fed" ? 0.55 : 0.35) * dtSec * 60;
 
-      // tokken daha gezer, açken daha az
-      const wanderStrength = (d.hState === "fed" ? 0.10 : 0.05) * d.move;
-      const jitter = (d.hState === "fed" ? 0.9 : 0.55) * dtSec * 60;
+      // wanderAngle daha küçük + daha yumuşak
+      this.wanderAngle += (Math.random() - 0.5) * 0.10 * jitter;
+      this.wanderAngle = clamp(this.wanderAngle, -0.55, 0.55);
 
-      this.wanderAngle += (Math.random() - 0.5) * 0.25 * jitter;
-      this.wanderAngle = clamp(this.wanderAngle, -1.2, 1.2);
+      // hedef heading
+      const desiredHeading = this.heading + this.wanderAngle;
 
-      const forwardDist = 75;
-      const circleRadius = 30;
+      // heading’i turn-rate ile yaklaş
+      this.heading = moveTowardAngle(this.heading, desiredHeading, turnRate);
 
-      const fx = Math.cos(this.heading) * forwardDist;
-      const fy = Math.sin(this.heading) * forwardDist;
+      // cruise speed: yeterince akıcı ama deli değil
+      const base = (d.hState === "fed" ? 1.25 : 1.00) * d.move;
+      const minCruise = 0.45 * d.move;
+      const desiredSpeed = Math.max(minCruise, base);
 
-      const wx = fx + Math.cos(this.heading + this.wanderAngle) * circleRadius;
-      const wy = fy + Math.sin(this.heading + this.wanderAngle) * circleRadius;
+      const ux = Math.cos(this.heading);
+      const uy = Math.sin(this.heading);
 
-      const targetX = this.x + wx;
-      const targetY = this.y + wy;
+      const desiredVx = ux * desiredSpeed;
+      const desiredVy = uy * desiredSpeed;
 
-      const minCruise = 0.35 * d.move;
-      const maxSpeed = Math.max(minCruise, (d.hState === "fed" ? 1.35 : 1.05) * d.move);
-      const maxForce = wanderStrength;
+      let sx = desiredVx - this.vx;
+      let sy = desiredVy - this.vy;
 
-      this.applyArrivalSteering(targetX, targetY, maxSpeed, maxForce, dtSec);
+      const maxForce = (d.hState === "fed" ? 0.10 : 0.07) * d.move;
+      const sm = Math.hypot(sx, sy) || 1e-6;
+      const cap = maxForce * dtSec * 60;
 
-      // çok düşerse takılı kalmasın
-      const sp = Math.hypot(this.vx, this.vy);
-      if (sp < 0.08) {
-        const nudge = 0.12 * d.move;
-        this.vx += Math.cos(this.heading) * nudge;
-        this.vy += Math.sin(this.heading) * nudge;
+      if (sm > cap) {
+        sx = (sx / sm) * cap;
+        sy = (sy / sm) * cap;
       }
+
+      this.vx += sx;
+      this.vy += sy;
+
+      // ✅ spin kırıcı: velocity’nin heading’e dik bileşenini sönümle
+      const dot = this.vx * ux + this.vy * uy;
+      const perpX = this.vx - dot * ux;
+      const perpY = this.vy - dot * uy;
+      const sideDamp = 0.18 * dtSec * 60; // arttırırsan daha “raylı” olur
+      this.vx -= perpX * sideDamp;
+      this.vy -= perpY * sideDamp;
     }
 
-    update(dtMs) {
-      const now = Date.now();
-      const age = now - this.bornTime;
-      const d = computeDerived(this);
-      const dtSec = dtMs / 1000;
-
-      // ölüm olasılığı (saniye bazlı)
-      const survivalProb = Math.exp(-d.deathRisk * dtSec);
-      if (age > this.lifeSpan || Math.random() > survivalProb) {
-        if (age > this.lifeSpan) showNotification("Bir canlı ömrünü tamamladı.");
-        return false;
-      }
-
-      // enerji tüketimi
-      const speedMag = Math.hypot(this.vx, this.vy);
-      this.energy -= (0.012 + (speedMag * 0.006)) * d.metabolism * dtSec;
-      this.energy = Math.max(0, this.energy);
-
-      // büyüme
-      if (age < MATURITY_TIME) {
-        this.size = 2 + (age / MATURITY_TIME) * 8;
-      } else {
-        this.size = 10 + ((age - MATURITY_TIME) / (MAX_LIFE - MATURITY_TIME)) * 5;
-      }
-
-      // damping (fps normalize + daha canlı)
-      const damp = Math.pow(0.994, dtSec * 60);  // 0.992-0.996 arası oynayabilirsin
-      this.vx *= damp;
-      this.vy *= damp;
-
-      // yemek hedefleme (aç değilse hiç uğraşma)
-      const ate = this.findFood(d, dtSec);
-
-      // eğer yem kovalamıyorsa -> wander
-      if (!ate) {
-        this.applyWanderSteering(d, dtSec);
-      }
-
-      // hız limiti
-      const currentSpeed = Math.hypot(this.vx, this.vy);
-      const maxAllowed = (d.hState === "starv" ? 2.7 : (d.hState === "hungry" ? 2.2 : 1.9)) * d.move;
-      if (currentSpeed > maxAllowed) {
-        this.vx = (this.vx / currentSpeed) * maxAllowed;
-        this.vy = (this.vy / currentSpeed) * maxAllowed;
-      }
-
-      // hareket uygula
-      this.x += this.vx;
-      this.y += this.vy;
-
-      // sınırlar
-      const left = 15, right = canvas.width - 15;
-      const top = 15, bottom = canvas.height - 60;
-
-      if (this.x < left)  { this.x = left;  this.vx = Math.abs(this.vx); }
-      if (this.x > right) { this.x = right; this.vx = -Math.abs(this.vx); }
-      if (this.y < top)   { this.y = top;   this.vy = Math.abs(this.vy); }
-      if (this.y > bottom){ this.y = bottom;this.vy = -Math.abs(this.vy); }
-
-      // doğum
-      if (this.isPregnant && now - this.pregnancyStartTime > PREGNANCY_TIME) {
-        this.giveBirth();
-      }
-
-      // dışkılama
-      if (now >= this.nextPoopAt) {
-        this.poop();
-        this.nextPoopAt = now + rand(POOP_DELAY_MIN, POOP_DELAY_MAX);
-      }
-
-      return true;
-    }
-
-    // Tok balık yem kovalamaz: fed => return false (hedef yok)
     findFood(d, dtSec) {
       if (d.hState === "fed") return false;
       if (state.foods.length === 0) return false;
@@ -601,19 +491,14 @@
 
       this.applyArrivalSteering(nearest.x, nearest.y, maxSpeed, maxForce, dtSec);
 
-      // yeme
       if (minDist < this.size + 10) {
         state.foods = state.foods.filter(x => x !== nearest);
         this.energy = Math.min(100, this.energy + 38);
 
-        // “yeme anı” freni (spiral/dönme azaltır)
         this.vx *= 0.65;
         this.vy *= 0.65;
 
-        // kirlilik
         state.cleanliness = clamp(state.cleanliness - EAT_DIRT_IMPACT, 0, 100);
-
-        // dışkı biraz daha yakınlaşsın (yem yediyse)
         this.nextPoopAt = Math.min(this.nextPoopAt, Date.now() + rand(POOP_DELAY_MIN * 0.6, POOP_DELAY_MAX * 0.7));
       }
 
@@ -621,7 +506,6 @@
     }
 
     poop() {
-      // dışkı parçacığı
       state.poops.push({
         x: this.x + rand(-6, 6),
         y: this.y + rand(4, 10),
@@ -629,9 +513,59 @@
         born: Date.now()
       });
 
-      // temizlik düşüşü (filter varsa hafifler)
       const impact = state.items.filter ? (POOP_DIRT_IMPACT * 0.55) : POOP_DIRT_IMPACT;
       state.cleanliness = clamp(state.cleanliness - impact, 0, 100);
+    }
+
+    update(dtMs) {
+      const now = Date.now();
+      const age = now - this.bornTime;
+      const d = computeDerived(this);
+      const dtSec = dtMs / 1000;
+
+      const survivalProb = Math.exp(-d.deathRisk * dtSec);
+      if (age > this.lifeSpan || Math.random() > survivalProb) {
+        if (age > this.lifeSpan) showNotification("Bir canlı ömrünü tamamladı.");
+        return false;
+      }
+
+      const speedMag = Math.hypot(this.vx, this.vy);
+      this.energy -= (0.012 + (speedMag * 0.006)) * d.metabolism * dtSec;
+      this.energy = Math.max(0, this.energy);
+
+      if (age < MATURITY_TIME) this.size = 2 + (age / MATURITY_TIME) * 8;
+      else this.size = 10 + ((age - MATURITY_TIME) / (MAX_LIFE - MATURITY_TIME)) * 5;
+
+      // damping (bir tık daha az: daha canlı akar)
+      const damp = Math.pow(0.996, dtSec * 60);
+      this.vx *= damp;
+      this.vy *= damp;
+
+      const ate = this.findFood(d, dtSec);
+      if (!ate) this.applyWanderSteering(d, dtSec);
+
+      const currentSpeed = Math.hypot(this.vx, this.vy);
+      const maxAllowed = (d.hState === "starv" ? 2.7 : (d.hState === "hungry" ? 2.2 : 1.9)) * d.move;
+      if (currentSpeed > maxAllowed) {
+        this.vx = (this.vx / currentSpeed) * maxAllowed;
+        this.vy = (this.vy / currentSpeed) * maxAllowed;
+      }
+
+      this.x += this.vx;
+      this.y += this.vy;
+
+      const left = 15, right = canvas.width - 15;
+      const top = 15, bottom = canvas.height - 60;
+
+      if (this.x < left)  { this.x = left;  this.vx = Math.abs(this.vx); }
+      if (this.x > right) { this.x = right; this.vx = -Math.abs(this.vx); }
+      if (this.y < top)   { this.y = top;   this.vy = Math.abs(this.vy); }
+      if (this.y > bottom){ this.y = bottom;this.vy = -Math.abs(this.vy); }
+
+      if (this.isPregnant && now - this.pregnancyStartTime > PREGNANCY_TIME) this.giveBirth();
+      if (now >= this.nextPoopAt) { this.poop(); this.nextPoopAt = now + rand(POOP_DELAY_MIN, POOP_DELAY_MAX); }
+
+      return true;
     }
 
     draw() {
@@ -640,7 +574,6 @@
       ctx.translate(this.x, this.y);
       ctx.globalAlpha = (d.hState === "starv" ? 0.65 : 1.0);
 
-      // gövde
       ctx.fillStyle = this.color;
 
       if (this.size < 6) {
@@ -650,12 +583,10 @@
       } else {
         ctx.rotate(Math.atan2(this.vy, this.vx));
 
-        // gövde
         ctx.beginPath();
         ctx.ellipse(0, 0, this.size, this.size / 1.65, 0, 0, Math.PI * 2);
         ctx.fill();
 
-        // kuyruk
         ctx.beginPath();
         ctx.moveTo(-this.size, 0);
         ctx.lineTo(-this.size - 6, -5);
@@ -663,7 +594,6 @@
         ctx.closePath();
         ctx.fill();
 
-        // hamilelik işareti
         if (this.isPregnant) {
           ctx.fillStyle = "rgba(255,255,255,0.9)";
           ctx.beginPath();
@@ -671,7 +601,6 @@
           ctx.fill();
         }
 
-        // küçük “fenotip noktası”
         ctx.fillStyle = "rgba(255,255,255,0.25)";
         ctx.beginPath();
         ctx.arc(this.size * 0.35, -this.size * 0.10, 1.7, 0, Math.PI * 2);
@@ -682,20 +611,18 @@
     }
 
     giveBirth() {
-      this.isPregnant = false;
+      const babyPheno = clamp((this._babyPheno ?? this.pheno) + (Math.random() - 0.5) * 0.06, 0, 1);
+      const babyTrait = this._babyTrait ?? this.trait;
 
-      // yavru genleri: anne fenotipi + küçük mutasyon
-      const babyPheno = clamp(this.pheno + (Math.random() - 0.5) * 0.12, 0, 1);
-      const babyTrait = (Math.random() < 0.72) ? this.trait : ["slow","normal","fast"][Math.floor(Math.random()*3)];
+      this.isPregnant = false;
+      this._babyPheno = undefined;
+      this._babyTrait = undefined;
 
       state.creatures.push(new Creature(this.x, this.y, undefined, { pheno: babyPheno, trait: babyTrait }));
       showNotification("Yeni bir yavru doğdu!");
     }
   }
 
-  // =========================
-  // UI: Tabs
-  // =========================
   function setTab(which) {
     const stats = document.getElementById("panelStats");
     const market = document.getElementById("panelMarket");
@@ -715,11 +642,7 @@
     }
   }
 
-  // =========================
-  // RESIZE / INIT
-  // =========================
   function resize() {
-    // canvas sadece sol kolonu kaplasın
     canvas.width = scene.clientWidth;
     canvas.height = scene.clientHeight;
   }
@@ -743,23 +666,17 @@
     state.foods = [];
     state.poops = [];
     state.plants = [];
-
     state.startTime = Date.now();
     state.lastTick = performance.now();
 
-    // başlangıç popülasyon
     for (let i = 0; i < 3; i++) state.creatures.push(new Creature(null, null, "M"));
     for (let i = 0; i < 3; i++) state.creatures.push(new Creature(null, null, "F"));
 
-    // baloncuklar
     for (let i = 0; i < 16; i++) createBubble();
 
     showNotification("Zen Akvaryum hazır.");
   }
 
-  // =========================
-  // ACTIONS
-  // =========================
   function addFood() {
     if (state.money < 2) return showNotification("Yeterli para yok!");
     state.money -= 2;
@@ -780,7 +697,6 @@
 
   function buyItem(type) {
     const prices = { filter: 500, heater: 300, plant: 100 };
-
     if (state.money < prices[type]) return showNotification("Bütçe yetmiyor!");
     state.money -= prices[type];
 
@@ -790,37 +706,26 @@
       state.items[type] = true;
       const btn = document.getElementById("buy" + type.charAt(0).toUpperCase() + type.slice(1));
       if (btn) btn.disabled = true;
-
-      if (type === "heater") {
-        document.getElementById("tempSlider").disabled = false;
-      }
+      if (type === "heater") document.getElementById("tempSlider").disabled = false;
     }
     showNotification("Eşya alındı!");
   }
 
-  function resetGame() {
-    location.reload();
-  }
+  function resetGame() { location.reload(); }
 
-  // =========================
-  // MAIN LOOP: LOGIC
-  // =========================
   function updateLogic(dtMs) {
     const now = Date.now();
     const dtSec = dtMs / 1000;
 
-    // çevre: sıcaklık
     if (state.items.heater) {
       const target = state.targetTemp;
-      state.temp += (target - state.temp) * (0.018 * dtSec * 60); // normalize
+      state.temp += (target - state.temp) * (0.018 * dtSec * 60);
     } else {
       state.temp += (20 - state.temp) * (0.0012 * dtSec * 60);
     }
 
-    // filtre varsa hedef ısı sliderdan alınır
     if (state.items.heater) state.targetTemp = parseInt(document.getElementById("tempSlider").value, 10);
 
-    // temizlik: temel düşüş (pop + yem + dışkı zaten ayrıca ekliyor)
     let basePollution = (state.creatures.length * 0.00055) * (dtSec * 60);
     if (state.items.filter) {
       basePollution *= 0.35;
@@ -828,28 +733,23 @@
     }
     state.cleanliness = clamp(state.cleanliness - basePollution, 0, 100);
 
-    // ekonomi: temizlik iyi + sıcaklık iyi => para
     if (state.cleanliness > 60 && Math.abs(state.temp - 24) < 5) {
       state.money += (state.creatures.length * MONEY_PER_CREATURE_PER_SEC) * (dtSec * 60);
     }
 
-    // yem hareketi (düşüş)
     for (const f of state.foods) {
       f.y += f.vy * (dtSec * 60);
       if (f.y > canvas.height - 62) f.y = canvas.height - 62;
     }
 
-    // dışkı hareketi + yaşlanma (fazla birikmesin)
     state.poops = state.poops.filter(p => (now - p.born) < 90 * 1000);
     for (const p of state.poops) {
       p.y += p.vy * (dtSec * 60);
       if (p.y > canvas.height - 62) p.y = canvas.height - 62;
     }
 
-    // canlılar
     state.creatures = state.creatures.filter(c => c.update(dtMs));
 
-    // üreme: fenotip uyumu (benzerlik) üremeyi etkiler (zen/evrim tadı)
     const females = state.creatures.filter(c =>
       c.gender === "F" && (now - c.bornTime) > MATURITY_TIME && !c.isPregnant && c.energy > 45
     );
@@ -859,7 +759,6 @@
 
     for (const f of females) {
       for (const m of males) {
-        // yakınlık şartı
         if (Math.hypot(f.x - m.x, f.y - m.y) >= 44) continue;
         if (now - f.lastBreedAttempt <= 20000) continue;
 
@@ -868,26 +767,20 @@
         const df = computeDerived(f);
         const env = envMods(state.temp, state.cleanliness);
 
-        // fenotip uyumu: 0..1 (yakınsa 1)
-        const compat = 1 - Math.abs(f.pheno - m.pheno); // 0..1
-        // uyum üremeyi arttırsın, ama environment ve df.fertility ile çarpılsın
+        const compat = 1 - Math.abs(f.pheno - m.pheno);
         const chance = 0.12 * df.fertility * env.fertility * (0.55 + 0.85 * compat);
 
         if (Math.random() < chance) {
           f.isPregnant = true;
           f.pregnancyStartTime = now;
 
-          // yavru genleri (babadan da etki): anne doğuruyor, ama gen karışsın
           const mix = (f.pheno + m.pheno) / 2;
-          f.pheno = clamp(f.pheno, 0, 1); // güvenlik
-          // doğacak bebeğe babayı da katmak için: hamilelikte anneye “pending genes”
           f._babyPheno = clamp(mix + (Math.random() - 0.5) * 0.08, 0, 1);
           f._babyTrait = (Math.random() < 0.6) ? f.trait : m.trait;
         }
       }
     }
 
-    // UI
     document.getElementById("moneyText").innerText = Math.floor(state.money) + " ₺";
     document.getElementById("tempText").innerText = state.temp.toFixed(1) + "°C";
     document.getElementById("cleanText").innerText = Math.floor(state.cleanliness) + "%";
@@ -897,30 +790,12 @@
     document.getElementById("aquarium-timer").innerText = "Süre: " + formatTime(now - state.startTime);
   }
 
-  // Creature.giveBirth override: babadan gelen genleri kullanmak için küçük patch
-  const _origGiveBirth = Creature.prototype.giveBirth;
-  Creature.prototype.giveBirth = function() {
-    const babyPheno = clamp((this._babyPheno ?? this.pheno) + (Math.random() - 0.5) * 0.06, 0, 1);
-    const babyTrait = this._babyTrait ?? this.trait;
-
-    this.isPregnant = false;
-    this._babyPheno = undefined;
-    this._babyTrait = undefined;
-
-    state.creatures.push(new Creature(this.x, this.y, undefined, { pheno: babyPheno, trait: babyTrait }));
-    showNotification("Yeni bir yavru doğdu!");
-  };
-
-  // =========================
-  // RENDER LOOP
-  // =========================
   function draw(ts) {
     const dtMs = Math.min(50, ts - state.lastTick);
     state.lastTick = ts;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // bitkiler
     for (const p of state.plants) {
       ctx.fillStyle = "#166534";
       ctx.beginPath();
@@ -930,7 +805,6 @@
       ctx.fill();
     }
 
-    // yemler
     ctx.fillStyle = "#fbbf24";
     for (const f of state.foods) {
       ctx.beginPath();
@@ -938,7 +812,6 @@
       ctx.fill();
     }
 
-    // dışkılar
     ctx.fillStyle = "rgba(15,23,42,0.6)";
     for (const p of state.poops) {
       ctx.beginPath();
@@ -946,14 +819,12 @@
       ctx.fill();
     }
 
-    // canlılar
     for (const c of state.creatures) c.draw();
 
     updateLogic(dtMs);
     requestAnimationFrame(draw);
   }
 
-  // boot
   window.onload = init;
   requestAnimationFrame(draw);
 </script>
