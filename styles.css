@@ -1,10 +1,12 @@
 :root {
   color-scheme: dark;
-  --panel-bg: rgba(6, 16, 30, 0.72);
-  --panel-border: rgba(139, 202, 255, 0.22);
-  --text-main: #e5f3ff;
-  --text-soft: #9dc4de;
-  --accent: #6bc6ff;
+  --bg-top: #11161d;
+  --bg-bottom: #0c1016;
+  --deck-bg: rgba(17, 27, 39, 0.82);
+  --deck-border: rgba(173, 207, 235, 0.2);
+  --text-main: #e6eff8;
+  --text-soft: #9fb6ca;
+  --accent: #7dc8ff;
 }
 
 * {
@@ -15,56 +17,98 @@ html,
 body {
   margin: 0;
   width: 100%;
-  height: 100%;
-  overflow: hidden;
+  min-height: 100%;
   font-family: Inter, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
   color: var(--text-main);
-  background: #01050a;
+  background: linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
 }
 
-.app-shell {
-  position: relative;
-  width: 100%;
-  height: 100%;
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.03) 0.5px, transparent 0.5px);
+  background-size: 3px 3px;
+  opacity: 0.14;
+}
+
+.page-layout {
+  min-height: 100vh;
+  padding: clamp(24px, 4vw, 56px);
+  display: grid;
+  grid-template-columns: minmax(560px, 1fr) 320px;
+  gap: clamp(20px, 3vw, 34px);
+  align-items: center;
+}
+
+.tank-stage {
+  height: min(82vh, 900px);
+  display: grid;
+  place-items: center;
+}
+
+.tank-shell {
+  width: min(74vw, 1120px);
+  height: min(82vh, 820px);
+  min-height: 460px;
+  border-radius: 16px;
+  padding: 0;
+  box-shadow: 0 26px 46px rgba(0, 0, 0, 0.34), 0 4px 12px rgba(0, 0, 0, 0.28);
 }
 
 #aquariumCanvas {
   width: 100%;
   height: 100%;
+  border-radius: 16px;
   display: block;
 }
 
-.side-tab {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  width: 250px;
+.ui-deck {
+  width: 100%;
   border-radius: 14px;
-  border: 1px solid var(--panel-border);
-  background: var(--panel-bg);
+  border: 1px solid var(--deck-border);
+  background: var(--deck-bg);
   backdrop-filter: blur(10px);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.3);
   overflow: hidden;
+}
+
+.deck-header {
+  padding: 14px 14px 12px;
+  border-bottom: 1px solid var(--deck-border);
+}
+
+.deck-header h1 {
+  margin: 0;
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+}
+
+.deck-header p {
+  margin: 4px 0 0;
+  color: var(--text-soft);
+  font-size: 0.82rem;
 }
 
 .tab-buttons {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  border-bottom: 1px solid var(--panel-border);
+  border-bottom: 1px solid var(--deck-border);
 }
 
 .tab-button {
   background: transparent;
   border: 0;
   color: var(--text-soft);
-  padding: 12px;
+  padding: 11px;
   cursor: pointer;
-  transition: 150ms ease;
+  transition: 160ms ease;
 }
 
 .tab-button.active {
   color: var(--text-main);
-  background: rgba(90, 160, 210, 0.12);
+  background: rgba(94, 162, 215, 0.14);
 }
 
 .tab-content {
@@ -78,7 +122,7 @@ body {
 
 h2 {
   margin: 0 0 10px;
-  font-size: 1rem;
+  font-size: 0.97rem;
 }
 
 .stat-row,
@@ -106,11 +150,25 @@ input[type='range'] {
 }
 
 .button-row button {
-  border: 1px solid var(--panel-border);
-  background: rgba(24, 88, 138, 0.4);
+  border: 1px solid var(--deck-border);
+  background: rgba(27, 91, 142, 0.45);
   color: var(--text-main);
   width: 100%;
   padding: 9px 12px;
   border-radius: 9px;
   cursor: pointer;
+}
+
+@media (max-width: 1100px) {
+  .page-layout {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .tank-stage,
+  .tank-shell {
+    width: 100%;
+    height: min(72vh, 700px);
+    min-height: 380px;
+  }
 }

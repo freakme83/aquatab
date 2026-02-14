@@ -7,10 +7,19 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <main class="app-shell">
-      <canvas id="aquariumCanvas" aria-label="Zen Aquarium"></canvas>
+    <main class="page-layout">
+      <section class="tank-stage" aria-label="Aquarium stage">
+        <div class="tank-shell">
+          <canvas id="aquariumCanvas" aria-label="Zen Aquarium"></canvas>
+        </div>
+      </section>
 
-      <aside class="side-tab" id="panelRoot" aria-label="Simulation panel">
+      <aside class="ui-deck" id="panelRoot" aria-label="Simulation panel">
+        <header class="deck-header">
+          <h1>Zen Aquarium</h1>
+          <p>Ambient focus companion</p>
+        </header>
+
         <div class="tab-buttons" role="tablist">
           <button class="tab-button active" data-tab="stats" role="tab" aria-selected="true">Stats</button>
           <button class="tab-button" data-tab="controls" role="tab" aria-selected="false">Controls</button>

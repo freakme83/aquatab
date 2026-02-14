@@ -12,7 +12,7 @@ const INITIAL_FISH_COUNT = 20;
 const canvas = document.getElementById('aquariumCanvas');
 const panelRoot = document.getElementById('panelRoot');
 
-const world = new World(window.innerWidth, window.innerHeight, INITIAL_FISH_COUNT);
+const world = new World(1, 1, INITIAL_FISH_COUNT);
 const renderer = new Renderer(canvas, world);
 
 const panel = new Panel(panelRoot, {
@@ -28,13 +28,14 @@ panel.sync({
 });
 
 function resize() {
-  const width = window.innerWidth;
-  const height = window.innerHeight;
+  const width = Math.max(1, Math.floor(canvas.clientWidth));
+  const height = Math.max(1, Math.floor(canvas.clientHeight));
   world.resize(width, height);
   renderer.resize(width, height);
 }
 
 window.addEventListener('resize', resize);
+new ResizeObserver(resize).observe(canvas);
 resize();
 
 let lastTime = performance.now();
