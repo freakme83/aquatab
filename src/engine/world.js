@@ -22,7 +22,7 @@ function makeBubble(bounds) {
 
 export class World {
   constructor(width, height, initialFishCount = 20) {
-    this.bounds = { width, height };
+    this.bounds = { width, height, sandHeight: this.#computeSandHeight(height) };
     this.fish = [];
     this.bubbles = [];
 
@@ -33,6 +33,15 @@ export class World {
     this.#seedBubbles();
   }
 
+
+  #computeSandHeight(height) {
+    const raw = height * 0.13;
+    return clamp(raw, 26, 78);
+  }
+
+  #swimHeight() {
+    return Math.max(40, this.bounds.height - this.bounds.sandHeight);
+  }
   #spawnMargin() {
     const base = Math.min(this.bounds.width, this.bounds.height) * 0.03;
     return clamp(base, 10, 20);
@@ -47,7 +56,7 @@ export class World {
   #randomSpawn(size) {
     const margin = this.#spawnMargin();
     const x = rand(margin, Math.max(margin, this.bounds.width - margin));
-    const y = rand(margin, Math.max(margin, this.bounds.height - margin));
+    const y = rand(margin, Math.max(margin, this.#swimHeight() - margin));
 
     return { x, y, size };
   }
@@ -74,13 +83,14 @@ export class World {
       size,
       position: { x: spawn.x, y: spawn.y },
       headingAngle: this.#randomHeading(),
-      speedFactor: rand(0.56, 0.86)
+      speedFactor: rand(0.42, 0.68)
     });
   }
 
   resize(width, height) {
     this.bounds.width = width;
     this.bounds.height = height;
+    this.bounds.sandHeight = this.#computeSandHeight(height);
 
     for (const fish of this.fish) fish.setBounds(this.bounds);
     for (const bubble of this.bubbles) {
