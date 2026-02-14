@@ -6,34 +6,998 @@
   <title>Zen Akvaryum: State & Trait Sim</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    body {
-      background: #020617;
-      color: #f8fafc;
-      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-      margin: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
-      overflow: hidden;
+    body{
+      background:#020617;color:#f8fafc;font-family:"Segoe UI",Tahoma,Geneva,Verdana,sans-serif;
+      margin:0;display:flex;align-items:center;justify-content:center;height:100vh;overflow:hidden;
     }
-    #aquarium-wrapper {
-      position: relative;
-      width: 92vw;
-      max-width: 1200px;
-      height: 72vh;
-      background: linear-gradient(180deg, #1e40af 0%, #1e3a8a 100%);
-      border: 8px solid #334155;
-      border-radius: 20px;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-      overflow: hidden;
-      display: grid;
-      grid-template-columns: 1fr 320px;
+    #aquarium-wrapper{
+      position:relative;width:92vw;max-width:1200px;height:72vh;
+      background:linear-gradient(180deg,#1e40af 0%,#1e3a8a 100%);
+      border:8px solid #334155;border-radius:20px;box-shadow:0 25px 50px -12px rgba(0,0,0,.5);
+      overflow:hidden;display:grid;grid-template-columns:1fr 360px;
+    }
+    #scene{position:relative;overflow:hidden;}
+    canvas{display:block;}
+    #sand{
+      position:absolute;bottom:0;left:0;width:100%;height:60px;background:#ca8a04;border-top:4px solid #a16207;
+      z-index:10;pointer-events:none;
+    }
+    #aquarium-timer{
+      position:absolute;bottom:70px;right:14px;z-index:50;font-family:ui-monospace,Menlo,Consolas,monospace;
+      background:rgba(0,0,0,.35);padding:4px 10px;border-radius:8px;font-size:.78rem;
+      color:rgba(255,255,255,.75);border:1px solid rgba(255,255,255,.12);pointer-events:none;
     }
 
-    #scene { position: relative; overflow: hidden; }
-    canvas { display: block; }
+    #sidepanel{
+      border-left:1px solid rgba(255,255,255,.12);
+      background:rgba(15,23,42,.92);backdrop-filter:blur(10px);
+      padding:14px;display:flex;flex-direction:column;gap:12px;
+    }
+    .tabbar{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+    .tabbtn{
+      border:1px solid rgba(255,255,255,.12);background:rgba(30,41,59,.55);
+      padding:10px;border-radius:12px;font-size:.88rem;cursor:pointer;
+      transition:transform .12s ease, background .12s ease;
+    }
+    .tabbtn:hover{transform:translateY(-1px);background:rgba(30,41,59,.75);}
+    .tabbtn.active{background:rgba(59,130,246,.28);border-color:rgba(59,130,246,.55);}
 
+    .panel{
+      border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:12px;
+      background:rgba(2,6,23,.25);
+      overflow:hidden;
+    }
+    .panel h2{margin:0 0 10px 0;font-size:1.05rem;font-weight:800;}
+    .kv{display:grid;grid-template-columns:1fr auto;gap:6px 10px;font-size:.88rem;}
+    .muted{opacity:.75;}
+    .mono{font-family:ui-monospace,Menlo,Consolas,monospace;}
+    .btnrow{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;}
+    .btn{
+      border:1px solid rgba(255,255,255,.12);background:rgba(30,41,59,.55);
+      border-radius:12px;padding:10px;font-size:.88rem;cursor:pointer;
+      transition:background .12s ease, transform .12s ease;
+    }
+    .btn:hover{background:rgba(30,41,59,.75);transform:translateY(-1px);}
+    .btn.primary{background:rgba(37,99,235,.65);border-color:rgba(37,99,235,.55);}
+    .btn.primary:hover{background:rgba(37,99,235,.78);}
+    .btn.teal{background:rgba(13,148,136,.6);border-color:rgba(13,148,136,.55);}
+    .btn.teal:hover{background:rgba(13,148,136,.75);}
+    .btn.danger{background:rgba(127,29,29,.35);border-color:rgba(185,28,28,.35);}
+    .btn.danger:hover{background:rgba(127,29,29,.5);}
+
+    .shopbtn{
+      width:100%;text-align:left;border:1px solid rgba(255,255,255,.12);
+      background:rgba(30,41,59,.35);border-radius:14px;padding:12px;cursor:pointer;
+      transition:background .12s ease, transform .12s ease;
+    }
+    .shopbtn:hover{background:rgba(30,41,59,.55);transform:translateY(-1px);}
+    .shopbtn:disabled{opacity:.35;cursor:not-allowed;transform:none;}
+
+    .subtabs{display:flex;gap:8px;margin-top:10px;}
+    .subbtn{
+      flex:1;border:1px solid rgba(255,255,255,.12);background:rgba(30,41,59,.35);
+      padding:8px;border-radius:12px;font-size:.82rem;cursor:pointer;
+    }
+    .subbtn.active{background:rgba(59,130,246,.22);border-color:rgba(59,130,246,.45);}
+
+    .listbox{
+      margin-top:10px;border:1px solid rgba(255,255,255,.10);border-radius:12px;
+      overflow:hidden;background:rgba(2,6,23,.18);
+    }
+    .listhead{
+      padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.08);
+      display:flex;justify-content:space-between;align-items:center;font-size:.78rem;
+      background:rgba(30,41,59,.25);
+    }
+    .list{
+      max-height:260px;overflow:auto;
+    }
+    .row{
+      display:grid;
+      grid-template-columns: 64px 1fr 62px;
+      gap:8px;
+      padding:8px 10px;
+      border-bottom:1px solid rgba(255,255,255,.06);
+      cursor:pointer;
+      align-items:center;
+      font-size:.82rem;
+    }
+    .row:hover{background:rgba(30,41,59,.25);}
+    .row.active{background:rgba(59,130,246,.18);}
+    .pill{
+      font-size:.70rem;padding:2px 8px;border-radius:999px;border:1px solid rgba(255,255,255,.12);
+      opacity:.9;justify-self:start;
+    }
+    .pill.fed{background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.25);}
+    .pill.hungry{background:rgba(251,191,36,.14);border-color:rgba(251,191,36,.25);}
+    .pill.starv{background:rgba(239,68,68,.14);border-color:rgba(239,68,68,.25);}
+
+    .detail{
+      margin-top:10px;border:1px solid rgba(255,255,255,.10);border-radius:12px;padding:10px;
+      background:rgba(2,6,23,.18);
+    }
+    .detail label{display:block;font-size:.72rem;opacity:.75;margin-bottom:4px;}
+    .input{
+      width:100%;border:1px solid rgba(255,255,255,.12);background:rgba(30,41,59,.35);
+      color:#f8fafc;border-radius:12px;padding:8px 10px;font-size:.88rem;outline:none;
+    }
+    .input:focus{border-color:rgba(59,130,246,.65);}
+
+    .bubble{
+      position:absolute;background:rgba(255,255,255,.20);border-radius:50%;pointer-events:none;
+      animation:rise 8s linear infinite;z-index:2;
+    }
+    @keyframes rise{
+      0%{transform:translateY(120%) scale(1);opacity:0;}
+      50%{opacity:.35;}
+      100%{transform:translateY(-220px) scale(1.5);opacity:0;}
+    }
+
+    .notification{
+      position:fixed;bottom:22px;left:50%;transform:translateX(-50%);
+      background:rgba(15,23,42,.92);padding:8px 14px;border-radius:999px;z-index:1000;
+      font-size:.82rem;border:1px solid rgba(255,255,255,.18);pointer-events:none;
+    }
+    .hidden{display:none;}
+
+    @media (max-width: 980px){
+      #aquarium-wrapper{grid-template-columns:1fr;height:84vh;}
+      #sidepanel{display:none;}
+    }
+  </style>
+</head>
+
+<body>
+  <div id="aquarium-wrapper">
+    <div id="scene">
+      <canvas id="aquariumCanvas"></canvas>
+      <div id="sand"></div>
+      <div id="aquarium-timer">Süre: 00:00</div>
+    </div>
+
+    <aside id="sidepanel">
+      <div class="tabbar">
+        <button id="tabStats" class="tabbtn active" onclick="setTab('stats')">Durum</button>
+        <button id="tabMarket" class="tabbtn" onclick="setTab('market')">Market</button>
+      </div>
+
+      <section id="panelStats" class="panel">
+        <h2>Zen Durum</h2>
+
+        <div class="subtabs">
+          <button id="subSummary" class="subbtn active" onclick="setStatsSubTab('summary')">Özet</button>
+          <button id="subFish" class="subbtn" onclick="setStatsSubTab('fish')">Balıklar</button>
+        </div>
+
+        <!-- ÖZET -->
+        <div id="statsSummary">
+          <div class="kv" style="margin-top:10px;">
+            <div class="muted">Bütçe</div><div id="moneyText" class="mono text-yellow-300">0 ₺</div>
+            <div class="muted">Sıcaklık</div><div id="tempText">24.0°C</div>
+            <div class="muted">Temizlik</div><div id="cleanText">100%</div>
+            <div class="muted">Canlı</div><div id="fishCountText">6</div>
+            <div class="muted">Yem</div><div id="foodCountText">0</div>
+            <div class="muted">Dışkı</div><div id="poopCountText">0</div>
+          </div>
+
+          <div style="margin-top:12px;">
+            <label class="block text-xs uppercase mb-1 opacity-70">Sıcaklık Ayarı (Isıtıcı ile)</label>
+            <input type="range" id="tempSlider" min="15" max="35" value="24" disabled />
+          </div>
+
+          <div class="btnrow">
+            <button class="btn primary" onclick="addFood()">Yem At (2₺)</button>
+            <button class="btn teal" onclick="cleanTank()">Temizle</button>
+          </div>
+
+          <button class="btn danger" style="margin-top:10px; width:100%;" onclick="resetGame()">Akvaryumu Sıfırla</button>
+
+          <div class="muted" style="font-size:0.78rem; margin-top:10px; line-height:1.35;">
+            Organik hareket: hız “nefes alır” gibi artar-azalır. Aç balık hedefe kilitlenir.
+          </div>
+        </div>
+
+        <!-- BALIKLAR -->
+        <div id="statsFish" style="display:none;">
+          <div class="listbox">
+            <div class="listhead">
+              <div class="muted">Balık Listesi</div>
+              <div class="muted mono" id="fishListMeta">—</div>
+            </div>
+            <div id="fishList" class="list"></div>
+          </div>
+
+          <div class="detail">
+            <div class="kv">
+              <div class="muted">Seçili</div><div id="selTitle" class="mono">—</div>
+            </div>
+            <div style="margin-top:10px;">
+              <label>İsim ver (opsiyonel)</label>
+              <input id="nameInput" class="input" type="text" placeholder="ör. Yoko" oninput="renameSelected(this.value)" />
+            </div>
+
+            <div class="kv" style="margin-top:10px;">
+              <div class="muted">Cinsiyet</div><div id="selGender">—</div>
+              <div class="muted">Açlık</div><div id="selHunger">—</div>
+              <div class="muted">Hamilelik</div><div id="selPreg">—</div>
+              <div class="muted">Yaş</div><div id="selAge">—</div>
+              <div class="muted">Trait</div><div id="selTrait">—</div>
+              <div class="muted">Fenotip</div><div id="selPheno">—</div>
+              <div class="muted">Enerji</div><div id="selEnergy">—</div>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+      <section id="panelMarket" class="panel" style="display:none;">
+        <h2>Market</h2>
+
+        <button onclick="buyItem('filter')" id="buyFilter" class="shopbtn">
+          <div class="text-sm font-semibold">Otomatik Filtre</div>
+          <div class="text-xs text-yellow-300">500 ₺</div>
+          <div class="text-xs muted" style="margin-top:4px;">Dışkı/çevre kirliliğini yumuşatır + hafif toparlar.</div>
+        </button>
+
+        <div style="height:10px;"></div>
+
+        <button onclick="buyItem('heater')" id="buyHeater" class="shopbtn">
+          <div class="text-sm font-semibold">Termostatlı Isıtıcı</div>
+          <div class="text-xs text-yellow-300">300 ₺</div>
+          <div class="text-xs muted" style="margin-top:4px;">Sıcaklığı hedefe yaklaştırır.</div>
+        </button>
+
+        <div style="height:10px;"></div>
+
+        <button onclick="buyItem('plant')" id="buyPlant" class="shopbtn">
+          <div class="text-sm font-semibold">Yapay Bitki</div>
+          <div class="text-xs text-yellow-300">100 ₺</div>
+          <div class="text-xs muted" style="margin-top:4px;">Sadece görsel (şimdilik).</div>
+        </button>
+
+        <div class="muted" style="font-size:0.78rem; margin-top:10px; line-height:1.35;">
+          İleride “tür” ekleme burada açılır: boyut/renk/iştah/uyumluluk paketleri.
+        </div>
+      </section>
+    </aside>
+  </div>
+
+  <div id="notif" class="notification hidden"></div>
+
+<script>
+  const scene = document.getElementById("scene");
+  const canvas = document.getElementById("aquariumCanvas");
+  const ctx = canvas.getContext("2d");
+
+  // --- Zamanlar
+  const MATURITY_TIME = 10 * 60 * 1000;
+  const MAX_LIFE = 25 * 60 * 1000;
+  const PREGNANCY_TIME = 5 * 60 * 1000;
+
+  // --- Dışkı & temizlik
+  const POOP_DELAY_MIN = 12 * 1000;
+  const POOP_DELAY_MAX = 28 * 1000;
+  const POOP_DIRT_IMPACT = 0.45;
+  const EAT_DIRT_IMPACT = 0.08;
+
+  // --- Ekonomi
+  const MONEY_PER_CREATURE_PER_SEC = 0.007;
+
+  // --- Modlar
+  const STATE_MODS = {
+    hunger: {
+      fed:    { move: 1.00, metabolism: 1.00, fertility: 1.00, deathRisk: 0.0 },
+      hungry: { move: 0.98, metabolism: 1.10, fertility: 0.55, deathRisk: 0.00005 },
+      starv:  { move: 0.85, metabolism: 1.35, fertility: 0.00, deathRisk: 0.00040 }
+    },
+    age: {
+      baby:  { move: 1.08, metabolism: 1.20, fertility: 0.00, deathRisk: 0.00001 },
+      adult: { move: 1.00, metabolism: 1.00, fertility: 1.00, deathRisk: 0.00002 },
+      old:   { move: 0.88, metabolism: 0.92, fertility: 0.30, deathRisk: 0.00010 }
+    },
+    preg: {
+      no:  { move: 1.00, metabolism: 1.00 },
+      yes: { move: 0.90, metabolism: 1.18 }
+    },
+    trait: {
+      slow:   { move: 0.88, metabolism: 0.86 },
+      normal: { move: 1.00, metabolism: 1.00 },
+      fast:   { move: 1.18, metabolism: 1.18 }
+    }
+  };
+
+  // --- Global state
+  let state = {
+    money: 100,
+    temp: 24,
+    targetTemp: 24,
+    cleanliness: 100,
+    creatures: [],
+    foods: [],
+    poops: [],
+    plants: [],
+    items: { filter: false, heater: false },
+    lastTick: performance.now(),
+    startTime: Date.now(),
+    selectedFishId: null,
+    fishIdCounter: 1
+  };
+
+  // --- Utils
+  const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+  const rand = (a,b)=>a+Math.random()*(b-a);
+  const lerp = (a,b,t)=>a+(b-a)*t;
+
+  function showNotification(t){
+    const n=document.getElementById("notif");
+    n.innerText=t;n.classList.remove("hidden");
+    setTimeout(()=>n.classList.add("hidden"), 2600);
+  }
+
+  function formatTime(ms){
+    const s=Math.floor(ms/1000);
+    return `${Math.floor(s/60).toString().padStart(2,"0")}:${(s%60).toString().padStart(2,"0")}`;
+  }
+
+  function phenotypeToColor(p){
+    const hue=lerp(210,330,p);
+    return `hsl(${hue} 85% 70%)`;
+  }
+
+  function envMods(temp, cleanliness){
+    const dt=Math.abs(temp-24);
+    const tempStress=Math.max(0,(dt-4)/10);
+    const dirtStress=Math.max(0,(60-cleanliness)/60);
+    return {
+      move: 1 - (0.20*tempStress) - (0.15*dirtStress),
+      metabolism: 1 + (0.20*tempStress) + (0.10*dirtStress),
+      fertility: 1 - (0.55*dirtStress),
+      deathRisk: (0.00005*dirtStress) + (0.00004*tempStress)
+    };
+  }
+
+  function computeDerived(creature){
+    const hState = creature.energy > 70 ? "fed" : (creature.energy > 30 ? "hungry" : "starv");
+    const ageState = (Date.now() - creature.bornTime) < MATURITY_TIME ? "baby" : "adult";
+    const pState = creature.isPregnant ? "yes" : "no";
+
+    const mods = [
+      STATE_MODS.hunger[hState],
+      STATE_MODS.age[ageState],
+      STATE_MODS.preg[pState],
+      STATE_MODS.trait[creature.trait],
+      envMods(state.temp, state.cleanliness)
+    ];
+
+    const out = { move:1, metabolism:1, fertility:1, deathRisk:0 };
+    mods.forEach(m=>{
+      if(m.move) out.move*=m.move;
+      if(m.metabolism) out.metabolism*=m.metabolism;
+      if(m.fertility) out.fertility*=m.fertility;
+      if(m.deathRisk) out.deathRisk+=m.deathRisk;
+    });
+
+    out.move = clamp(out.move, 0.45, 2.1);
+    return { ...out, hState, ageState };
+  }
+
+  function angleDiff(a,b){
+    let d=(b-a+Math.PI)%(Math.PI*2)-Math.PI;
+    if(d<-Math.PI) d+=Math.PI*2;
+    return d;
+  }
+  function moveTowardAngle(a,b,maxStep){
+    const d=angleDiff(a,b);
+    if(Math.abs(d)<=maxStep) return b;
+    return a + Math.sign(d)*maxStep;
+  }
+
+  // --- UI tabs
+  function setTab(which){
+    const stats=document.getElementById("panelStats");
+    const market=document.getElementById("panelMarket");
+    const t1=document.getElementById("tabStats");
+    const t2=document.getElementById("tabMarket");
+    if(which==="stats"){
+      stats.style.display="block";market.style.display="none";
+      t1.classList.add("active");t2.classList.remove("active");
+    }else{
+      stats.style.display="none";market.style.display="block";
+      t2.classList.add("active");t1.classList.remove("active");
+    }
+  }
+
+  function setStatsSubTab(which){
+    const a=document.getElementById("statsSummary");
+    const b=document.getElementById("statsFish");
+    const sa=document.getElementById("subSummary");
+    const sb=document.getElementById("subFish");
+    if(which==="summary"){
+      a.style.display="block";b.style.display="none";
+      sa.classList.add("active");sb.classList.remove("active");
+    }else{
+      a.style.display="none";b.style.display="block";
+      sb.classList.add("active");sa.classList.remove("active");
+      renderFishList(true);
+    }
+  }
+
+  // --- Fish list & naming
+  function getFishById(fid){
+    return state.creatures.find(c=>c.fid===fid) || null;
+  }
+
+  function selectFish(fid){
+    state.selectedFishId = fid;
+    renderFishList(false);
+    renderSelectedFish();
+  }
+
+  function renameSelected(val){
+    const c=getFishById(state.selectedFishId);
+    if(!c) return;
+    c.name = val.trim().slice(0, 18);
+    renderFishList(false);
+    renderSelectedFish();
+  }
+
+  function ageString(ms){
+    const s=Math.floor(ms/1000);
+    if(s<60) return `${s} sn`;
+    const m=Math.floor(s/60);
+    if(m<60) return `${m} dk`;
+    const h=Math.floor(m/60);
+    return `${h} sa ${m%60} dk`;
+  }
+
+  function renderFishList(forceSelectedFallback){
+    const list=document.getElementById("fishList");
+    const meta=document.getElementById("fishListMeta");
+
+    if(forceSelectedFallback && state.selectedFishId==null && state.creatures.length){
+      state.selectedFishId = state.creatures[0].fid;
+    }
+
+    meta.innerText = `${state.creatures.length} balık`;
+    const now=Date.now();
+
+    let html="";
+    for(const c of state.creatures){
+      const d=computeDerived(c);
+      const active = (c.fid===state.selectedFishId);
+      const label = c.name ? c.name : `Balık #${c.fid}`;
+      html += `
+        <div class="row ${active?'active':''}" onclick="selectFish(${c.fid})">
+          <div class="mono">#${c.fid}</div>
+          <div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px;">${escapeHtml(label)}</div>
+              <span class="pill ${d.hState}">${hStateTR(d.hState)}</span>
+            </div>
+            <div class="muted" style="font-size:.74rem;margin-top:2px;">
+              ${c.gender} · ${d.ageState==="baby"?"yavru":"genç"} · ${c.isPregnant?"hamile":"—"} · ${ageString(now-c.bornTime)}
+            </div>
+          </div>
+          <div class="mono" style="text-align:right;">${Math.round(c.energy)}%</div>
+        </div>
+      `;
+    }
+
+    list.innerHTML = html || `<div class="muted" style="padding:10px;">Henüz balık yok.</div>`;
+    renderSelectedFish();
+  }
+
+  function renderSelectedFish(){
+    const c=getFishById(state.selectedFishId);
+    const nameInput=document.getElementById("nameInput");
+    if(!c){
+      document.getElementById("selTitle").innerText="—";
+      nameInput.value="";
+      return;
+    }
+    const d=computeDerived(c);
+    const label = c.name ? c.name : `Balık #${c.fid}`;
+
+    document.getElementById("selTitle").innerText = `#${c.fid} · ${label}`;
+    if(document.activeElement !== nameInput) nameInput.value = c.name || "";
+
+    document.getElementById("selGender").innerText = c.gender;
+    document.getElementById("selHunger").innerText = hStateTR(d.hState);
+    document.getElementById("selPreg").innerText = c.isPregnant ? "Evet" : "Hayır";
+    document.getElementById("selAge").innerText = ageString(Date.now() - c.bornTime);
+    document.getElementById("selTrait").innerText = c.trait;
+    document.getElementById("selPheno").innerText = c.pheno.toFixed(2);
+    document.getElementById("selEnergy").innerText = `${Math.round(c.energy)}%`;
+  }
+
+  function escapeHtml(s){
+    return (s||"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;");
+  }
+  function hStateTR(h){
+    if(h==="fed") return "Tok";
+    if(h==="hungry") return "Aç";
+    return "Çok Aç";
+  }
+
+  // --- Creature
+  class Creature{
+    constructor(x,y,gender,opts={}){
+      this.fid = state.fishIdCounter++;
+      this.id = Math.random().toString(36).slice(2,10);
+
+      this.x = (x ?? (50 + Math.random()*(canvas.width-100)));
+      this.y = (y ?? (50 + Math.random()*(canvas.height-150)));
+
+      this.gender = gender ?? (Math.random()>0.5 ? "M":"F");
+      this.trait = opts.trait ?? ["slow","normal","fast"][Math.floor(Math.random()*3)];
+
+      this.pheno = clamp(opts.pheno ?? Math.random(), 0, 1);
+      this.color = phenotypeToColor(this.pheno);
+
+      this.vx = (Math.random()-0.5)*1.8;
+      this.vy = (Math.random()-0.5)*1.8;
+
+      this.bornTime = Date.now();
+      this.lifeSpan = 15*60*1000 + Math.random()*(10*60*1000);
+
+      // ✅ Başlangıç açlığı random (40-100 arası)
+      this.energy = clamp(opts.energy ?? rand(40, 100), 0, 100);
+
+      this.size = 2;
+
+      this.isPregnant=false;
+      this.lastBreedAttempt=0;
+      this.pregnancyStartTime=0;
+
+      this.heading = Math.random()*Math.PI*2;
+      this.wanderAngle = (Math.random()-0.5)*0.35;
+
+      // ✅ Organik hız ritmi
+      this.speedPhase = Math.random()*Math.PI*2;
+      this.speedRate  = rand(0.55, 0.95);       // ritim hızı
+      this.pulseBias  = rand(0.35, 0.60);       // ne kadar “duraksar”
+      this.burstTimer = rand(1.2, 3.8);         // ara ara “ivmelenme”
+      this.burstLeft  = 0;
+
+      this.name = opts.name || "";
+      this.nextPoopAt = Date.now() + rand(POOP_DELAY_MIN, POOP_DELAY_MAX);
+    }
+
+    applyArrivalSteering(tx,ty,maxSpeed,maxForce,dtSec){
+      const dx=tx-this.x, dy=ty-this.y;
+      const dist=Math.hypot(dx,dy) || 1e-6;
+
+      const slowRadius=150;
+      const desiredSpeed = dist < slowRadius ? maxSpeed*(dist/slowRadius) : maxSpeed;
+
+      const desiredVx=(dx/dist)*desiredSpeed;
+      const desiredVy=(dy/dist)*desiredSpeed;
+
+      let sx=desiredVx-this.vx, sy=desiredVy-this.vy;
+
+      const sm=Math.hypot(sx,sy) || 1e-6;
+      const cap=maxForce*dtSec*60;
+      if(sm>cap){ sx=(sx/sm)*cap; sy=(sy/sm)*cap; }
+
+      this.vx+=sx; this.vy+=sy;
+    }
+
+    // ✅ Yeni wander: hız “nefes alır”, düz gitme baskın, orbit kırılır
+    applyOrganicWander(d, dtSec){
+      const speed=Math.hypot(this.vx,this.vy);
+
+      // heading’i hız vektöründen “yakala” (çok düşük hızdaysa heading’i bozma)
+      if(speed>0.12) this.heading = Math.atan2(this.vy, this.vx);
+
+      // Açlık: tokken daha gezgin, açken daha “düz”
+      const turnRate = (d.hState==="fed" ? 0.95 : 0.55) * dtSec; // rad/step (dt ile)
+      const jitter   = (d.hState==="fed" ? 0.70 : 0.35) * dtSec * 60;
+
+      // wander angle çok küçük + yumuşak
+      this.wanderAngle += (Math.random()-0.5) * 0.06 * jitter;
+      this.wanderAngle = clamp(this.wanderAngle, -0.45, 0.45);
+
+      const desiredHeading = this.heading + this.wanderAngle;
+      this.heading = moveTowardAngle(this.heading, desiredHeading, turnRate);
+
+      // “nefes” ritmi
+      this.speedPhase += this.speedRate * dtSec;
+      const breathe = 0.5 + 0.5*Math.sin(this.speedPhase); // 0..1
+
+      // burst: kısa süre ivme al
+      this.burstTimer -= dtSec;
+      if(this.burstTimer<=0){
+        this.burstLeft = rand(0.35, 0.75);
+        this.burstTimer = rand(1.8, 4.6);
+      }
+      if(this.burstLeft>0) this.burstLeft -= dtSec;
+
+      // hedef hız: baz + nefes + burst, zaman zaman neredeyse durur
+      const baseCruise = (d.hState==="fed" ? 1.10 : 0.95) * d.move;
+      const minCruise  = 0.10 * d.move;  // durma hissi
+      const breatheMix = lerp(this.pulseBias, 1.0, breathe);  // bias sayesinde daha çok duraksar
+      const burstBoost = this.burstLeft>0 ? 0.55 : 0.0;
+
+      let targetSpeed = baseCruise * breatheMix + burstBoost;
+      targetSpeed = clamp(targetSpeed, minCruise, 2.1*d.move);
+
+      // hedef vektör
+      const ux=Math.cos(this.heading), uy=Math.sin(this.heading);
+      const desiredVx = ux*targetSpeed;
+      const desiredVy = uy*targetSpeed;
+
+      // steering (çok agresif değil)
+      let sx=desiredVx-this.vx, sy=desiredVy-this.vy;
+      const sm=Math.hypot(sx,sy) || 1e-6;
+      const maxForce = (0.08 + 0.02*(this.burstLeft>0)) * d.move; // burstte hafif artar
+      const cap = maxForce * dtSec * 60;
+
+      if(sm>cap){ sx=(sx/sm)*cap; sy=(sy/sm)*cap; }
+      this.vx+=sx; this.vy+=sy;
+
+      // Orbit kırıcı: yana kaçan bileşeni sönümle (ama “robotik” yapmayacak kadar az)
+      const dot = this.vx*ux + this.vy*uy;
+      const perpX = this.vx - dot*ux;
+      const perpY = this.vy - dot*uy;
+      const sideDamp = 0.12 * dtSec * 60;
+      this.vx -= perpX*sideDamp;
+      this.vy -= perpY*sideDamp;
+    }
+
+    findFood(d,dtSec){
+      if(d.hState==="fed") return false;
+      if(state.foods.length===0) return false;
+
+      const visionRange = (d.hState==="starv" ? 680 : 360);
+      let nearest=null, minDist=Infinity;
+
+      for(const f of state.foods){
+        const dist=Math.hypot(f.x-this.x, f.y-this.y);
+        if(dist<visionRange && dist<minDist){ minDist=dist; nearest=f; }
+      }
+      if(!nearest) return false;
+
+      const maxSpeed = (d.hState==="starv" ? 2.5 : 1.85) * d.move;
+      const maxForce = (d.hState==="starv" ? 0.18 : 0.12);
+
+      this.applyArrivalSteering(nearest.x, nearest.y, maxSpeed, maxForce, dtSec);
+
+      if(minDist < this.size + 10){
+        state.foods = state.foods.filter(x=>x!==nearest);
+        this.energy = Math.min(100, this.energy + 38);
+
+        this.vx *= 0.65; this.vy *= 0.65;
+        state.cleanliness = clamp(state.cleanliness - EAT_DIRT_IMPACT, 0, 100);
+
+        this.nextPoopAt = Math.min(this.nextPoopAt, Date.now() + rand(POOP_DELAY_MIN*0.6, POOP_DELAY_MAX*0.7));
+      }
+      return true;
+    }
+
+    poop(){
+      state.poops.push({
+        x:this.x + rand(-6,6),
+        y:this.y + rand(4,10),
+        vy:rand(0.35,0.65),
+        born:Date.now()
+      });
+      const impact = state.items.filter ? (POOP_DIRT_IMPACT*0.55) : POOP_DIRT_IMPACT;
+      state.cleanliness = clamp(state.cleanliness - impact, 0, 100);
+    }
+
+    update(dtMs){
+      const now=Date.now();
+      const age=now-this.bornTime;
+      const d=computeDerived(this);
+      const dtSec=dtMs/1000;
+
+      const survivalProb=Math.exp(-d.deathRisk*dtSec);
+      if(age>this.lifeSpan || Math.random()>survivalProb){
+        if(age>this.lifeSpan) showNotification("Bir canlı ömrünü tamamladı.");
+        return false;
+      }
+
+      // enerji tüketimi
+      const speedMag=Math.hypot(this.vx,this.vy);
+      this.energy -= (0.012 + speedMag*0.006) * d.metabolism * dtSec;
+      this.energy = Math.max(0, this.energy);
+
+      // büyüme
+      if(age<MATURITY_TIME) this.size = 2 + (age/MATURITY_TIME)*8;
+      else this.size = 10 + ((age-MATURITY_TIME)/(MAX_LIFE-MATURITY_TIME))*5;
+
+      // damping: artık “duraksama” hissini desteklesin diye hafif daha güçlü
+      const damp = Math.pow(0.992, dtSec*60);
+      this.vx*=damp; this.vy*=damp;
+
+      // davranış
+      const ate=this.findFood(d,dtSec);
+      if(!ate) this.applyOrganicWander(d, dtSec);
+
+      // hız limiti (çok sabit değil ama runaway yok)
+      const currentSpeed=Math.hypot(this.vx,this.vy);
+      const maxAllowed = (d.hState==="starv" ? 2.8 : (d.hState==="hungry" ? 2.3 : 2.0)) * d.move;
+      if(currentSpeed>maxAllowed){
+        this.vx=(this.vx/currentSpeed)*maxAllowed;
+        this.vy=(this.vy/currentSpeed)*maxAllowed;
+      }
+
+      // pozisyon
+      this.x+=this.vx; this.y+=this.vy;
+
+      // sınırlar
+      const left=15, right=canvas.width-15, top=15, bottom=canvas.height-60;
+      if(this.x<left){this.x=left; this.vx=Math.abs(this.vx);}
+      if(this.x>right){this.x=right; this.vx=-Math.abs(this.vx);}
+      if(this.y<top){this.y=top; this.vy=Math.abs(this.vy);}
+      if(this.y>bottom){this.y=bottom; this.vy=-Math.abs(this.vy);}
+
+      // doğum
+      if(this.isPregnant && now-this.pregnancyStartTime>PREGNANCY_TIME) this.giveBirth();
+
+      // dışkı
+      if(now>=this.nextPoopAt){ this.poop(); this.nextPoopAt = now + rand(POOP_DELAY_MIN, POOP_DELAY_MAX); }
+
+      return true;
+    }
+
+    draw(){
+      const d=computeDerived(this);
+      ctx.save();
+      ctx.translate(this.x,this.y);
+      ctx.globalAlpha=(d.hState==="starv"?0.65:1.0);
+      ctx.fillStyle=this.color;
+
+      if(this.size<6){
+        ctx.beginPath(); ctx.arc(0,0,this.size,0,Math.PI*2); ctx.fill();
+      }else{
+        ctx.rotate(Math.atan2(this.vy,this.vx));
+        ctx.beginPath(); ctx.ellipse(0,0,this.size,this.size/1.65,0,0,Math.PI*2); ctx.fill();
+
+        ctx.beginPath();
+        ctx.moveTo(-this.size,0);
+        ctx.lineTo(-this.size-6,-5);
+        ctx.lineTo(-this.size-6,5);
+        ctx.closePath();
+        ctx.fill();
+
+        if(this.isPregnant){
+          ctx.fillStyle="rgba(255,255,255,0.9)";
+          ctx.beginPath(); ctx.arc(0,2,this.size/3.2,0,Math.PI*2); ctx.fill();
+        }
+
+        ctx.fillStyle="rgba(255,255,255,0.25)";
+        ctx.beginPath(); ctx.arc(this.size*0.35,-this.size*0.10,1.7,0,Math.PI*2); ctx.fill();
+      }
+
+      ctx.restore();
+    }
+
+    giveBirth(){
+      const babyPheno = clamp((this._babyPheno ?? this.pheno) + (Math.random()-0.5)*0.06, 0, 1);
+      const babyTrait = this._babyTrait ?? this.trait;
+
+      this.isPregnant=false;
+      this._babyPheno=undefined;
+      this._babyTrait=undefined;
+
+      state.creatures.push(new Creature(this.x, this.y, undefined, { pheno: babyPheno, trait: babyTrait, energy: rand(45, 90) }));
+      showNotification("Yeni bir yavru doğdu!");
+    }
+  }
+
+  // --- Rendering
+  function resize(){
+    canvas.width = scene.clientWidth;
+    canvas.height = scene.clientHeight;
+  }
+  window.addEventListener("resize", resize);
+
+  function createBubble(){
+    const b=document.createElement("div");
+    b.className="bubble";
+    const size=Math.random()*8+2;
+    b.style.width=size+"px";
+    b.style.height=size+"px";
+    b.style.left=Math.random()*100+"%";
+    b.style.animationDuration=(Math.random()*4+6)+"s";
+    scene.appendChild(b);
+  }
+
+  function init(){
+    resize();
+    state.creatures=[];
+    state.foods=[];
+    state.poops=[];
+    state.plants=[];
+    state.startTime=Date.now();
+    state.lastTick=performance.now();
+    state.fishIdCounter=1;
+    state.selectedFishId=null;
+
+    for(let i=0;i<3;i++) state.creatures.push(new Creature(null,null,"M"));
+    for(let i=0;i<3;i++) state.creatures.push(new Creature(null,null,"F"));
+
+    for(let i=0;i<16;i++) createBubble();
+
+    // liste için seçim
+    state.selectedFishId = state.creatures[0]?.fid ?? null;
+    renderFishList(true);
+
+    showNotification("Zen Akvaryum hazır.");
+  }
+
+  function addFood(){
+    if(state.money<2) return showNotification("Yeterli para yok!");
+    state.money-=2;
+    for(let i=0;i<6;i++){
+      state.foods.push({
+        x: 40 + Math.random()*(canvas.width-80),
+        y: 0,
+        vy: 0.65 + Math.random()*0.35
+      });
+    }
+  }
+
+  function cleanTank(){
+    state.cleanliness = Math.min(100, state.cleanliness + 30);
+    showNotification("Akvaryum temizlendi!");
+  }
+
+  function buyItem(type){
+    const prices={filter:500, heater:300, plant:100};
+    if(state.money<prices[type]) return showNotification("Bütçe yetmiyor!");
+    state.money-=prices[type];
+
+    if(type==="plant"){
+      state.plants.push({ x: 50 + Math.random()*(canvas.width-100), h: 40 + Math.random()*60 });
+    }else{
+      state.items[type]=true;
+      const btn=document.getElementById("buy"+type.charAt(0).toUpperCase()+type.slice(1));
+      if(btn) btn.disabled=true;
+      if(type==="heater") document.getElementById("tempSlider").disabled=false;
+    }
+    showNotification("Eşya alındı!");
+  }
+
+  function resetGame(){ location.reload(); }
+
+  function updateLogic(dtMs){
+    const now=Date.now();
+    const dtSec=dtMs/1000;
+
+    // sıcaklık
+    if(state.items.heater){
+      const target=state.targetTemp;
+      state.temp += (target-state.temp) * (0.018*dtSec*60);
+    }else{
+      state.temp += (20-state.temp) * (0.0012*dtSec*60);
+    }
+    if(state.items.heater){
+      state.targetTemp = parseInt(document.getElementById("tempSlider").value, 10);
+    }
+
+    // çevre kirliliği
+    let basePollution = (state.creatures.length*0.00055) * (dtSec*60);
+    if(state.items.filter){
+      basePollution *= 0.35;
+      if(state.cleanliness<82) state.cleanliness += 0.020*(dtSec*60);
+    }
+    state.cleanliness = clamp(state.cleanliness - basePollution, 0, 100);
+
+    // para
+    if(state.cleanliness>60 && Math.abs(state.temp-24)<5){
+      state.money += (state.creatures.length*MONEY_PER_CREATURE_PER_SEC) * (dtSec*60);
+    }
+
+    // yem düşüş
+    for(const f of state.foods){
+      f.y += f.vy*(dtSec*60);
+      if(f.y>canvas.height-62) f.y=canvas.height-62;
+    }
+
+    // dışkı
+    state.poops = state.poops.filter(p => (now - p.born) < 90*1000);
+    for(const p of state.poops){
+      p.y += p.vy*(dtSec*60);
+      if(p.y>canvas.height-62) p.y=canvas.height-62;
+    }
+
+    // canlılar
+    state.creatures = state.creatures.filter(c => c.update(dtMs));
+
+    // üreme (fenotip yakınlığı + çevre)
+    const females = state.creatures.filter(c => c.gender==="F" && (now-c.bornTime)>MATURITY_TIME && !c.isPregnant && c.energy>45);
+    const males   = state.creatures.filter(c => c.gender==="M" && (now-c.bornTime)>MATURITY_TIME && c.energy>45);
+
+    for(const f of females){
+      for(const m of males){
+        if(Math.hypot(f.x-m.x, f.y-m.y) >= 44) continue;
+        if(now - f.lastBreedAttempt <= 20000) continue;
+
+        f.lastBreedAttempt = now;
+
+        const df = computeDerived(f);
+        const env = envMods(state.temp, state.cleanliness);
+        const compat = 1 - Math.abs(f.pheno - m.pheno);
+        const chance = 0.12 * df.fertility * env.fertility * (0.55 + 0.85*compat);
+
+        if(Math.random() < chance){
+          f.isPregnant=true;
+          f.pregnancyStartTime=now;
+          const mix=(f.pheno+m.pheno)/2;
+          f._babyPheno = clamp(mix + (Math.random()-0.5)*0.08, 0, 1);
+          f._babyTrait = (Math.random()<0.6) ? f.trait : m.trait;
+        }
+      }
+    }
+
+    // UI
+    document.getElementById("moneyText").innerText = Math.floor(state.money)+" ₺";
+    document.getElementById("tempText").innerText = state.temp.toFixed(1)+"°C";
+    document.getElementById("cleanText").innerText = Math.floor(state.cleanliness)+"%";
+    document.getElementById("fishCountText").innerText = state.creatures.length;
+    document.getElementById("foodCountText").innerText = state.foods.length;
+    document.getElementById("poopCountText").innerText = state.poops.length;
+    document.getElementById("aquarium-timer").innerText = "Süre: "+formatTime(now - state.startTime);
+
+    // Balık tabı açıksa list/detay güncelle (hafif throttle)
+    fishUiTick(dtMs);
+  }
+
+  let fishUiAcc=0;
+  function fishUiTick(dtMs){
+    fishUiAcc += dtMs;
+    if(fishUiAcc < 250) return; // 4fps list refresh yeter
+    fishUiAcc = 0;
+
+    // sadece Balıklar alt tabında güncelle
+    const fishPanel=document.getElementById("statsFish");
+    if(fishPanel.style.display !== "none"){
+      renderFishList(false);
+    }
+  }
+
+  function draw(ts){
+    const dtMs=Math.min(50, ts - state.lastTick);
+    state.lastTick = ts;
+
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    // bitkiler
+    for(const p of state.plants){
+      ctx.fillStyle="#166534";
+      ctx.beginPath();
+      ctx.moveTo(p.x, canvas.height-60);
+      ctx.quadraticCurveTo(p.x+10, canvas.height-60-p.h/2, p.x, canvas.height-60-p.h);
+      ctx.quadraticCurveTo(p.x-10, canvas.height-60-p.h/2, p.x, canvas.height-60);
+      ctx.fill();
+    }
+
+    // yem
+    ctx.fillStyle="#fbbf24";
+    for(const f of state.foods){
+      ctx.beginPath(); ctx.arc(f.x, f.y, 2.5, 0, Math.PI*2); ctx.fill();
+    }
+
+    // dışkı
+    ctx.fillStyle="rgba(15,23,42,0.6)";
+    for(const p of state.poops){
+      ctx.beginPath(); ctx.arc(p.x, p.y, 2.2, 0, Math.PI*2); ctx.fill();
+    }
+
+    // canlılar
+    for(const c of state.creatures) c.draw();
+
+    updateLogic(dtMs);
+    requestAnimationFrame(draw);
+  }
+
+  window.onload = init;
+  requestAnimationFrame(draw);
+</script>
+</body>
+</html>
     #sand {
       position: absolute;
       bottom: 0; left: 0;
