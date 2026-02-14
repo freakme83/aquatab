@@ -5,7 +5,6 @@
 
 const TAU = Math.PI * 2;
 const rand = (min, max) => min + Math.random() * (max - min);
-const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 const BUILD_STAMP = new Date().toISOString();
 
 export class Renderer {
@@ -19,14 +18,8 @@ export class Renderer {
     this.quality = 'high';
     this.debugBounds = false;
 
-    this.sandPalette = {
-      base: '#c3a06a',
-      shade: '#b08955',
-      highlight: '#d8bb86',
-      speck: 'rgba(102, 77, 38, 0.26)'
-    };
-
     this.waterParticles = this.#createParticles(70);
+    this.plants = [];
 
     this.backgroundCanvas = document.createElement('canvas');
     this.vignetteCanvas = document.createElement('canvas');
@@ -38,11 +31,6 @@ export class Renderer {
 
   setDebugBounds(enabled) {
     this.debugBounds = Boolean(enabled);
-  }
-
-  setSandPalette(palette = {}) {
-    this.sandPalette = { ...this.sandPalette, ...palette };
-    this.#buildStaticLayers();
   }
 
   resize(width, height) {
@@ -59,6 +47,7 @@ export class Renderer {
     };
 
     this.#buildStaticLayers();
+    this.#buildPlants();
 
     for (const p of this.waterParticles) {
       p.x = Math.min(width, Math.max(0, p.x));
@@ -93,6 +82,7 @@ export class Renderer {
     ctx.save();
     this.#clipTankWater(ctx);
     this.#drawCachedBackground(ctx);
+    this.#drawWaterPlants(ctx, time);
     this.#drawWaterParticles(ctx, delta);
     this.#drawBubbles(ctx);
     this.#drawFood(ctx);
@@ -129,8 +119,6 @@ export class Renderer {
     bctx.fillStyle = bg;
     bctx.fillRect(0, 0, w, h);
 
-    this.#drawSandLayer(bctx, w, h);
-
     this.vignetteCanvas.width = w;
     this.vignetteCanvas.height = h;
     const vctx = this.vignetteCanvas.getContext('2d');
@@ -142,49 +130,58 @@ export class Renderer {
     vctx.fillRect(0, 0, w, h);
   }
 
-  #sandHeightPixels() {
-    const worldHeight = Math.max(1, this.world.bounds.height);
-    const sandHeight = Math.max(0, this.world.bounds.sandHeight || 0);
-    return (sandHeight / worldHeight) * this.tankRect.height;
+  #buildPlants() {
+    const count = Math.max(8, Math.floor(this.world.bounds.width / 100));
+    this.plants = Array.from({ length: count }, () => {
+      const x = rand(16, Math.max(18, this.world.bounds.width - 16));
+      const bottomY = this.world.bounds.height - rand(3, 12);
+      const height = rand(this.world.bounds.height * 0.16, this.world.bounds.height * 0.34);
+      const width = rand(7, 15);
+      const hue = rand(125, 150);
+      const sat = rand(20, 34);
+      const light = rand(17, 28);
+      return {
+        x,
+        bottomY,
+        height,
+        width,
+        swayAmp: rand(2.2, 7.2),
+        swayRate: rand(0.0008, 0.0018),
+        phase: rand(0, TAU),
+        color: `hsla(${hue}deg ${sat}% ${light}% / ${rand(0.18, 0.32)})`
+      };
+    });
   }
 
-  #drawSandLayer(ctx, width, height) {
-    const sandHeight = clamp(this.#sandHeightPixels(), 18, height * 0.34);
-    const topY = Math.max(0, height - sandHeight);
+  #drawWaterPlants(ctx, time) {
+    const sx = this.tankRect.width / this.world.bounds.width;
+    const sy = this.tankRect.height / this.world.bounds.height;
 
-    const path = new Path2D();
-    path.moveTo(0, topY);
+    ctx.save();
+    ctx.lineCap = 'round';
 
-    const wave1 = Math.max(3, sandHeight * 0.08);
-    const wave2 = Math.max(4, sandHeight * 0.1);
-    path.bezierCurveTo(width * 0.2, topY - wave1, width * 0.37, topY + wave2, width * 0.52, topY + wave1);
-    path.bezierCurveTo(width * 0.68, topY - wave2, width * 0.84, topY + wave1, width, topY - wave1 * 0.5);
-    path.lineTo(width, height);
-    path.lineTo(0, height);
-    path.closePath();
+    for (const plant of this.plants) {
+      const baseX = this.tankRect.x + plant.x * sx;
+      const baseY = this.tankRect.y + plant.bottomY * sy;
+      const h = plant.height * sy;
+      const w = plant.width * sx;
 
-    const sandGradient = ctx.createLinearGradient(0, topY - 3, 0, height);
-    sandGradient.addColorStop(0, this.sandPalette.highlight);
-    sandGradient.addColorStop(0.45, this.sandPalette.base);
-    sandGradient.addColorStop(1, this.sandPalette.shade);
+      ctx.strokeStyle = plant.color;
+      ctx.lineWidth = Math.max(1, w * 0.22);
 
-    ctx.fillStyle = sandGradient;
-    ctx.fill(path);
-
-    ctx.strokeStyle = 'rgba(255, 239, 189, 0.22)';
-    ctx.lineWidth = 1.2;
-    ctx.stroke(path);
-
-    const grains = Math.floor((width * sandHeight) / 1400);
-    ctx.fillStyle = this.sandPalette.speck;
-    for (let i = 0; i < grains; i += 1) {
-      const gx = rand(0, width);
-      const gy = rand(topY + 2, height);
-      const gr = rand(0.35, 1.1);
+      const sway = Math.sin(time * plant.swayRate + plant.phase) * plant.swayAmp * sx;
       ctx.beginPath();
-      ctx.arc(gx, gy, gr, 0, TAU);
-      ctx.fill();
+      ctx.moveTo(baseX, baseY);
+      ctx.bezierCurveTo(baseX - w * 0.5 + sway * 0.25, baseY - h * 0.33, baseX + w * 0.5 + sway, baseY - h * 0.66, baseX + sway, baseY - h);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(baseX - w * 0.28, baseY);
+      ctx.bezierCurveTo(baseX - w * 0.8 + sway * 0.2, baseY - h * 0.34, baseX - w * 0.12 + sway * 0.6, baseY - h * 0.7, baseX + sway * 0.56, baseY - h * 0.93);
+      ctx.stroke();
     }
+
+    ctx.restore();
   }
 
   #drawTankDropShadow(ctx) {
@@ -282,9 +279,9 @@ export class Renderer {
     const orientation = fish.heading();
     const bodyLength = fish.size * 1.32;
     const bodyHeight = fish.size * 0.73;
-    const tailWag = Math.sin(time * 0.004 + position.x * 0.008) * fish.size * 0.13;
-
     const isDead = fish.lifeState === 'DEAD';
+    const isSkeleton = fish.lifeState === 'SKELETON';
+    const tailWag = isDead || isSkeleton ? 0 : Math.sin(time * 0.004 + position.x * 0.008) * fish.size * 0.13;
     const tint = Math.sin((fish.colorHue + fish.size) * 0.14) * 3;
     const light = 54 + Math.sin(fish.size * 0.33) * 4;
 
@@ -296,7 +293,7 @@ export class Renderer {
     const bodyPath = new Path2D();
     bodyPath.ellipse(0, 0, bodyLength * 0.5, bodyHeight * 0.5, 0, 0, TAU);
 
-    ctx.fillStyle = isDead ? 'hsl(0deg 0% 56%)' : `hsl(${fish.colorHue + tint}deg 52% ${light}%)`;
+    ctx.fillStyle = isSkeleton ? 'hsl(36deg 8% 72%)' : (isDead ? 'hsl(0deg 0% 56%)' : `hsl(${fish.colorHue + tint}deg 52% ${light}%)`);
     ctx.fill(bodyPath);
 
     if (fish.id === this.world.selectedFishId) {
@@ -305,7 +302,7 @@ export class Renderer {
       ctx.stroke(bodyPath);
     }
 
-    if (this.quality === 'high') {
+    if (this.quality === 'high' && !isSkeleton) {
       this.#drawFishTexture(ctx, bodyLength, bodyHeight, fish);
     }
 
@@ -313,7 +310,7 @@ export class Renderer {
     ctx.strokeStyle = 'rgba(205, 230, 245, 0.13)';
     ctx.stroke(bodyPath);
 
-    ctx.fillStyle = isDead ? 'hsl(0deg 0% 42%)' : `hsl(${fish.colorHue + tint - 8}deg 40% ${light - 12}%)`;
+    ctx.fillStyle = isSkeleton ? 'hsl(35deg 9% 54%)' : (isDead ? 'hsl(0deg 0% 42%)' : `hsl(${fish.colorHue + tint - 8}deg 40% ${light - 12}%)`);
     ctx.beginPath();
     ctx.moveTo(-bodyLength * 0.52, 0);
     ctx.lineTo(-bodyLength * 0.84, bodyHeight * 0.35 + tailWag);
@@ -321,18 +318,19 @@ export class Renderer {
     ctx.closePath();
     ctx.fill();
 
-    ctx.fillStyle = 'rgba(255,255,255,0.7)';
-    ctx.beginPath();
-    ctx.arc(bodyLength * 0.22, -bodyHeight * 0.12, fish.size * 0.07, 0, TAU);
-    ctx.fill();
+    if (!isSkeleton) {
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      ctx.beginPath();
+      ctx.arc(bodyLength * 0.22, -bodyHeight * 0.12, fish.size * 0.07, 0, TAU);
+      ctx.fill();
 
-    ctx.fillStyle = isDead ? '#47515a' : '#0c1f2f';
-    ctx.beginPath();
-    ctx.arc(bodyLength * 0.24, -bodyHeight * 0.12, fish.size * 0.034, 0, TAU);
-    ctx.fill();
+      ctx.fillStyle = isDead ? '#47515a' : '#0c1f2f';
+      ctx.beginPath();
+      ctx.arc(bodyLength * 0.24, -bodyHeight * 0.12, fish.size * 0.034, 0, TAU);
+      ctx.fill();
+    }
 
-
-    const mouthOpen = fish.mouthOpen01?.() ?? 0;
+    const mouthOpen = isSkeleton ? 0 : (fish.mouthOpen01?.() ?? 0);
     const mouthSize = fish.size * 0.05 + mouthOpen * fish.size * 0.055;
     const mouthX = bodyLength * 0.49;
 
@@ -382,7 +380,6 @@ export class Renderer {
     ctx.fillText(`BUILD: ${BUILD_STAMP}`, x + 10, y + 34);
   }
 
-
   #drawDebugBounds(ctx) {
     const { x, y, width, height } = this.tankRect;
 
@@ -410,6 +407,7 @@ export class Renderer {
     ctx.setLineDash([]);
     ctx.restore();
   }
+
   #drawTankFrame(ctx) {
     const { x, y, width, height } = this.tankRect;
 

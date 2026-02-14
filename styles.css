@@ -257,3 +257,30 @@ input[type='range'] {
   color: var(--text-soft);
   font-size: 0.82rem;
 }
+
+.tab-content[data-content='fish'] {
+  max-height: min(58vh, 520px);
+  overflow-y: auto;
+}
+
+.fish-inspector {
+  grid-template-rows: auto auto;
+  min-height: 0;
+}
+
+.fish-list {
+  min-height: 0;
+  max-height: min(38vh, 360px);
+  overflow-y: auto;
+}
+
+.fish-name-group input[type='text'] {
+  border: 1px solid var(--deck-border);
+  background: rgba(18, 34, 49, 0.65);
+  color: var(--text-main);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 0.8rem;
+  width: 100%;
+  pointer-events: auto;
+}
