@@ -3,18 +3,27 @@
  * Responsibility: local steering, smooth speed changes, and safe movement bounds.
  */
 
-const TAU = Math.PI * 2;
+const MAX_TILT = Math.PI / 3;
+const MAX_TURN_RATE = (120 * Math.PI) / 180;
 
 const rand = (min, max) => min + Math.random() * (max - min);
+const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+const wrapAngle = (angle) => {
+  let a = angle;
+  while (a <= -Math.PI) a += Math.PI * 2;
+  while (a > Math.PI) a -= Math.PI * 2;
+  return a;
+};
 
 export class Fish {
   constructor(bounds, options = {}) {
     this.bounds = bounds;
+    this.size = options.size ?? rand(14, 30);
+
     this.position = { x: rand(0, bounds.width), y: rand(0, bounds.height) };
     this.velocity = { x: rand(-20, 20), y: rand(-8, 8) };
     this.target = this.#randomTarget();
 
-    this.size = options.size ?? rand(14, 30);
     this.baseSpeed = options.baseSpeed ?? rand(35, 95);
     this.currentSpeed = this.baseSpeed * 0.65;
     this.speedEase = rand(0.6, 1.15);
@@ -24,17 +33,24 @@ export class Fish {
     this.wanderTimer = 0;
   }
 
+  #steeringMargin() {
+    const base = Math.min(this.bounds.width, this.bounds.height) * 0.03;
+    return clamp(base, 10, 20);
+  }
+
   #randomTarget() {
+    const margin = this.#steeringMargin();
     return {
-      x: rand(50, Math.max(50, this.bounds.width - 50)),
-      y: rand(50, Math.max(50, this.bounds.height - 50))
+      x: rand(margin, Math.max(margin, this.bounds.width - margin)),
+      y: rand(margin, Math.max(margin, this.bounds.height - margin))
     };
   }
 
   setBounds(bounds) {
     this.bounds = bounds;
-    this.target.x = Math.min(Math.max(this.target.x, 0), bounds.width);
-    this.target.y = Math.min(Math.max(this.target.y, 0), bounds.height);
+    const margin = this.#steeringMargin();
+    this.target.x = clamp(this.target.x, margin, Math.max(margin, bounds.width - margin));
+    this.target.y = clamp(this.target.y, margin, Math.max(margin, bounds.height - margin));
   }
 
   update(delta) {
@@ -45,8 +61,7 @@ export class Fish {
     }
 
     const desired = this.#desiredDirection();
-    this.velocity.x += (desired.x - this.velocity.x) * Math.min(1, delta * this.turnRate);
-    this.velocity.y += (desired.y - this.velocity.y) * Math.min(1, delta * this.turnRate);
+    this.#steerVelocityToward(desired, delta);
 
     const targetSpeed = this.baseSpeed * rand(0.9, 1.08);
     this.currentSpeed += (targetSpeed - this.currentSpeed) * Math.min(1, delta * this.speedEase);
@@ -70,24 +85,54 @@ export class Fish {
     const wallForce = this.#wallForce();
 
     const combined = {
-      x: towardTarget.x * 0.85 + wallForce.x,
-      y: towardTarget.y * 0.85 + wallForce.y
+      x: towardTarget.x * 0.9 + wallForce.x,
+      y: towardTarget.y * 0.9 + wallForce.y
     };
 
     const cMag = Math.hypot(combined.x, combined.y) || 1;
-    return { x: combined.x / cMag, y: combined.y / cMag };
+    const clamped = this.#clampDirectionToTilt({ x: combined.x / cMag, y: combined.y / cMag });
+    return clamped;
+  }
+
+  #clampDirectionToTilt(direction) {
+    const rawAngle = Math.atan2(direction.y, direction.x);
+    const facing = Math.cos(rawAngle) < 0 ? -1 : 1;
+
+    const rawTilt = facing === 1 ? rawAngle : Math.PI - rawAngle;
+    const clampedTilt = clamp(wrapAngle(rawTilt), -MAX_TILT, MAX_TILT);
+    const angle = facing === 1 ? clampedTilt : Math.PI - clampedTilt;
+
+    return { x: Math.cos(angle), y: Math.sin(angle) };
+  }
+
+  #steerVelocityToward(desiredDirection, delta) {
+    const currentAngle = Math.atan2(this.velocity.y, this.velocity.x);
+    const targetAngle = Math.atan2(desiredDirection.y, desiredDirection.x);
+    const angleDelta = wrapAngle(targetAngle - currentAngle);
+
+    const maxStep = MAX_TURN_RATE * delta;
+    const limitedDelta = clamp(angleDelta, -maxStep, maxStep);
+    const nextAngle = currentAngle + limitedDelta;
+
+    const steerBlend = Math.min(1, delta * this.turnRate);
+    const angle = currentAngle + (nextAngle - currentAngle) * steerBlend;
+    const constrained = this.#clampDirectionToTilt({ x: Math.cos(angle), y: Math.sin(angle) });
+
+    this.velocity.x = constrained.x;
+    this.velocity.y = constrained.y;
   }
 
   #wallForce() {
-    const margin = 70;
+    const margin = this.#steeringMargin();
+    const influence = margin * 1.25;
     const push = { x: 0, y: 0 };
     const rightGap = this.bounds.width - this.position.x;
     const bottomGap = this.bounds.height - this.position.y;
 
-    if (this.position.x < margin) push.x += (margin - this.position.x) / margin;
-    if (rightGap < margin) push.x -= (margin - rightGap) / margin;
-    if (this.position.y < margin) push.y += (margin - this.position.y) / margin;
-    if (bottomGap < margin) push.y -= (margin - bottomGap) / margin;
+    if (this.position.x < influence) push.x += ((influence - this.position.x) / influence) * 0.6;
+    if (rightGap < influence) push.x -= ((influence - rightGap) / influence) * 0.6;
+    if (this.position.y < influence) push.y += ((influence - this.position.y) / influence) * 0.6;
+    if (bottomGap < influence) push.y -= ((influence - bottomGap) / influence) * 0.6;
 
     return push;
   }
@@ -112,8 +157,27 @@ export class Fish {
     }
   }
 
+
+  // Backward-compat shim: older builds called this private method from update().
+  // Keeping it declared prevents Safari parse/runtime failures if stale call-sites exist.
+  #updateRenderOrientation(_delta) {}
+
   heading() {
-    return Math.atan2(this.velocity.y, this.velocity.x) || rand(0, TAU);
+    const angle = Math.atan2(this.velocity.y, this.velocity.x);
+    const facing = Math.cos(angle) < 0 ? -1 : 1;
+    const tilt = clamp(wrapAngle(facing === 1 ? angle : Math.PI - angle), -MAX_TILT, MAX_TILT);
+
+    return { tilt, facing };
+  }
+
+  debugMovementBounds() {
+    const margin = this.#steeringMargin();
+    return {
+      x: margin,
+      y: margin,
+      width: Math.max(0, this.bounds.width - margin * 2),
+      height: Math.max(0, this.bounds.height - margin * 2)
+    };
   }
 
   #distanceToTarget() {
