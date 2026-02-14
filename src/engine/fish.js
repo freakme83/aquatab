@@ -1,32 +1,42 @@
+/**
+ * Fish entity model (coherent headingAngle + scalar speed).
+ * Compatible with:
+ * - world.js passing { position, headingAngle, speedFactor }
+ * - renderer.js expecting fish.heading() => { tilt, facing }
+ */
+
 const TAU = Math.PI * 2;
-const MAX_TILT = Math.PI / 3;
-const TARGET_REACHED_RADIUS = 18;
+const MAX_TILT = Math.PI / 3;               // 60°
+const MAX_TURN_RATE = (140 * Math.PI) / 180; // rad/sec
 
 const rand = (min, max) => min + Math.random() * (max - min);
-const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
-function normalizeAngle(angle) {
-  let out = angle;
-  while (out <= -Math.PI) out += TAU;
-  while (out > Math.PI) out -= TAU;
-  return out;
+function wrapAngle(a) {
+  let x = a;
+  while (x <= -Math.PI) x += TAU;
+  while (x > Math.PI) x -= TAU;
+  return x;
 }
 
-function shortestAngleDelta(from, to) {
-  return normalizeAngle(to - from);
+// clamp an absolute heading angle to keep tilt within ±MAX_TILT,
+// while still allowing left-facing swimming.
+function clampHeadingToTilt(angle) {
+  const a = wrapAngle(angle);
+  const facing = Math.cos(a) >= 0 ? 1 : -1;
+
+  // If facing right: base = 0, tilt = a
+  // If facing left: base = PI, tilt = PI - a
+  const tilt = facing === 1 ? a : Math.PI - a;
+  const clampedTilt = clamp(wrapAngle(tilt), -MAX_TILT, MAX_TILT);
+
+  return facing === 1 ? clampedTilt : Math.PI - clampedTilt;
 }
 
 function moveTowardsAngle(current, target, maxStep) {
-  const delta = shortestAngleDelta(current, target);
-  if (Math.abs(delta) <= maxStep) return normalizeAngle(target);
-  return normalizeAngle(current + Math.sign(delta) * maxStep);
-}
-
-function clampAngleToTilt(angle) {
-  const facingRight = Math.cos(angle) >= 0;
-  const base = facingRight ? 0 : Math.PI;
-  const relative = normalizeAngle(angle - base);
-  return normalizeAngle(base + clamp(relative, -MAX_TILT, MAX_TILT));
+  const delta = wrapAngle(target - current);
+  const step = clamp(delta, -maxStep, maxStep);
+  return wrapAngle(current + step);
 }
 
 export class Fish {
@@ -34,158 +44,182 @@ export class Fish {
     this.bounds = bounds;
 
     this.size = options.size ?? rand(14, 30);
-    this.colorHue = options.colorHue ?? rand(8, 42);
-    this.speedFactor = options.speedFactor ?? rand(0.55, 0.88);
+    this.colorHue = options.colorHue ?? rand(12, 38);
 
-    this.position = options.position
-      ? { x: options.position.x, y: options.position.y }
-      : { x: bounds.width * 0.5, y: bounds.height * 0.5 };
+    // Position from world.js spawn (important)
+    const p = options.position;
+    this.position = p
+      ? { x: p.x, y: p.y }
+      : { x: rand(0, bounds.width), y: rand(0, bounds.height) };
 
-    this.headingAngle = clampAngleToTilt(options.headingAngle ?? rand(-MAX_TILT, MAX_TILT));
-    this.desiredAngle = this.headingAngle;
-    this.currentSpeed = this.#baseSpeed() * rand(0.85, 1.05);
-    this.target = this.#pickTarget();
+    // Heading from world.js spawn (important)
+    const ha = typeof options.headingAngle === 'number' ? options.headingAngle : rand(-Math.PI, Math.PI);
+    this.headingAngle = clampHeadingToTilt(ha);
+
+    // Speed factor from world.js spawn (important)
+    this.speedFactor = typeof options.speedFactor === 'number' ? options.speedFactor : rand(0.56, 0.86);
+
+    this.baseSpeed = rand(35, 95) * this.speedFactor;
+    this.currentSpeed = this.baseSpeed * rand(0.75, 1.05);
+
+    this.target = this.#randomTarget();
+    this.retargetTimer = rand(2.5, 6.0);
+
+    // per-fish wander phase (natural feeling, cheap)
+    this.wanderPhase = rand(0, TAU);
+    this.wanderRate = rand(0.6, 1.2);
+
+    // cached margin so they can go near corners but not stick
+    this.marginPct = 0.028; // ~2.8%
   }
 
   setBounds(bounds) {
     this.bounds = bounds;
-    const movement = this.#movementBounds();
-    this.position.x = clamp(this.position.x, movement.minX, movement.maxX);
-    this.position.y = clamp(this.position.y, movement.minY, movement.maxY);
-    if (!this.#isTargetInBounds(this.target)) this.target = this.#pickTarget();
-  }
-
-  heading() {
-    const tilt = clampAngleToTilt(this.headingAngle);
-    return { tilt, facing: Math.cos(tilt) >= 0 ? 1 : -1 };
+    const m = this.#margin();
+    this.position.x = clamp(this.position.x, m, Math.max(m, bounds.width - m));
+    this.position.y = clamp(this.position.y, m, Math.max(m, bounds.height - m));
+    this.target.x = clamp(this.target.x, m, Math.max(m, bounds.width - m));
+    this.target.y = clamp(this.target.y, m, Math.max(m, bounds.height - m));
   }
 
   update(dt) {
-    if (!Number.isFinite(dt) || dt <= 0) return;
+    // Safety
+    if (!dt || dt <= 0) return;
+    dt = Math.min(dt, 0.05);
 
-    if (this.#shouldRetarget()) this.target = this.#pickTarget();
+    // Retargeting
+    this.retargetTimer -= dt;
+    const dist = this.#distanceToTarget();
+    if (this.retargetTimer <= 0 || dist < 28) {
+      this.target = this.#randomTarget();
+      this.retargetTimer = rand(2.5, 6.0);
+    }
 
-    const seek = this.#seekVector();
-    const avoidance = this.#wallAvoidanceVector();
-    const desiredX = seek.x + avoidance.x;
-    const desiredY = seek.y + avoidance.y;
+    // Compute desired heading from target seeking + wall avoidance + small wander
+    const desiredAngle = this.#computeDesiredAngle(dt);
 
-    const rawDesiredAngle = Math.atan2(desiredY, desiredX);
-    this.desiredAngle = clampAngleToTilt(rawDesiredAngle);
+    // Turn toward desired with rate limit
+    const clampedDesired = clampHeadingToTilt(desiredAngle);
+    this.headingAngle = moveTowardsAngle(this.headingAngle, clampedDesired, MAX_TURN_RATE * dt);
+    this.headingAngle = clampHeadingToTilt(this.headingAngle);
 
-    const maxTurnRate = 2.8;
-    this.headingAngle = moveTowardsAngle(this.headingAngle, this.desiredAngle, maxTurnRate * dt);
+    // Mild speed breathing (more “alive”)
+    const speedTarget = this.baseSpeed * (0.92 + 0.16 * Math.sin((Date.now() * 0.001) * this.wanderRate + this.wanderPhase));
+    this.currentSpeed += (speedTarget - this.currentSpeed) * Math.min(1, dt * 0.9);
 
-    const desiredSpeed = this.#baseSpeed() * (0.8 + Math.random() * 0.08);
-    this.currentSpeed += (desiredSpeed - this.currentSpeed) * Math.min(1, dt * 1.4);
+    // Integrate
+    const dx = Math.cos(this.headingAngle) * this.currentSpeed * dt;
+    const dy = Math.sin(this.headingAngle) * this.currentSpeed * dt;
 
-    this.position.x += Math.cos(this.headingAngle) * this.currentSpeed * dt;
-    this.position.y += Math.sin(this.headingAngle) * this.currentSpeed * dt;
+    this.position.x += dx;
+    this.position.y += dy;
 
+    // Collision handling: clamp + reflect heading so they never "stick"
     this.#resolveCollisions();
   }
 
-  debugMovementBounds() {
-    const movement = this.#movementBounds();
+  // Renderer expects { tilt, facing }
+  heading() {
+    const a = this.headingAngle;
+    const facing = Math.cos(a) >= 0 ? 1 : -1;
+    // tilt relative to horizontal; always small
+    const tiltRaw = Math.atan2(Math.sin(a), Math.abs(Math.cos(a)) + 1e-9);
+    const tilt = clamp(tiltRaw, -MAX_TILT, MAX_TILT);
+    return { tilt, facing };
+  }
+
+  /* ---------------------- internals ---------------------- */
+
+  #margin() {
+    const base = Math.min(this.bounds.width, this.bounds.height) * this.marginPct;
+    return clamp(base, 10, 20);
+  }
+
+  #randomTarget() {
+    const m = this.#margin();
     return {
-      x: movement.minX,
-      y: movement.minY,
-      width: movement.maxX - movement.minX,
-      height: movement.maxY - movement.minY
+      x: rand(m, Math.max(m, this.bounds.width - m)),
+      y: rand(m, Math.max(m, this.bounds.height - m)),
     };
   }
 
-  #baseSpeed() {
-    return 34 + this.size * 1.55 * this.speedFactor;
+  #distanceToTarget() {
+    return Math.hypot(this.target.x - this.position.x, this.target.y - this.position.y);
   }
 
-  #movementBounds() {
-    const margin = this.size * 0.62;
-    return {
-      minX: margin,
-      maxX: Math.max(margin, this.bounds.width - margin),
-      minY: margin,
-      maxY: Math.max(margin, this.bounds.height - margin)
-    };
-  }
-
-  #pickTarget() {
-    const inset = clamp(Math.min(this.bounds.width, this.bounds.height) * 0.04, 8, 18);
-    return {
-      x: rand(inset, Math.max(inset, this.bounds.width - inset)),
-      y: rand(inset, Math.max(inset, this.bounds.height - inset))
-    };
-  }
-
-  #isTargetInBounds(target) {
-    if (!target) return false;
-    return target.x >= 0 && target.x <= this.bounds.width && target.y >= 0 && target.y <= this.bounds.height;
-  }
-
-  #shouldRetarget() {
-    const dist = Math.hypot(this.target.x - this.position.x, this.target.y - this.position.y);
-    if (dist <= TARGET_REACHED_RADIUS) return true;
-    return Math.random() < 0.0025;
-  }
-
-  #seekVector() {
+  #computeDesiredAngle(dt) {
+    // Seek vector
     const dx = this.target.x - this.position.x;
     const dy = this.target.y - this.position.y;
-    const mag = Math.hypot(dx, dy) || 1;
-    return { x: dx / mag, y: dy / mag };
+    const d = Math.hypot(dx, dy) || 1;
+    const sx = dx / d;
+    const sy = dy / d;
+
+    // Wall avoidance vector (only strong near edges)
+    const { ax, ay } = this.#wallAvoidance();
+
+    // Small wander (per-fish)
+    this.wanderPhase += dt * this.wanderRate;
+    const wx = Math.cos(this.wanderPhase) * 0.10;
+    const wy = Math.sin(this.wanderPhase * 0.9) * 0.06;
+
+    // Combine
+    const cx = sx * 0.92 + ax * 0.95 + wx;
+    const cy = sy * 0.92 + ay * 0.95 + wy;
+
+    // If combined nearly cancels out, keep current heading (prevents jitter/stall)
+    if (Math.hypot(cx, cy) < 1e-4) return this.headingAngle;
+
+    return Math.atan2(cy, cx);
   }
 
-  #wallAvoidanceVector() {
-    const movement = this.#movementBounds();
-    const influence = clamp(Math.min(this.bounds.width, this.bounds.height) * 0.22, 45, 110);
-    const strength = 2.2;
+  #wallAvoidance() {
+    const m = this.#margin();
+    const influence = m * 1.15;
 
-    let ax = 0;
-    let ay = 0;
+    const left = this.position.x;
+    const right = this.bounds.width - this.position.x;
+    const top = this.position.y;
+    const bottom = this.bounds.height - this.position.y;
 
-    const dLeft = this.position.x - movement.minX;
-    const dRight = movement.maxX - this.position.x;
-    const dTop = this.position.y - movement.minY;
-    const dBottom = movement.maxY - this.position.y;
+    let ax = 0, ay = 0;
 
-    if (dLeft < influence) ax += ((influence - dLeft) / influence) ** 2 * strength;
-    if (dRight < influence) ax -= ((influence - dRight) / influence) ** 2 * strength;
-    if (dTop < influence) ay += ((influence - dTop) / influence) ** 2 * strength;
-    if (dBottom < influence) ay -= ((influence - dBottom) / influence) ** 2 * strength;
+    // Only start pushing when within influence zone
+    if (left < influence) ax += ((influence - left) / influence) * 0.8;
+    if (right < influence) ax -= ((influence - right) / influence) * 0.8;
+    if (top < influence) ay += ((influence - top) / influence) * 0.55;
+    if (bottom < influence) ay -= ((influence - bottom) / influence) * 0.55;
 
-    return { x: ax, y: ay };
+    return { ax, ay };
   }
 
   #resolveCollisions() {
-    const movement = this.#movementBounds();
+    const r = this.size * 0.55;
+    const m = this.#margin();
+
+    const minX = m + r;
+    const maxX = this.bounds.width - m - r;
+    const minY = m + r;
+    const maxY = this.bounds.height - m - r;
 
     let hitX = false;
     let hitY = false;
 
-    if (this.position.x <= movement.minX) {
-      this.position.x = movement.minX;
-      hitX = true;
-    } else if (this.position.x >= movement.maxX) {
-      this.position.x = movement.maxX;
-      hitX = true;
-    }
-
-    if (this.position.y <= movement.minY) {
-      this.position.y = movement.minY;
-      hitY = true;
-    } else if (this.position.y >= movement.maxY) {
-      this.position.y = movement.maxY;
-      hitY = true;
-    }
-
-    if (hitX) this.headingAngle = Math.PI - this.headingAngle;
-    if (hitY) this.headingAngle = -this.headingAngle;
+    if (this.position.x < minX) { this.position.x = minX; hitX = true; }
+    if (this.position.x > maxX) { this.position.x = maxX; hitX = true; }
+    if (this.position.y < minY) { this.position.y = minY; hitY = true; }
+    if (this.position.y > maxY) { this.position.y = maxY; hitY = true; }
 
     if (hitX || hitY) {
-      this.headingAngle = clampAngleToTilt(this.headingAngle);
-      this.desiredAngle = this.headingAngle;
-      this.target = this.#pickTarget();
-      this.currentSpeed = Math.max(this.currentSpeed, this.#baseSpeed() * 0.95);
+      // reflect heading away from wall and nudge inward slightly
+      if (hitX) this.headingAngle = Math.PI - this.headingAngle;
+      if (hitY) this.headingAngle = -this.headingAngle;
+
+      this.headingAngle = clampHeadingToTilt(this.headingAngle);
+
+      // nudge inward so it doesn't keep re-colliding due to precision
+      this.position.x = clamp(this.position.x, minX + 0.5, maxX - 0.5);
+      this.position.y = clamp(this.position.y, minY + 0.5, maxY - 0.5);
     }
   }
 }
