@@ -5,6 +5,8 @@
  * - renderer.js expecting fish.heading() => { tilt, facing }
  */
 
+console.log('Fish loaded');
+
 const TAU = Math.PI * 2;
 const MAX_TILT = Math.PI / 3;               // 60°
 const MAX_TURN_RATE = (140 * Math.PI) / 180; // rad/sec
