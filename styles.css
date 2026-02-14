@@ -1,0 +1,116 @@
+:root {
+  color-scheme: dark;
+  --panel-bg: rgba(6, 16, 30, 0.72);
+  --panel-border: rgba(139, 202, 255, 0.22);
+  --text-main: #e5f3ff;
+  --text-soft: #9dc4de;
+  --accent: #6bc6ff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: Inter, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  color: var(--text-main);
+  background: #01050a;
+}
+
+.app-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+#aquariumCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.side-tab {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 250px;
+  border-radius: 14px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel-bg);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.tab-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.tab-button {
+  background: transparent;
+  border: 0;
+  color: var(--text-soft);
+  padding: 12px;
+  cursor: pointer;
+  transition: 150ms ease;
+}
+
+.tab-button.active {
+  color: var(--text-main);
+  background: rgba(90, 160, 210, 0.12);
+}
+
+.tab-content {
+  display: none;
+  padding: 14px;
+}
+
+.tab-content.active {
+  display: block;
+}
+
+h2 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+}
+
+.stat-row,
+.control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0;
+  color: var(--text-soft);
+}
+
+.stat-row {
+  flex-direction: row;
+  justify-content: space-between;
+  color: var(--text-main);
+}
+
+input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.button-row {
+  margin-top: 12px;
+}
+
+.button-row button {
+  border: 1px solid var(--panel-border);
+  background: rgba(24, 88, 138, 0.4);
+  color: var(--text-main);
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 9px;
+  cursor: pointer;
+}
