@@ -5,7 +5,9 @@
 
 import { Fish } from './fish.js';
 
+const MAX_TILT = Math.PI / 3;
 const rand = (min, max) => min + Math.random() * (max - min);
+const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 
 function makeBubble(bounds) {
   return {
@@ -31,6 +33,51 @@ export class World {
     this.#seedBubbles();
   }
 
+  #spawnMargin() {
+    const base = Math.min(this.bounds.width, this.bounds.height) * 0.03;
+    return clamp(base, 10, 20);
+  }
+
+  #randomHeading() {
+    const facing = Math.random() < 0.5 ? -1 : 1;
+    const tilt = rand(-MAX_TILT, MAX_TILT);
+    return facing < 0 ? Math.PI - tilt : tilt;
+  }
+
+  #randomSpawn(size) {
+    const margin = this.#spawnMargin();
+    const x = rand(margin, Math.max(margin, this.bounds.width - margin));
+    const y = rand(margin, Math.max(margin, this.bounds.height - margin));
+
+    return { x, y, size };
+  }
+
+  #isSpawnClear(position, size) {
+    for (const fish of this.fish) {
+      const minDist = Math.max(size * 1.5, fish.size * 1.5);
+      const dist = Math.hypot(position.x - fish.position.x, position.y - fish.position.y);
+      if (dist < minDist) return false;
+    }
+    return true;
+  }
+
+  #createFish() {
+    const size = rand(14, 30);
+    let spawn = this.#randomSpawn(size);
+
+    for (let i = 0; i < 20; i += 1) {
+      if (this.#isSpawnClear(spawn, size)) break;
+      spawn = this.#randomSpawn(size);
+    }
+
+    return new Fish(this.bounds, {
+      size,
+      position: { x: spawn.x, y: spawn.y },
+      headingAngle: this.#randomHeading(),
+      speedFactor: rand(0.56, 0.86)
+    });
+  }
+
   resize(width, height) {
     this.bounds.width = width;
     this.bounds.height = height;
@@ -46,7 +93,7 @@ export class World {
     const clamped = Math.max(1, Math.min(50, Math.round(count)));
 
     while (this.fish.length < clamped) {
-      this.fish.push(new Fish(this.bounds));
+      this.fish.push(this.#createFish());
     }
     while (this.fish.length > clamped) {
       this.fish.pop();
