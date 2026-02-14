@@ -41,6 +41,11 @@ export class Fish {
     return clamp(base, 10, 20);
   }
 
+  #steeringMargin() {
+    const base = Math.min(this.bounds.width, this.bounds.height) * 0.03;
+    return clamp(base, 10, 20);
+  }
+
   #randomTarget() {
     const margin = this.#steeringMargin();
     return {
@@ -160,6 +165,11 @@ export class Fish {
       this.velocity.y = -Math.abs(this.velocity.y);
     }
   }
+
+
+  // Backward-compat shim: older builds called this private method from update().
+  // Keeping it declared prevents Safari parse/runtime failures if stale call-sites exist.
+  #updateRenderOrientation(_delta) {}
 
   heading() {
     const angle = Math.atan2(this.velocity.y, this.velocity.x);
