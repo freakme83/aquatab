@@ -27,7 +27,7 @@ export const CONFIG = Object.freeze({
       hygiene01: 1,
       dirt01: 0,
       referenceFishCount: 20,
-      baselineDecayPerSec: 0.0008,
+      baselineDecayPerSec: 0.0002,
       bioloadDirtPerSec: 0.00035,
       dirtPerExpiredFood: 0.015,
       dirtToDecayMultiplier: 3
