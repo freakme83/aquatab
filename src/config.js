@@ -112,7 +112,15 @@ export const CONFIG = Object.freeze({
       JUVENILE: 1.04,
       ADULT: 1.0,
       OLD: 0.88
-    }
+    },
+
+    waterWellbeing: {
+      stressStartHygiene01: 0.7,
+      stressCurvePower: 1.35,
+      stressPerSec: 0.0012,
+      ageSensitivityMin: 1,
+      ageSensitivityEdgeBoost: 0.6
+    },
 
   }
 });

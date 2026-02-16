@@ -288,7 +288,7 @@ export class World {
     this.#updatePlaySessions();
     this.#tryExpandPlaySessions();
     this.#tryStartPlaySessions();
-    for (const fish of this.fish) fish.updateMetabolism(delta);
+    for (const fish of this.fish) fish.updateMetabolism(delta, this);
     for (const fish of this.fish) fish.decideBehavior(this, delta);
     for (const fish of this.fish) fish.applySteering(delta);
     for (const fish of this.fish) fish.tryConsumeFood(this);
