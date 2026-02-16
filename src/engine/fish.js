@@ -131,6 +131,8 @@ export class Fish {
     this.lifeState = 'ALIVE';
     this.deadAtSec = null;
     this.skeletonAtSec = null;
+    this.corpseRemoved = false;
+    this.corpseDirtApplied01 = 0;
     this.behavior = { mode: 'wander', targetFoodId: null, speedBoost: 1 };
     this.eatAnimTimer = 0;
     this.eatAnimDuration = 0.22;

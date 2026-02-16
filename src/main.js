@@ -54,10 +54,11 @@ canvas.addEventListener('click', (event) => {
   const clickedFish = world.findFishAt(worldPoint.x, worldPoint.y);
   if (clickedFish) {
     world.toggleFishSelection(clickedFish.id);
-    panel.selectTab('fish');
+    if (clickedFish.lifeState !== 'DEAD') panel.selectTab('fish');
     return;
   }
 
+  hideCorpseAction();
   world.spawnFood(worldPoint.x, worldPoint.y);
 });
 
@@ -66,6 +67,66 @@ panel.sync({
   speedMultiplier: world.speedMultiplier,
   paused: world.paused,
   quality
+});
+
+const corpseActionButton = document.createElement('button');
+corpseActionButton.type = 'button';
+corpseActionButton.textContent = 'Havuzdan al';
+corpseActionButton.hidden = true;
+corpseActionButton.style.position = 'fixed';
+corpseActionButton.style.zIndex = '12';
+corpseActionButton.style.padding = '6px 10px';
+corpseActionButton.style.borderRadius = '999px';
+corpseActionButton.style.border = '1px solid rgba(255,255,255,0.38)';
+corpseActionButton.style.background = 'rgba(20, 28, 38, 0.86)';
+corpseActionButton.style.color = '#eaf7ff';
+corpseActionButton.style.fontSize = '12px';
+corpseActionButton.style.cursor = 'pointer';
+document.body.appendChild(corpseActionButton);
+
+function worldToClientPoint(worldX, worldY) {
+  const canvasRect = canvas.getBoundingClientRect();
+  const { x, y, width, height } = renderer.tankRect;
+  if (!width || !height || world.bounds.width <= 0 || world.bounds.height <= 0) return null;
+
+  return {
+    x: canvasRect.left + x + (worldX / world.bounds.width) * width,
+    y: canvasRect.top + y + (worldY / world.bounds.height) * height
+  };
+}
+
+function hideCorpseAction() {
+  corpseActionButton.hidden = true;
+}
+
+function updateCorpseActionButton() {
+  const selectedFish = world.getSelectedFish?.();
+  if (!selectedFish || selectedFish.lifeState !== 'DEAD') {
+    hideCorpseAction();
+    return;
+  }
+
+  const point = worldToClientPoint(selectedFish.position.x, selectedFish.position.y - selectedFish.size * 1.4);
+  if (!point) {
+    hideCorpseAction();
+    return;
+  }
+
+  corpseActionButton.hidden = false;
+  corpseActionButton.style.left = `${Math.round(point.x)}px`;
+  corpseActionButton.style.top = `${Math.round(point.y)}px`;
+  corpseActionButton.style.transform = 'translate(-50%, -100%)';
+}
+
+corpseActionButton.addEventListener('click', () => {
+  const selectedFish = world.getSelectedFish?.();
+  if (!selectedFish || selectedFish.lifeState !== 'DEAD') {
+    hideCorpseAction();
+    return;
+  }
+
+  world.removeCorpse(selectedFish.id);
+  hideCorpseAction();
 });
 
 function resize() {
@@ -133,6 +194,7 @@ function tick(now) {
     filterUnlockThreshold: world.filterUnlockThreshold
   });
   panel.updateFishInspector(world.fish, world.selectedFishId, world.simTimeSec);
+  updateCorpseActionButton();
 
   rafId = requestAnimationFrame(tick);
 }
@@ -173,6 +235,7 @@ function syncDriversToVisibility() {
   if (document.visibilityState === 'hidden') {
     // Hidden: sim continues, no rendering
     stopRaf();
+    hideCorpseAction();
     stopBackgroundSim(); // ensure no overlap
     startBackgroundSim();
   } else {
