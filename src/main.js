@@ -84,14 +84,15 @@ let lastTime = performance.now();
 let fps = 60;
 
 const SIMULATION_STEP_SEC = 1 / 60;
-const MAX_CATCHUP_SEC = 5;
+const MAX_DELTA_SEC = 0.05;
 let simulationTime = performance.now();
+let intervalDriverId = null;
 
 function advanceSimulation(now = performance.now()) {
   const elapsedSec = Math.max(0, (now - simulationTime) / 1000);
   simulationTime = now;
 
-  let remaining = Math.min(elapsedSec, MAX_CATCHUP_SEC);
+  let remaining = Math.min(elapsedSec, MAX_DELTA_SEC);
   while (remaining > 0) {
     const delta = Math.min(SIMULATION_STEP_SEC, remaining);
     world.update(delta);
@@ -99,12 +100,39 @@ function advanceSimulation(now = performance.now()) {
   }
 }
 
-setInterval(() => {
-  advanceSimulation();
-}, SIMULATION_STEP_SEC * 1000);
+function startIntervalDriver() {
+  if (intervalDriverId !== null) return;
+  intervalDriverId = setInterval(() => {
+    advanceSimulation();
+  }, SIMULATION_STEP_SEC * 1000);
+}
+
+function stopIntervalDriver() {
+  if (intervalDriverId === null) return;
+  clearInterval(intervalDriverId);
+  intervalDriverId = null;
+}
+
+function syncDriverToVisibility() {
+  if (document.visibilityState === 'visible') {
+    stopIntervalDriver();
+
+    // Avoid fast-forward after returning from a hidden tab.
+    const now = performance.now();
+    simulationTime = now;
+    lastTime = now;
+    return;
+  }
+
+  startIntervalDriver();
+
+}
+
+document.addEventListener('visibilitychange', syncDriverToVisibility);
+syncDriverToVisibility();
 
 function tick(now) {
-  const rawDelta = Math.min(0.05, (now - lastTime) / 1000);
+  const rawDelta = Math.min(MAX_DELTA_SEC, (now - lastTime) / 1000);
   lastTime = now;
 
   if (rawDelta > 0) {
@@ -112,8 +140,10 @@ function tick(now) {
     fps += (instantFps - fps) * 0.1;
   }
 
-  advanceSimulation(now);
-  renderer.render(now, rawDelta);
+  if (document.visibilityState === 'visible') {
+    advanceSimulation(now);
+    renderer.render(now, rawDelta);
+  }
 
   panel.updateStats({ fps, fishCount: world.fish.length, quality });
   panel.updateFishInspector(world.fish, world.selectedFishId, world.simTimeSec);
