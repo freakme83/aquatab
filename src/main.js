@@ -115,7 +115,12 @@ function tick(now) {
   stepSim(rawDelta, 'visible');
   renderer.render(now, renderDelta);
 
-  panel.updateStats({ fps, fishCount: world.fish.length, quality });
+  panel.updateStats({
+    fps,
+    fishCount: world.fish.length,
+    quality,
+    cleanliness01: world.water.hygiene01
+  });
   panel.updateFishInspector(world.fish, world.selectedFishId, world.simTimeSec);
 
   rafId = requestAnimationFrame(tick);

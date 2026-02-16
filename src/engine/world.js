@@ -18,6 +18,14 @@ const AGE_CONFIG = CONFIG.fish.age;
 const GROWTH_CONFIG = CONFIG.fish.growth;
 const FISH_DEAD_TO_SKELETON_SEC = CONFIG.world.fishLifecycle.deadToSkeletonSec;
 const FISH_SKELETON_TO_REMOVE_SEC = CONFIG.world.fishLifecycle.skeletonToRemoveSec;
+const WATER_CONFIG = CONFIG.world.water;
+const WATER_INITIAL_HYGIENE01 = 1;
+const WATER_INITIAL_DIRT01 = 0;
+const WATER_REFERENCE_FISH_COUNT = Math.max(1, WATER_CONFIG.referenceFishCount ?? 20);
+const WATER_BASELINE_DECAY_PER_SEC = Math.max(0, WATER_CONFIG.baselineDecayPerSec ?? 0);
+const WATER_BIOLOAD_DIRT_PER_SEC = Math.max(0, WATER_CONFIG.bioloadDirtPerSec ?? 0);
+const WATER_DIRT_PER_EXPIRED_FOOD = Math.max(0, WATER_CONFIG.dirtPerExpiredFood ?? 0);
+const WATER_DIRT_TO_DECAY_MULTIPLIER = Math.max(0, WATER_CONFIG.dirtToDecayMultiplier ?? 3);
 
 function makeBubble(bounds) {
   return {
@@ -52,7 +60,8 @@ export class World {
     this.groundAlgae = [];
 
     // Global environment state (will grow over time).
-    this.water = { ...CONFIG.world.water };
+    this.water = this.#createInitialWaterState();
+    this.expiredFoodSinceLastWaterUpdate = 0;
 
     this.paused = false;
     this.speedMultiplier = 1;
@@ -286,7 +295,33 @@ export class World {
 
     this.#updateFishLifeState();
     this.#updateFood(delta);
+    this.#updateWaterHygiene(delta);
     this.#updateBubbles(delta);
+  }
+
+  #createInitialWaterState() {
+    return {
+      hygiene01: WATER_INITIAL_HYGIENE01,
+      dirt01: WATER_INITIAL_DIRT01
+    };
+  }
+
+  #updateWaterHygiene(dtSec) {
+    const expiredFoodCount = this.expiredFoodSinceLastWaterUpdate;
+    this.expiredFoodSinceLastWaterUpdate = 0;
+
+    if (!Number.isFinite(dtSec) || dtSec <= 0) return;
+
+    const fishCount = this.fish.length;
+    const bioload = fishCount / WATER_REFERENCE_FISH_COUNT;
+
+    const bioloadDirt = WATER_BIOLOAD_DIRT_PER_SEC * bioload * dtSec;
+    const expiredFoodDirt = expiredFoodCount * WATER_DIRT_PER_EXPIRED_FOOD;
+    this.water.dirt01 = clamp(this.water.dirt01 + bioloadDirt + expiredFoodDirt, 0, 1);
+
+    const dirtMultiplier = 1 + this.water.dirt01 * WATER_DIRT_TO_DECAY_MULTIPLIER;
+    const baselineDecay = WATER_BASELINE_DECAY_PER_SEC * bioload * dirtMultiplier * dtSec;
+    this.water.hygiene01 = clamp(this.water.hygiene01 - baselineDecay, 0, 1);
   }
 
   #seedGroundAlgae() {
@@ -504,7 +539,11 @@ export class World {
         item.vy = Math.min(item.vy, FOOD_MAX_FALL_SPEED);
       }
 
-      if (Number.isFinite(item.ttl) && item.ttl <= 0) this.food.splice(i, 1);
+      if (Number.isFinite(item.ttl) && item.ttl <= 0) {
+        this.food.splice(i, 1);
+        this.expiredFoodSinceLastWaterUpdate += 1;
+        this.emit('foodExpired', { foodId: item.id });
+      }
     }
   }
 

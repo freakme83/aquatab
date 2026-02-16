@@ -24,7 +24,13 @@ export const CONFIG = Object.freeze({
     },
     // Placeholder for future global systems.
     water: {
-      hygiene01: 1
+      hygiene01: 1,
+      dirt01: 0,
+      referenceFishCount: 20,
+      baselineDecayPerSec: 0.0002,
+      bioloadDirtPerSec: 0.00035,
+      dirtPerExpiredFood: 0.015,
+      dirtToDecayMultiplier: 3
     }
   },
 
