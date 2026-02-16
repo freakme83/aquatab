@@ -18,6 +18,7 @@ export class Panel {
     this.fishCountStat = this.root.querySelector('[data-stat="fishCount"]');
     this.qualityStat = this.root.querySelector('[data-stat="quality"]');
     this.cleanlinessStat = this.root.querySelector('[data-stat="cleanliness"]');
+    this.filterUnlockStat = this.root.querySelector('[data-stat="filterUnlock"]');
 
     this.fishSlider = this.root.querySelector('[data-control="fishCount"]');
     this.speedSlider = this.root.querySelector('[data-control="simSpeed"]');
@@ -143,7 +144,7 @@ export class Panel {
     this.#setQualityText(quality);
   }
 
-  updateStats({ fps, fishCount, quality, cleanliness01 }) {
+  updateStats({ fps, fishCount, quality, cleanliness01, filterUnlocked, foodsConsumedCount, filterUnlockThreshold }) {
     this.fpsStat.textContent = String(Math.round(fps));
     this.fishCountStat.textContent = String(fishCount);
     this.#setQualityText(quality);
@@ -151,6 +152,16 @@ export class Panel {
     if (this.cleanlinessStat) {
       const cleanlinessPct = Math.round((cleanliness01 ?? 1) * 100);
       this.cleanlinessStat.textContent = `${cleanlinessPct}%`;
+    }
+
+    if (this.filterUnlockStat) {
+      if (filterUnlocked) {
+        this.filterUnlockStat.textContent = 'Filter: Unlocked';
+      } else {
+        const consumed = Math.max(0, Math.floor(foodsConsumedCount ?? 0));
+        const threshold = Math.max(0, Math.floor(filterUnlockThreshold ?? 0));
+        this.filterUnlockStat.textContent = `Filter: Locked (${consumed} / ${threshold})`;
+      }
     }
   }
 
