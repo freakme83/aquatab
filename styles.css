@@ -38,15 +38,16 @@ body::before {
   padding: clamp(20px, 3.5vw, 48px);
   display: grid;
   grid-template-columns: minmax(0, 1fr) 288px;
-  gap: clamp(16px, 2.3vw, 28px);
+  gap: clamp(14px, 1.2vw, 22px);
   align-items: center;
 }
 
 .tank-stage {
   min-width: 0;
   height: min(82vh, 860px);
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .tank-shell {
