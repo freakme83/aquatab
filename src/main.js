@@ -7,7 +7,7 @@ import { World } from './engine/world.js';
 import { Renderer } from './render/renderer.js';
 import { Panel } from './ui/panel.js';
 
-const INITIAL_FISH_COUNT = 10;
+const INITIAL_FISH_COUNT = 20;
 
 const canvas = document.getElementById('aquariumCanvas');
 const panelRoot = document.getElementById('panelRoot');
@@ -89,10 +89,15 @@ let bgIntervalId = null;
 let lastTime = performance.now();
 let fps = 60;
 
-function stepSim(rawDeltaSec) {
-  // Background tabs can yield large deltas; clamp to avoid huge jumps.
-  // 0.25s is a good compromise: time progresses, but no wild fast-forward.
-  const dt = Math.min(0.25, Math.max(0, rawDeltaSec));
+/**
+ * Advance simulation once.
+ * mode:
+ *  - 'visible': clamp dt tighter for stability (we are rendering).
+ *  - 'hidden' : allow large dt so sim time keeps up despite timer throttling.
+ */
+function stepSim(rawDeltaSec, mode = 'visible') {
+  const maxDt = mode === 'hidden' ? 5.0 : 0.25;
+  const dt = Math.min(maxDt, Math.max(0, rawDeltaSec));
   if (dt <= 0) return;
   world.update(dt);
 }
@@ -101,13 +106,13 @@ function tick(now) {
   const rawDelta = (now - lastTime) / 1000;
   lastTime = now;
 
-  // For FPS calculation and rendering delta, keep it tighter for stability.
+  // For FPS calculation and rendering delta, keep it tight for stability.
   const renderDelta = Math.min(0.05, Math.max(0.000001, rawDelta));
   const instantFps = 1 / renderDelta;
   fps += (instantFps - fps) * 0.1;
 
   // Visible: sim + render
-  stepSim(rawDelta);
+  stepSim(rawDelta, 'visible');
   renderer.render(now, renderDelta);
 
   panel.updateStats({ fps, fishCount: world.fish.length, quality });
@@ -136,8 +141,10 @@ function startBackgroundSim() {
     const now = performance.now();
     const rawDelta = (now - last) / 1000;
     last = now;
-    stepSim(rawDelta);
-  }, 250); // 4 Hz in background is enough; dt carries elapsed time.
+
+    // Hidden: advance sim only (no rendering)
+    stepSim(rawDelta, 'hidden');
+  }, 250); // 4 Hz target; browser may throttle, dt will carry elapsed time.
 }
 
 function stopBackgroundSim() {
@@ -155,7 +162,7 @@ function syncDriversToVisibility() {
   } else {
     // Visible: sim + render on RAF
     stopBackgroundSim();
-    stopRaf(); // safe restart
+    stopRaf(); // safe restart (also resets lastTime in startRaf)
     startRaf();
   }
 }
