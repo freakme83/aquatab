@@ -83,6 +83,8 @@ export class Renderer {
     this.#clipTankWater(ctx);
     this.#drawCachedBackground(ctx);
     this.#drawWaterPlants(ctx, time);
+    this.#drawGroundAlgae(ctx, time);
+    this.#drawPlayEffects(ctx, time);
     this.#drawWaterParticles(ctx, delta);
     this.#drawBubbles(ctx);
     this.#drawFood(ctx);
@@ -182,6 +184,66 @@ export class Renderer {
     }
 
     ctx.restore();
+  }
+
+
+  #drawGroundAlgae(ctx, time) {
+    const sx = this.tankRect.width / this.world.bounds.width;
+    const sy = this.tankRect.height / this.world.bounds.height;
+
+    ctx.save();
+    ctx.lineCap = 'round';
+
+    for (const algae of this.world.groundAlgae ?? []) {
+      const baseX = this.tankRect.x + algae.x * sx;
+      const baseY = this.tankRect.y + algae.y * sy;
+      const h = algae.height * sy;
+      const w = algae.width * sx;
+      const sway = Math.sin(time * algae.swayRate + algae.phase) * algae.swayAmp * sx;
+
+      ctx.strokeStyle = 'hsla(115deg 58% 62% / 0.52)';
+      ctx.lineWidth = Math.max(0.9, w * 0.21);
+
+      ctx.beginPath();
+      ctx.moveTo(baseX, baseY);
+      ctx.quadraticCurveTo(baseX - w * 0.3 + sway * 0.3, baseY - h * 0.52, baseX + sway, baseY - h);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(baseX - w * 0.2, baseY);
+      ctx.quadraticCurveTo(baseX - w * 0.55 + sway * 0.2, baseY - h * 0.48, baseX + sway * 0.72, baseY - h * 0.86);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  #drawPlayEffects(ctx, time) {
+    const sx = this.tankRect.width / this.world.bounds.width;
+    const sy = this.tankRect.height / this.world.bounds.height;
+
+    for (const session of this.world.playSessions ?? []) {
+      if (!session.startedNearAlgae) continue;
+      const x = this.tankRect.x + session.origin.x * sx;
+      const y = this.tankRect.y + session.origin.y * sy;
+      const life = Math.max(0, session.untilSec - this.world.simTimeSec);
+      const pulse = (Math.sin(time * 0.007 + session.id) + 1) * 0.5;
+      const r1 = (16 + pulse * 8) * sx;
+      const r2 = (28 + pulse * 12) * sx;
+      const alpha = Math.min(0.34, 0.14 + life * 0.02);
+
+      ctx.beginPath();
+      ctx.strokeStyle = `rgba(164, 255, 169, ${alpha})`;
+      ctx.lineWidth = 1.2;
+      ctx.arc(x, y, r1, 0, TAU);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.strokeStyle = `rgba(150, 240, 158, ${alpha * 0.7})`;
+      ctx.lineWidth = 0.9;
+      ctx.arc(x, y, r2, 0, TAU);
+      ctx.stroke();
+    }
   }
 
   #drawTankDropShadow(ctx) {
