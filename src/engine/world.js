@@ -41,12 +41,16 @@ export class World {
     this.bubbles = [];
     this.nextFoodId = 1;
     this.nextFishId = 1;
+    this.nextPlaySessionId = 1;
     this.simTimeSec = 0;
     this.selectedFishId = null;
 
     // Simple event queue for UI/telemetry/achievements.
     // Use `world.flushEvents()` from main loop if/when needed.
     this.events = [];
+    this.playSessions = [];
+    this.playPairCooldowns = new Map();
+    this.groundAlgae = [];
 
     // Global environment state (will grow over time).
     this.water = { ...CONFIG.world.water };
@@ -56,6 +60,7 @@ export class World {
 
     this.setFishCount(initialFishCount);
     this.#seedBubbles();
+    this.#seedGroundAlgae();
   }
 
   emit(type, payload = {}) {
@@ -162,6 +167,8 @@ export class World {
       bubble.x = Math.min(Math.max(0, bubble.x), width);
       bubble.y = Math.min(Math.max(0, bubble.y), height + 40);
     }
+
+    this.#seedGroundAlgae();
   }
 
 
@@ -269,6 +276,9 @@ export class World {
     this.simTimeSec += delta;
 
     for (const fish of this.fish) fish.updateLifeCycle?.(this.simTimeSec);
+    for (const fish of this.fish) fish.updatePlayState?.(this.simTimeSec);
+    this.#updatePlaySessions();
+    this.#tryStartPlaySessions();
     for (const fish of this.fish) fish.updateMetabolism(delta);
     for (const fish of this.fish) fish.decideBehavior(this, delta);
     for (const fish of this.fish) fish.applySteering(delta);
@@ -277,6 +287,130 @@ export class World {
     this.#updateFishLifeState();
     this.#updateFood(delta);
     this.#updateBubbles(delta);
+  }
+
+  #seedGroundAlgae() {
+    const count = Math.max(10, Math.floor(this.bounds.width / 76));
+    this.groundAlgae = Array.from({ length: count }, () => ({
+      x: rand(12, Math.max(12, this.bounds.width - 12)),
+      y: this.bounds.height - rand(1, 10),
+      height: rand(this.bounds.height * 0.07, this.bounds.height * 0.16),
+      width: rand(4, 10),
+      swayAmp: rand(1.2, 4.2),
+      swayRate: rand(0.0012, 0.0026),
+      phase: rand(0, Math.PI * 2),
+      radius: rand(28, 55)
+    }));
+  }
+
+  #cleanupPairCooldowns() {
+    for (const [key, until] of this.playPairCooldowns.entries()) {
+      if (until <= this.simTimeSec) this.playPairCooldowns.delete(key);
+    }
+  }
+
+  #updatePlaySessions() {
+    this.playSessions = this.playSessions.filter((session) => {
+      const participants = session.fishIds
+        .map((id) => this.fish.find((f) => f.id === id))
+        .filter((fish) => fish && fish.isPlaying?.(this.simTimeSec));
+
+      if (participants.length < 2 || this.simTimeSec >= session.untilSec) {
+        for (const fish of participants) fish.stopPlay?.(this.simTimeSec);
+        return false;
+      }
+
+      session.fishIds = participants.map((fish) => fish.id);
+      for (let i = 0; i < participants.length; i += 1) {
+        const hunter = participants[i];
+        const target = participants[(i + 1) % participants.length];
+        hunter.setPlayTargetFish?.(target.id);
+      }
+
+      return true;
+    });
+
+    this.#cleanupPairCooldowns();
+  }
+
+  #pairKey(a, b) {
+    return a < b ? `${a}-${b}` : `${b}-${a}`;
+  }
+
+  #isNearGroundAlgae(point) {
+    return this.groundAlgae.some((algae) => Math.hypot(point.x - algae.x, point.y - algae.y) <= algae.radius);
+  }
+
+  #tryStartPlaySessions() {
+    if (this.fish.length < 2) return;
+
+    const encounterRadius = 64;
+
+    for (let i = 0; i < this.fish.length; i += 1) {
+      const a = this.fish[i];
+      if (!a.canStartPlay?.(this.simTimeSec)) continue;
+
+      for (let j = i + 1; j < this.fish.length; j += 1) {
+        const b = this.fish[j];
+        if (!b.canStartPlay?.(this.simTimeSec)) continue;
+
+        const key = this.#pairKey(a.id, b.id);
+        const pairCooldownUntil = this.playPairCooldowns.get(key) ?? 0;
+        if (pairCooldownUntil > this.simTimeSec) continue;
+
+        const dist = Math.hypot(a.position.x - b.position.x, a.position.y - b.position.y);
+        if (dist > encounterRadius) continue;
+
+        const midpoint = {
+          x: (a.position.x + b.position.x) * 0.5,
+          y: (a.position.y + b.position.y) * 0.5
+        };
+
+        const nearAlgae = this.#isNearGroundAlgae(midpoint);
+        const probability = (a.playProbability?.(nearAlgae) + b.playProbability?.(nearAlgae)) * 0.5;
+
+        this.playPairCooldowns.set(key, this.simTimeSec + rand(1.5, 3.2));
+        if (Math.random() > probability) continue;
+
+        const group = [a, b];
+        for (const candidate of this.fish) {
+          if (group.includes(candidate)) continue;
+          if (!candidate.canStartPlay?.(this.simTimeSec)) continue;
+          const d = Math.hypot(candidate.position.x - midpoint.x, candidate.position.y - midpoint.y);
+          if (d > encounterRadius * 1.25) continue;
+          if (Math.random() < 0.55) group.push(candidate);
+          if (group.length >= 6) break;
+        }
+
+        if (group.length < 2) continue;
+
+        const duration = rand(4, 7);
+        const sessionId = this.nextPlaySessionId++;
+        const untilSec = this.simTimeSec + duration;
+
+        for (let k = 0; k < group.length; k += 1) {
+          const fish = group[k];
+          const target = group[(k + 1) % group.length];
+          fish.startPlay?.({
+            sessionId,
+            untilSec,
+            targetFishId: target.id,
+            startedNearAlgae: nearAlgae,
+            simTimeSec: this.simTimeSec
+          });
+        }
+
+        this.playSessions.push({
+          id: sessionId,
+          fishIds: group.map((fish) => fish.id),
+          untilSec,
+          startedNearAlgae: nearAlgae,
+          origin: midpoint
+        });
+
+        return;
+      }
+    }
   }
 
   #updateFishLifeState() {
