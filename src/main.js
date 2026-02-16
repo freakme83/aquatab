@@ -89,17 +89,25 @@ let bgIntervalId = null;
 let lastTime = performance.now();
 let fps = 60;
 
-/**
- * Advance simulation once.
- * mode:
- *  - 'visible': clamp dt tighter for stability (we are rendering).
- *  - 'hidden' : allow large dt so sim time keeps up despite timer throttling.
- */
-function stepSim(rawDeltaSec, mode = 'visible') {
-  const maxDt = mode === 'hidden' ? 5.0 : 0.25;
-  const dt = Math.min(maxDt, Math.max(0, rawDeltaSec));
+const VISIBLE_MAX_STEP_SEC = 0.25;
+const HIDDEN_STEP_SEC = 0.25;
+const HIDDEN_TICK_MS = 1000;
+
+function stepVisibleSim(rawDeltaSec) {
+  const dt = Math.min(VISIBLE_MAX_STEP_SEC, Math.max(0, rawDeltaSec));
   if (dt <= 0) return;
   world.update(dt);
+}
+
+function stepHiddenSim(rawDeltaSec) {
+  let remaining = Math.max(0, rawDeltaSec);
+  if (remaining <= 0) return;
+
+  while (remaining > 0) {
+    const dt = Math.min(HIDDEN_STEP_SEC, remaining);
+    world.update(dt);
+    remaining -= dt;
+  }
 }
 
 function tick(now) {
@@ -112,7 +120,7 @@ function tick(now) {
   fps += (instantFps - fps) * 0.1;
 
   // Visible: sim + render
-  stepSim(rawDelta, 'visible');
+  stepVisibleSim(rawDelta);
   renderer.render(now, renderDelta);
 
   panel.updateStats({
@@ -150,9 +158,9 @@ function startBackgroundSim() {
     const rawDelta = (now - last) / 1000;
     last = now;
 
-    // Hidden: advance sim only (no rendering)
-    stepSim(rawDelta, 'hidden');
-  }, 250); // 4 Hz target; browser may throttle, dt will carry elapsed time.
+    // Hidden: advance sim only (no rendering). Catch up in coarse chunks.
+    stepHiddenSim(rawDelta);
+  }, HIDDEN_TICK_MS);
 }
 
 function stopBackgroundSim() {
