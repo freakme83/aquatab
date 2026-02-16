@@ -4,7 +4,7 @@
  */
 
 import { Fish } from './fish.js';
-import { CONFIG } from '../config.js';
+import { CONFIG } from './config.js';
 
 const MAX_TILT = CONFIG.world.maxTiltRad;
 const rand = (min, max) => min + Math.random() * (max - min);
@@ -14,8 +14,6 @@ const FOOD_DEFAULT_TTL = CONFIG.world.food.defaultTtlSec;
 const FOOD_FALL_ACCEL = CONFIG.world.food.fallAccel;
 const FOOD_FALL_DAMPING = CONFIG.world.food.fallDamping;
 const FOOD_MAX_FALL_SPEED = CONFIG.world.food.maxFallSpeed;
-const AGE_CONFIG = CONFIG.fish.age;
-const GROWTH_CONFIG = CONFIG.fish.growth;
 const FISH_DEAD_TO_SKELETON_SEC = CONFIG.world.fishLifecycle.deadToSkeletonSec;
 const FISH_SKELETON_TO_REMOVE_SEC = CONFIG.world.fishLifecycle.skeletonToRemoveSec;
 
@@ -111,36 +109,18 @@ export class World {
   }
 
   #createFish() {
-    const sizeRange = GROWTH_CONFIG.sizeFactorRange;
-    const growthRange = GROWTH_CONFIG.growthRateRange;
-
-    const sizeFactor = rand(sizeRange.min, sizeRange.max);
-    const adultRadius = GROWTH_CONFIG.adultRadius * sizeFactor;
-    const birthRadius = adultRadius * GROWTH_CONFIG.birthScale;
-
-    const lifeMean = AGE_CONFIG.lifespanMeanSec;
-    const lifeJitter = AGE_CONFIG.lifespanJitterSec;
-    const lifespanSec = rand(lifeMean - lifeJitter, lifeMean + lifeJitter);
-
-    const stageJitter = AGE_CONFIG.stageJitterSec;
-    const stageShiftBabySec = rand(-stageJitter, stageJitter);
-    const stageShiftJuvenileSec = rand(-stageJitter, stageJitter);
-
-    let spawn = this.#randomSpawn(birthRadius);
+    const size = rand(14, 30);
+    let spawn = this.#randomSpawn(size);
 
     for (let i = 0; i < 20; i += 1) {
-      if (this.#isSpawnClear(spawn, birthRadius)) break;
-      spawn = this.#randomSpawn(birthRadius);
+      if (this.#isSpawnClear(spawn, size)) break;
+      spawn = this.#randomSpawn(size);
     }
 
     return new Fish(this.bounds, {
       id: this.nextFishId++,
       spawnTimeSec: this.simTimeSec,
-      sizeFactor,
-      growthRate: rand(growthRange.min, growthRange.max),
-      lifespanSec,
-      stageShiftBabySec,
-      stageShiftJuvenileSec,
+      size,
       position: { x: spawn.x, y: spawn.y },
       headingAngle: this.#randomHeading(),
       speedFactor: rand(0.42, 0.68)
@@ -268,7 +248,6 @@ export class World {
     const delta = rawDelta * this.speedMultiplier;
     this.simTimeSec += delta;
 
-    for (const fish of this.fish) fish.updateLifeCycle?.(this.simTimeSec);
     for (const fish of this.fish) fish.updateMetabolism(delta);
     for (const fish of this.fish) fish.decideBehavior(this, delta);
     for (const fish of this.fish) fish.applySteering(delta);

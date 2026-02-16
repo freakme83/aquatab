@@ -237,10 +237,20 @@ export class Fish {
 
   eat(foodAmount) {
     if (this.lifeState !== 'ALIVE') return;
+    if (!Number.isFinite(foodAmount) || foodAmount <= 0) return;
 
-    const recovered = clamp(foodAmount * 0.3, 0, 1);
-    this.energy01 = clamp(this.energy01 + recovered, 0, 1);
-    this.hunger01 = 1 - this.energy01;
+    // Single-bite feeding model:
+    // Any successful bite fully satiates the fish (sets it to FED).
+    // This avoids confusing "half-eaten pellet" behavior and matches the intended UX.
+    this.energy01 = 1;
+    this.hunger01 = 0;
+    this.wellbeing01 = 1;
+    this.hungerState = 'FED';
+
+    // After eating, stop seeking food immediately.
+    if (this.behavior?.mode === 'seekFood') {
+      this.behavior = { mode: 'wander', targetFoodId: null, speedBoost: 1 };
+    }
   }
 
   tryConsumeFood(world) {
@@ -255,7 +265,8 @@ export class Fish {
     const reachRadius = nearBottom ? FOOD_REACH_RADIUS * 1.7 : FOOD_REACH_RADIUS;
     if (Math.min(distHead, distBody) > reachRadius) return;
 
-    const consumed = world.consumeFood(targetFood.id, 0.42);
+    const biteAmount = targetFood.amount;
+    const consumed = world.consumeFood(targetFood.id, biteAmount);
     if (consumed <= 0) return;
     this.eatAnimTimer = this.eatAnimDuration;
     this.eat(consumed);
