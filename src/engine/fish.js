@@ -5,9 +5,9 @@ const FACE_SWITCH_COS = 0.2;
 const MAX_TURN_RATE = 1.45;
 const DESIRED_TURN_RATE = 2.1;
 const SPEED_MULTIPLIER = 1.5;
-const FOOD_REACH_RADIUS = 8;
+const FOOD_REACH_RADIUS = 14;
 const DEAD_SINK_SPEED = 30;
-const METABOLISM_COST_PER_PIXEL = 0.000021;
+const METABOLISM_COST_PER_PIXEL = 0.00004;
 const HUNGRY_THRESHOLD = 0.35;
 const STARVING_THRESHOLD = 0.72;
 const FOOD_VISION_RADIUS = {
@@ -60,6 +60,7 @@ export class Fish {
     this.bounds = bounds;
 
     this.id = options.id ?? 0;
+    this.name = options.name ?? '';
     this.spawnTimeSec = options.spawnTimeSec ?? 0;
 
     this.size = options.size ?? rand(14, 30);
@@ -90,6 +91,8 @@ export class Fish {
     this.wellbeing01 = 1;
     this.hungerState = 'FED';
     this.lifeState = 'ALIVE';
+    this.deadAtSec = null;
+    this.skeletonAtSec = null;
     this.behavior = { mode: 'wander', targetFoodId: null, speedBoost: 1 };
     this.eatAnimTimer = 0;
     this.eatAnimDuration = 0.22;
@@ -118,7 +121,7 @@ export class Fish {
 
     this.eatAnimTimer = Math.max(0, this.eatAnimTimer - dt);
 
-    if (this.lifeState === 'DEAD') {
+    if (this.lifeState !== 'ALIVE') {
       this.energy01 = 0;
       this.hunger01 = 1;
       this.wellbeing01 = 0;
@@ -143,7 +146,7 @@ export class Fish {
   }
 
   decideBehavior(world) {
-    if (this.lifeState === 'DEAD') {
+    if (this.lifeState !== 'ALIVE') {
       this.behavior = { mode: 'deadSink', targetFoodId: null, speedBoost: 1 };
       return;
     }
@@ -204,9 +207,9 @@ export class Fish {
   }
 
   eat(foodAmount) {
-    if (this.lifeState === 'DEAD') return;
+    if (this.lifeState !== 'ALIVE') return;
 
-    const recovered = clamp(foodAmount * 0.26, 0, 1);
+    const recovered = clamp(foodAmount * 0.3, 0, 1);
     this.energy01 = clamp(this.energy01 + recovered, 0, 1);
     this.hunger01 = 1 - this.energy01;
   }
@@ -217,8 +220,11 @@ export class Fish {
     if (!targetFood) return;
 
     const head = this.headPoint();
-    const dist = Math.hypot(targetFood.x - head.x, targetFood.y - head.y);
-    if (dist > FOOD_REACH_RADIUS) return;
+    const distHead = Math.hypot(targetFood.x - head.x, targetFood.y - head.y);
+    const distBody = Math.hypot(targetFood.x - this.position.x, targetFood.y - this.position.y);
+    const nearBottom = targetFood.y >= this.bounds.height - 8;
+    const reachRadius = nearBottom ? FOOD_REACH_RADIUS * 1.7 : FOOD_REACH_RADIUS;
+    if (Math.min(distHead, distBody) > reachRadius) return;
 
     const consumed = world.consumeFood(targetFood.id, 0.42);
     if (consumed <= 0) return;
@@ -289,9 +295,8 @@ export class Fish {
 
   #movementBounds() {
     const margin = this.size * 0.62;
-    const sandCeiling = this.bounds.height - (this.bounds.sandHeight ?? 0);
     const bottomOffset = Math.max(2, this.size * 0.18);
-    const maxY = Math.max(margin, sandCeiling - bottomOffset);
+    const maxY = Math.max(margin, this.bounds.height - bottomOffset);
 
     return {
       minX: margin,
@@ -303,7 +308,7 @@ export class Fish {
 
   #pickTarget() {
     const inset = clamp(Math.min(this.bounds.width, this.bounds.height) * 0.04, 8, 18);
-    const swimHeight = Math.max(inset, this.bounds.height - (this.bounds.sandHeight ?? 0) - inset);
+    const swimHeight = Math.max(inset, this.bounds.height - inset);
 
     return {
       x: rand(inset, Math.max(inset, this.bounds.width - inset)),
