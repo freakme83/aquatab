@@ -4,16 +4,20 @@
  */
 
 import { Fish } from './fish.js';
+import { CONFIG } from '../config.js';
 
-const MAX_TILT = Math.PI / 3;
+const MAX_TILT = CONFIG.world.maxTiltRad;
 const rand = (min, max) => min + Math.random() * (max - min);
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
-const FOOD_DEFAULT_AMOUNT = 1;
-const FOOD_DEFAULT_TTL = 120;
-const FOOD_FALL_ACCEL = 8;
-const FOOD_FALL_DAMPING = 0.15;
-const FISH_DEAD_TO_SKELETON_SEC = 120;
-const FISH_SKELETON_TO_REMOVE_SEC = 120;
+const FOOD_DEFAULT_AMOUNT = CONFIG.world.food.defaultAmount;
+const FOOD_DEFAULT_TTL = CONFIG.world.food.defaultTtlSec;
+const FOOD_FALL_ACCEL = CONFIG.world.food.fallAccel;
+const FOOD_FALL_DAMPING = CONFIG.world.food.fallDamping;
+const FOOD_MAX_FALL_SPEED = CONFIG.world.food.maxFallSpeed;
+const AGE_CONFIG = CONFIG.fish.age;
+const GROWTH_CONFIG = CONFIG.fish.growth;
+const FISH_DEAD_TO_SKELETON_SEC = CONFIG.world.fishLifecycle.deadToSkeletonSec;
+const FISH_SKELETON_TO_REMOVE_SEC = CONFIG.world.fishLifecycle.skeletonToRemoveSec;
 
 function makeBubble(bounds) {
   return {
@@ -31,11 +35,21 @@ export class World {
     this.bounds = { width, height, sandHeight: this.#computeSandHeight(height) };
     this.fish = [];
     this.food = [];
+    // Forward-compatible containers for new systems.
+    this.poop = [];
+    this.eggs = [];
     this.bubbles = [];
     this.nextFoodId = 1;
     this.nextFishId = 1;
     this.simTimeSec = 0;
     this.selectedFishId = null;
+
+    // Simple event queue for UI/telemetry/achievements.
+    // Use `world.flushEvents()` from main loop if/when needed.
+    this.events = [];
+
+    // Global environment state (will grow over time).
+    this.water = { ...CONFIG.world.water };
 
     this.paused = false;
     this.speedMultiplier = 1;
@@ -44,9 +58,25 @@ export class World {
     this.#seedBubbles();
   }
 
+  emit(type, payload = {}) {
+    this.events.push({
+      type,
+      t: this.simTimeSec,
+      payload
+    });
+  }
 
-  #computeSandHeight(_height) {
-    return 0;
+  flushEvents() {
+    const out = this.events;
+    this.events = [];
+    return out;
+  }
+
+
+  #computeSandHeight(height) {
+    // Placeholder: keep as a function so we can later model a real sand layer.
+    // Returning 0 keeps current visuals/physics unchanged.
+    return Math.max(0, Math.min(0, height));
   }
 
   #swimHeight() {
@@ -81,18 +111,36 @@ export class World {
   }
 
   #createFish() {
-    const size = rand(14, 30);
-    let spawn = this.#randomSpawn(size);
+    const sizeRange = GROWTH_CONFIG.sizeFactorRange;
+    const growthRange = GROWTH_CONFIG.growthRateRange;
+
+    const sizeFactor = rand(sizeRange.min, sizeRange.max);
+    const adultRadius = GROWTH_CONFIG.adultRadius * sizeFactor;
+    const birthRadius = adultRadius * GROWTH_CONFIG.birthScale;
+
+    const lifeMean = AGE_CONFIG.lifespanMeanSec;
+    const lifeJitter = AGE_CONFIG.lifespanJitterSec;
+    const lifespanSec = rand(lifeMean - lifeJitter, lifeMean + lifeJitter);
+
+    const stageJitter = AGE_CONFIG.stageJitterSec;
+    const stageShiftBabySec = rand(-stageJitter, stageJitter);
+    const stageShiftJuvenileSec = rand(-stageJitter, stageJitter);
+
+    let spawn = this.#randomSpawn(birthRadius);
 
     for (let i = 0; i < 20; i += 1) {
-      if (this.#isSpawnClear(spawn, size)) break;
-      spawn = this.#randomSpawn(size);
+      if (this.#isSpawnClear(spawn, birthRadius)) break;
+      spawn = this.#randomSpawn(birthRadius);
     }
 
     return new Fish(this.bounds, {
       id: this.nextFishId++,
       spawnTimeSec: this.simTimeSec,
-      size,
+      sizeFactor,
+      growthRate: rand(growthRange.min, growthRange.max),
+      lifespanSec,
+      stageShiftBabySec,
+      stageShiftJuvenileSec,
       position: { x: spawn.x, y: spawn.y },
       headingAngle: this.#randomHeading(),
       speedFactor: rand(0.42, 0.68)
@@ -129,6 +177,8 @@ export class World {
       ttl,
       vy: rand(8, 20)
     });
+
+    this.emit('food:spawn', { x: clampedX, y: clampedY, amount, ttl });
   }
 
   consumeFood(foodId, amountToConsume = 0.5) {
@@ -141,6 +191,7 @@ export class World {
       this.food = this.food.filter((entry) => entry.id !== foodId);
     }
 
+    if (consumed > 0) this.emit('food:consume', { foodId, consumed });
     return consumed;
   }
 
@@ -217,6 +268,7 @@ export class World {
     const delta = rawDelta * this.speedMultiplier;
     this.simTimeSec += delta;
 
+    for (const fish of this.fish) fish.updateLifeCycle?.(this.simTimeSec);
     for (const fish of this.fish) fish.updateMetabolism(delta);
     for (const fish of this.fish) fish.decideBehavior(this, delta);
     for (const fish of this.fish) fish.applySteering(delta);
@@ -264,7 +316,7 @@ export class World {
         item.y = bottomY;
         item.vy *= FOOD_FALL_DAMPING;
       } else {
-        item.vy = Math.min(item.vy, 26);
+        item.vy = Math.min(item.vy, FOOD_MAX_FALL_SPEED);
       }
 
       if (Number.isFinite(item.ttl) && item.ttl <= 0) this.food.splice(i, 1);
@@ -272,7 +324,7 @@ export class World {
   }
 
   #seedBubbles() {
-    const count = 36;
+    const count = CONFIG.world.bubbles.seedCount;
     this.bubbles = Array.from({ length: count }, () => makeBubble(this.bounds));
   }
 
@@ -296,44 +348,5 @@ export class World {
       if (bubble.x < 0) bubble.x += width;
       if (bubble.x > width) bubble.x -= width;
     }
-  }
-  serialize() {
-    return {
-      v: 1,
-      savedAtMs: Date.now(),
-      simTimeSec: this.simTimeSec,
-      bounds: { width: this.bounds.width, height: this.bounds.height },
-      nextFoodId: this.nextFoodId,
-      nextFishId: this.nextFishId,
-      selectedFishId: this.selectedFishId,
-      paused: this.paused,
-      speedMultiplier: this.speedMultiplier,
-      fish: this.fish.map((f) => f.toJSON()),
-      food: this.food.map((p) => ({ ...p })),
-      bubbles: this.bubbles.map((b) => ({ ...b }))
-    };
-  }
-
-  static deserialize(width, height, data) {
-    const world = new World(width, height, 0);
-    // Keep computed sandHeight based on current height
-    world.simTimeSec = data.simTimeSec ?? 0;
-    world.nextFoodId = data.nextFoodId ?? 1;
-    world.nextFishId = data.nextFishId ?? 1;
-    world.selectedFishId = data.selectedFishId ?? null;
-    world.paused = data.paused ?? false;
-    world.speedMultiplier = data.speedMultiplier ?? 1;
-
-    world.food = Array.isArray(data.food) ? data.food.map((p) => ({ ...p })) : [];
-    world.bubbles = Array.isArray(data.bubbles) ? data.bubbles.map((b) => ({ ...b })) : world.bubbles;
-
-    world.fish = Array.isArray(data.fish)
-      ? data.fish.map((f) => Fish.fromJSON(world.bounds, f))
-      : [];
-
-    // Ensure bounds applied
-    for (const fish of world.fish) fish.setBounds(world.bounds);
-
-    return world;
   }
 }
