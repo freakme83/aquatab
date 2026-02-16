@@ -28,6 +28,7 @@ const FILTER_DIRT_REMOVE_PER_SEC = Math.max(0, WATER_CONFIG.filterDirtRemovePerS
 const FILTER_WEAR_BASE_PER_SEC = Math.max(0, WATER_CONFIG.wearBasePerSec ?? 0);
 const FILTER_WEAR_BIOLOAD_FACTOR = Math.max(0, WATER_CONFIG.wearBioloadFactor ?? 0);
 const FILTER_WEAR_DIRT_FACTOR = Math.max(0, WATER_CONFIG.wearDirtFactor ?? 0);
+const FILTER_BIOLOAD_MITIGATION_FACTOR = Math.max(0, WATER_CONFIG.bioloadMitigationFactor ?? 0);
 const FILTER_DEPLETED_THRESHOLD_01 = clamp(WATER_CONFIG.filterDepletedThreshold01 ?? 0.1, 0, 1);
 const FILTER_INSTALL_DURATION_SEC = Math.max(0.001, WATER_CONFIG.installDurationSec ?? 12);
 const FILTER_MAINTENANCE_DURATION_SEC = Math.max(0.001, WATER_CONFIG.maintenanceDurationSec ?? 12);
@@ -435,6 +436,12 @@ export class World {
     const effectiveFilter01 = hasWorkingFilter ? water.filter01 : 0;
     water.effectiveFilter01 = effectiveFilter01;
 
+    const effectiveBioload = clamp(
+      bioload * (1 - effectiveFilter01 * FILTER_BIOLOAD_MITIGATION_FACTOR),
+      0,
+      Math.max(0, bioload)
+    );
+
     const bioloadDirt = WATER_BIOLOAD_DIRT_PER_SEC * bioload * dtSec;
     const expiredFoodDirt = expiredFoodCount * WATER_DIRT_PER_EXPIRED_FOOD;
     water.dirt01 = clamp(water.dirt01 + bioloadDirt + expiredFoodDirt, 0, 1);
@@ -450,8 +457,9 @@ export class World {
     }
 
     const dirtMultiplier = 1 + water.dirt01 * WATER_DIRT_TO_DECAY_MULTIPLIER;
-    const baselineDecay = WATER_BASELINE_DECAY_PER_SEC * bioload * dirtMultiplier * dtSec;
-    water.hygiene01 = clamp(water.hygiene01 - baselineDecay, 0, 1);
+    const baselineDecay = WATER_BASELINE_DECAY_PER_SEC * effectiveBioload * dirtMultiplier * dtSec;
+    const hygieneRecovery = WATER_BASELINE_DECAY_PER_SEC * Math.max(0, bioload - effectiveBioload) * dtSec;
+    water.hygiene01 = clamp(water.hygiene01 - baselineDecay + hygieneRecovery, 0, 1);
   }
 
   #seedGroundAlgae() {

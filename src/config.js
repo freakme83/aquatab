@@ -35,6 +35,7 @@ export const CONFIG = Object.freeze({
       wearBasePerSec: 0.00005,
       wearBioloadFactor: 1.0,
       wearDirtFactor: 2.5,
+      bioloadMitigationFactor: 0.6,
       filterDepletedThreshold01: 0.1,
       installDurationSec: 12,
       maintenanceDurationSec: 12,
