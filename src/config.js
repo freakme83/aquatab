@@ -54,5 +54,54 @@ export const CONFIG = Object.freeze({
         STARVING: 1
       }
     }
+    ,
+
+    // Life cycle & growth (age-driven growth + small per-fish randomness).
+    age: {
+      // Target average lifespan for the default fish type (realtime seconds).
+      lifespanMeanSec: 90 * 60,
+      // +/- jitter around the mean lifespan.
+      lifespanJitterSec: 15 * 60,
+
+      // Stage boundaries (base values) in realtime seconds from birth.
+      // Each fish gets a small per-fish jitter so they don't all sync.
+      stageBaseSec: {
+        babyEndSec: 10 * 60,
+        juvenileEndSec: 25 * 60
+      },
+      stageJitterSec: 3 * 60,
+
+      // Old stage starts at this fraction of lifespan.
+      oldStartRatio: 0.85
+    },
+
+    growth: {
+      // Overall adult visual radius baseline (before per-fish sizeFactor).
+      adultRadius: 22,
+      // How small babies should be at birth (relative to adult size).
+      birthScale: 0.28,
+
+      // Per-fish variation so individuals don't look identical.
+      sizeFactorRange: { min: 0.9, max: 1.1 },
+      growthRateRange: { min: 0.9, max: 1.1 }
+    },
+
+    // Simple age-based morph targets for proportions (renderer uses these).
+    // Values are relative multipliers around the "adult" baseline.
+    morph: {
+      BABY:     { bodyLength: 0.85, bodyHeight: 1.12, tailLength: 0.72, eye: 1.18, saturation: 0.85, lightness: 1.03 },
+      JUVENILE: { bodyLength: 0.95, bodyHeight: 1.03, tailLength: 0.88, eye: 1.06, saturation: 0.93, lightness: 1.01 },
+      ADULT:    { bodyLength: 1.00, bodyHeight: 1.00, tailLength: 1.00, eye: 1.00, saturation: 1.00, lightness: 1.00 },
+      OLD:      { bodyLength: 1.03, bodyHeight: 0.92, tailLength: 0.95, eye: 0.98, saturation: 0.88, lightness: 0.96 }
+    },
+
+    // Stage-specific baseline speed multipliers (hunger still applies on top).
+    stageSpeed: {
+      BABY: 0.82,
+      JUVENILE: 1.04,
+      ADULT: 1.0,
+      OLD: 0.88
+    }
+
   }
 });
