@@ -7,7 +7,7 @@ import { World } from './engine/world.js';
 import { Renderer } from './render/renderer.js';
 import { Panel } from './ui/panel.js';
 
-const INITIAL_FISH_COUNT = 20;
+const INITIAL_FISH_COUNT = 10;
 
 const canvas = document.getElementById('aquariumCanvas');
 const panelRoot = document.getElementById('panelRoot');
@@ -47,7 +47,6 @@ const panel = new Panel(panelRoot, {
 
 renderer.setQuality(quality);
 
-
 canvas.addEventListener('click', (event) => {
   const worldPoint = renderer.toWorldPoint(event.clientX, event.clientY);
   if (!worldPoint) return;
@@ -80,76 +79,88 @@ new ResizeObserver(resize).observe(tankShell || canvas);
 resize();
 requestAnimationFrame(resize);
 
+/* -------------------------------------------------------------------------- */
+/* Simulation/render drivers (single active driver rule)                       */
+/* -------------------------------------------------------------------------- */
+
+let rafId = null;
+let bgIntervalId = null;
+
 let lastTime = performance.now();
 let fps = 60;
 
-const SIMULATION_STEP_SEC = 1 / 60;
-const MAX_DELTA_SEC = 0.05;
-let simulationTime = performance.now();
-let intervalDriverId = null;
-
-function advanceSimulation(now = performance.now()) {
-  const elapsedSec = Math.max(0, (now - simulationTime) / 1000);
-  simulationTime = now;
-
-  let remaining = Math.min(elapsedSec, MAX_DELTA_SEC);
-  while (remaining > 0) {
-    const delta = Math.min(SIMULATION_STEP_SEC, remaining);
-    world.update(delta);
-    remaining -= delta;
-  }
+function stepSim(rawDeltaSec) {
+  // Background tabs can yield large deltas; clamp to avoid huge jumps.
+  // 0.25s is a good compromise: time progresses, but no wild fast-forward.
+  const dt = Math.min(0.25, Math.max(0, rawDeltaSec));
+  if (dt <= 0) return;
+  world.update(dt);
 }
-
-function startIntervalDriver() {
-  if (intervalDriverId !== null) return;
-  intervalDriverId = setInterval(() => {
-    advanceSimulation();
-  }, SIMULATION_STEP_SEC * 1000);
-}
-
-function stopIntervalDriver() {
-  if (intervalDriverId === null) return;
-  clearInterval(intervalDriverId);
-  intervalDriverId = null;
-}
-
-function syncDriverToVisibility() {
-  if (document.visibilityState === 'visible') {
-    stopIntervalDriver();
-
-    // Avoid fast-forward after returning from a hidden tab.
-    const now = performance.now();
-    simulationTime = now;
-    lastTime = now;
-    return;
-  }
-
-  startIntervalDriver();
-
-}
-
-document.addEventListener('visibilitychange', syncDriverToVisibility);
-syncDriverToVisibility();
 
 function tick(now) {
-  const rawDelta = Math.min(MAX_DELTA_SEC, (now - lastTime) / 1000);
+  const rawDelta = (now - lastTime) / 1000;
   lastTime = now;
 
-  if (rawDelta > 0) {
-    const instantFps = 1 / rawDelta;
-    fps += (instantFps - fps) * 0.1;
-  }
+  // For FPS calculation and rendering delta, keep it tighter for stability.
+  const renderDelta = Math.min(0.05, Math.max(0.000001, rawDelta));
+  const instantFps = 1 / renderDelta;
+  fps += (instantFps - fps) * 0.1;
 
-  if (document.visibilityState === 'visible') {
-    advanceSimulation(now);
-    renderer.render(now, rawDelta);
-  }
+  // Visible: sim + render
+  stepSim(rawDelta);
+  renderer.render(now, renderDelta);
 
   panel.updateStats({ fps, fishCount: world.fish.length, quality });
   panel.updateFishInspector(world.fish, world.selectedFishId, world.simTimeSec);
 
-  // TODO: Phase 2 - add event queue for feeding and item interactions.
-  requestAnimationFrame(tick);
+  rafId = requestAnimationFrame(tick);
 }
 
-requestAnimationFrame(tick);
+function startRaf() {
+  if (rafId != null) return;
+  lastTime = performance.now();
+  rafId = requestAnimationFrame(tick);
+}
+
+function stopRaf() {
+  if (rafId == null) return;
+  cancelAnimationFrame(rafId);
+  rafId = null;
+}
+
+function startBackgroundSim() {
+  if (bgIntervalId != null) return;
+
+  let last = performance.now();
+  bgIntervalId = setInterval(() => {
+    const now = performance.now();
+    const rawDelta = (now - last) / 1000;
+    last = now;
+    stepSim(rawDelta);
+  }, 250); // 4 Hz in background is enough; dt carries elapsed time.
+}
+
+function stopBackgroundSim() {
+  if (bgIntervalId == null) return;
+  clearInterval(bgIntervalId);
+  bgIntervalId = null;
+}
+
+function syncDriversToVisibility() {
+  if (document.visibilityState === 'hidden') {
+    // Hidden: sim continues, no rendering
+    stopRaf();
+    stopBackgroundSim(); // ensure no overlap
+    startBackgroundSim();
+  } else {
+    // Visible: sim + render on RAF
+    stopBackgroundSim();
+    stopRaf(); // safe restart
+    startRaf();
+  }
+}
+
+document.addEventListener('visibilitychange', syncDriversToVisibility);
+
+// Start with correct mode
+syncDriversToVisibility();
