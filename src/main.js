@@ -47,7 +47,6 @@ const panel = new Panel(panelRoot, {
 
 renderer.setQuality(quality);
 
-
 canvas.addEventListener('click', (event) => {
   const worldPoint = renderer.toWorldPoint(event.clientX, event.clientY);
   if (!worldPoint) return;
@@ -80,26 +79,95 @@ new ResizeObserver(resize).observe(tankShell || canvas);
 resize();
 requestAnimationFrame(resize);
 
+/* -------------------------------------------------------------------------- */
+/* Simulation/render drivers (single active driver rule)                       */
+/* -------------------------------------------------------------------------- */
+
+let rafId = null;
+let bgIntervalId = null;
+
 let lastTime = performance.now();
 let fps = 60;
 
+/**
+ * Advance simulation once.
+ * mode:
+ *  - 'visible': clamp dt tighter for stability (we are rendering).
+ *  - 'hidden' : allow large dt so sim time keeps up despite timer throttling.
+ */
+function stepSim(rawDeltaSec, mode = 'visible') {
+  const maxDt = mode === 'hidden' ? 5.0 : 0.25;
+  const dt = Math.min(maxDt, Math.max(0, rawDeltaSec));
+  if (dt <= 0) return;
+  world.update(dt);
+}
+
 function tick(now) {
-  const rawDelta = Math.min(0.05, (now - lastTime) / 1000);
+  const rawDelta = (now - lastTime) / 1000;
   lastTime = now;
 
-  if (rawDelta > 0) {
-    const instantFps = 1 / rawDelta;
-    fps += (instantFps - fps) * 0.1;
-  }
+  // For FPS calculation and rendering delta, keep it tight for stability.
+  const renderDelta = Math.min(0.05, Math.max(0.000001, rawDelta));
+  const instantFps = 1 / renderDelta;
+  fps += (instantFps - fps) * 0.1;
 
-  world.update(rawDelta);
-  renderer.render(now, rawDelta);
+  // Visible: sim + render
+  stepSim(rawDelta, 'visible');
+  renderer.render(now, renderDelta);
 
   panel.updateStats({ fps, fishCount: world.fish.length, quality });
   panel.updateFishInspector(world.fish, world.selectedFishId, world.simTimeSec);
 
-  // TODO: Phase 2 - add event queue for feeding and item interactions.
-  requestAnimationFrame(tick);
+  rafId = requestAnimationFrame(tick);
 }
 
-requestAnimationFrame(tick);
+function startRaf() {
+  if (rafId != null) return;
+  lastTime = performance.now();
+  rafId = requestAnimationFrame(tick);
+}
+
+function stopRaf() {
+  if (rafId == null) return;
+  cancelAnimationFrame(rafId);
+  rafId = null;
+}
+
+function startBackgroundSim() {
+  if (bgIntervalId != null) return;
+
+  let last = performance.now();
+  bgIntervalId = setInterval(() => {
+    const now = performance.now();
+    const rawDelta = (now - last) / 1000;
+    last = now;
+
+    // Hidden: advance sim only (no rendering)
+    stepSim(rawDelta, 'hidden');
+  }, 250); // 4 Hz target; browser may throttle, dt will carry elapsed time.
+}
+
+function stopBackgroundSim() {
+  if (bgIntervalId == null) return;
+  clearInterval(bgIntervalId);
+  bgIntervalId = null;
+}
+
+function syncDriversToVisibility() {
+  if (document.visibilityState === 'hidden') {
+    // Hidden: sim continues, no rendering
+    stopRaf();
+    stopBackgroundSim(); // ensure no overlap
+    startBackgroundSim();
+  } else {
+    // Visible: sim + render on RAF
+    stopBackgroundSim();
+    stopRaf(); // safe restart (also resets lastTime in startRaf)
+    startRaf();
+  }
+}
+
+document.addEventListener('visibilitychange', syncDriversToVisibility);
+
+// Start with correct mode
+syncDriversToVisibility();

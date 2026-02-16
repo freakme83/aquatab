@@ -4,16 +4,20 @@
  */
 
 import { Fish } from './fish.js';
+import { CONFIG } from '../config.js';
 
-const MAX_TILT = Math.PI / 3;
+const MAX_TILT = CONFIG.world.maxTiltRad;
 const rand = (min, max) => min + Math.random() * (max - min);
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
-const FOOD_DEFAULT_AMOUNT = 1;
-const FOOD_DEFAULT_TTL = 120;
-const FOOD_FALL_ACCEL = 8;
-const FOOD_FALL_DAMPING = 0.15;
-const FISH_DEAD_TO_SKELETON_SEC = 120;
-const FISH_SKELETON_TO_REMOVE_SEC = 120;
+const FOOD_DEFAULT_AMOUNT = CONFIG.world.food.defaultAmount;
+const FOOD_DEFAULT_TTL = CONFIG.world.food.defaultTtlSec;
+const FOOD_FALL_ACCEL = CONFIG.world.food.fallAccel;
+const FOOD_FALL_DAMPING = CONFIG.world.food.fallDamping;
+const FOOD_MAX_FALL_SPEED = CONFIG.world.food.maxFallSpeed;
+const AGE_CONFIG = CONFIG.fish.age;
+const GROWTH_CONFIG = CONFIG.fish.growth;
+const FISH_DEAD_TO_SKELETON_SEC = CONFIG.world.fishLifecycle.deadToSkeletonSec;
+const FISH_SKELETON_TO_REMOVE_SEC = CONFIG.world.fishLifecycle.skeletonToRemoveSec;
 
 function makeBubble(bounds) {
   return {
@@ -31,22 +35,52 @@ export class World {
     this.bounds = { width, height, sandHeight: this.#computeSandHeight(height) };
     this.fish = [];
     this.food = [];
+    // Forward-compatible containers for new systems.
+    this.poop = [];
+    this.eggs = [];
     this.bubbles = [];
     this.nextFoodId = 1;
     this.nextFishId = 1;
+    this.nextPlaySessionId = 1;
     this.simTimeSec = 0;
     this.selectedFishId = null;
+
+    // Simple event queue for UI/telemetry/achievements.
+    // Use `world.flushEvents()` from main loop if/when needed.
+    this.events = [];
+    this.playSessions = [];
+    this.groundAlgae = [];
+
+    // Global environment state (will grow over time).
+    this.water = { ...CONFIG.world.water };
 
     this.paused = false;
     this.speedMultiplier = 1;
 
     this.setFishCount(initialFishCount);
     this.#seedBubbles();
+    this.#seedGroundAlgae();
+  }
+
+  emit(type, payload = {}) {
+    this.events.push({
+      type,
+      t: this.simTimeSec,
+      payload
+    });
+  }
+
+  flushEvents() {
+    const out = this.events;
+    this.events = [];
+    return out;
   }
 
 
-  #computeSandHeight(_height) {
-    return 0;
+  #computeSandHeight(height) {
+    // Placeholder: keep as a function so we can later model a real sand layer.
+    // Returning 0 keeps current visuals/physics unchanged.
+    return Math.max(0, Math.min(0, height));
   }
 
   #swimHeight() {
@@ -81,18 +115,36 @@ export class World {
   }
 
   #createFish() {
-    const size = rand(14, 30);
-    let spawn = this.#randomSpawn(size);
+    const sizeRange = GROWTH_CONFIG.sizeFactorRange;
+    const growthRange = GROWTH_CONFIG.growthRateRange;
+
+    const sizeFactor = rand(sizeRange.min, sizeRange.max);
+    const adultRadius = GROWTH_CONFIG.adultRadius * sizeFactor;
+    const birthRadius = adultRadius * GROWTH_CONFIG.birthScale;
+
+    const lifeMean = AGE_CONFIG.lifespanMeanSec;
+    const lifeJitter = AGE_CONFIG.lifespanJitterSec;
+    const lifespanSec = rand(lifeMean - lifeJitter, lifeMean + lifeJitter);
+
+    const stageJitter = AGE_CONFIG.stageJitterSec;
+    const stageShiftBabySec = rand(-stageJitter, stageJitter);
+    const stageShiftJuvenileSec = rand(-stageJitter, stageJitter);
+
+    let spawn = this.#randomSpawn(birthRadius);
 
     for (let i = 0; i < 20; i += 1) {
-      if (this.#isSpawnClear(spawn, size)) break;
-      spawn = this.#randomSpawn(size);
+      if (this.#isSpawnClear(spawn, birthRadius)) break;
+      spawn = this.#randomSpawn(birthRadius);
     }
 
     return new Fish(this.bounds, {
       id: this.nextFishId++,
       spawnTimeSec: this.simTimeSec,
-      size,
+      sizeFactor,
+      growthRate: rand(growthRange.min, growthRange.max),
+      lifespanSec,
+      stageShiftBabySec,
+      stageShiftJuvenileSec,
       position: { x: spawn.x, y: spawn.y },
       headingAngle: this.#randomHeading(),
       speedFactor: rand(0.42, 0.68)
@@ -114,6 +166,8 @@ export class World {
       bubble.x = Math.min(Math.max(0, bubble.x), width);
       bubble.y = Math.min(Math.max(0, bubble.y), height + 40);
     }
+
+    this.#seedGroundAlgae();
   }
 
 
@@ -129,6 +183,8 @@ export class World {
       ttl,
       vy: rand(8, 20)
     });
+
+    this.emit('food:spawn', { x: clampedX, y: clampedY, amount, ttl });
   }
 
   consumeFood(foodId, amountToConsume = 0.5) {
@@ -141,6 +197,7 @@ export class World {
       this.food = this.food.filter((entry) => entry.id !== foodId);
     }
 
+    if (consumed > 0) this.emit('food:consume', { foodId, consumed });
     return consumed;
   }
 
@@ -217,6 +274,11 @@ export class World {
     const delta = rawDelta * this.speedMultiplier;
     this.simTimeSec += delta;
 
+    for (const fish of this.fish) fish.updateLifeCycle?.(this.simTimeSec);
+    for (const fish of this.fish) fish.updatePlayState?.(this.simTimeSec);
+    this.#updatePlaySessions();
+    this.#tryExpandPlaySessions();
+    this.#tryStartPlaySessions();
     for (const fish of this.fish) fish.updateMetabolism(delta);
     for (const fish of this.fish) fish.decideBehavior(this, delta);
     for (const fish of this.fish) fish.applySteering(delta);
@@ -225,6 +287,181 @@ export class World {
     this.#updateFishLifeState();
     this.#updateFood(delta);
     this.#updateBubbles(delta);
+  }
+
+  #seedGroundAlgae() {
+    const count = Math.max(10, Math.floor(this.bounds.width / 76));
+    this.groundAlgae = Array.from({ length: count }, () => ({
+      x: rand(12, Math.max(12, this.bounds.width - 12)),
+      y: this.bounds.height - rand(1, 10),
+      height: rand(this.bounds.height * 0.07, this.bounds.height * 0.16),
+      width: rand(4, 10),
+      swayAmp: rand(1.2, 4.2),
+      swayRate: rand(0.0012, 0.0026),
+      phase: rand(0, Math.PI * 2),
+      radius: rand(28, 55)
+    }));
+  }
+
+  #updatePlaySessions() {
+    this.playSessions = this.playSessions.filter((session) => {
+      const runner = this.fish.find((f) => f.id === session.runnerFishId);
+      const chasers = session.chaserFishIds
+        .map((id) => this.fish.find((f) => f.id === id))
+        .filter((fish) => fish && fish.isPlaying?.(this.simTimeSec));
+
+      const runnerAliveInSession = runner && runner.isPlaying?.(this.simTimeSec);
+      if (!runnerAliveInSession || chasers.length < 1 || this.simTimeSec >= session.untilSec) {
+        if (runnerAliveInSession) runner.stopPlay?.(this.simTimeSec);
+        for (const fish of chasers) fish.stopPlay?.(this.simTimeSec);
+        return false;
+      }
+
+      session.chaserFishIds = chasers.map((fish) => fish.id);
+      runner.setPlayRole?.('RUNNER');
+      const closestChaser = chasers.reduce((best, current) => {
+        if (!best) return current;
+        const currDist = Math.hypot(runner.position.x - current.position.x, runner.position.y - current.position.y);
+        const bestDist = Math.hypot(runner.position.x - best.position.x, runner.position.y - best.position.y);
+        return currDist < bestDist ? current : best;
+      }, null);
+      runner.setPlayTargetFish?.(closestChaser?.id ?? null);
+
+      for (const chaser of chasers) {
+        chaser.setPlayRole?.('CHASER');
+        chaser.setPlayTargetFish?.(runner.id);
+      }
+
+      session.origin = {
+        x: (runner.position.x + (chasers[0]?.position.x ?? runner.position.x)) * 0.5,
+        y: (runner.position.y + (chasers[0]?.position.y ?? runner.position.y)) * 0.5
+      };
+
+      return true;
+    });
+  }
+
+  #isNearGroundAlgae(point) {
+    return this.groundAlgae.some((algae) => Math.hypot(point.x - algae.x, point.y - algae.y) <= algae.radius);
+  }
+
+  #tryExpandPlaySessions() {
+    const joinRadius = 82;
+
+    for (const session of this.playSessions) {
+      const runner = this.fish.find((f) => f.id === session.runnerFishId);
+      if (!runner || !runner.isPlaying?.(this.simTimeSec)) continue;
+
+      const anchor = runner.position;
+      for (const candidate of this.fish) {
+        if (!candidate.canStartPlay?.(this.simTimeSec)) continue;
+
+        const d = Math.hypot(candidate.position.x - anchor.x, candidate.position.y - anchor.y);
+        if (d > joinRadius) continue;
+        if (Math.random() > 0.45) continue;
+
+        candidate.startPlay?.({
+          sessionId: session.id,
+          role: 'CHASER',
+          untilSec: session.untilSec,
+          targetFishId: runner.id,
+          startedNearAlgae: session.startedNearAlgae,
+          simTimeSec: this.simTimeSec
+        });
+        session.chaserFishIds.push(candidate.id);
+      }
+    }
+  }
+
+  #tryStartPlaySessions() {
+    if (this.fish.length < 2) return;
+
+    const encounterRadius = 64;
+
+    for (let i = 0; i < this.fish.length; i += 1) {
+      const a = this.fish[i];
+      if (!a.canStartPlay?.(this.simTimeSec)) continue;
+
+      for (let j = i + 1; j < this.fish.length; j += 1) {
+        const b = this.fish[j];
+        if (!b.canStartPlay?.(this.simTimeSec)) continue;
+
+        const dist = Math.hypot(a.position.x - b.position.x, a.position.y - b.position.y);
+        if (dist > encounterRadius) continue;
+
+        const midpoint = {
+          x: (a.position.x + b.position.x) * 0.5,
+          y: (a.position.y + b.position.y) * 0.5
+        };
+
+        const nearAlgae = this.#isNearGroundAlgae(midpoint);
+        const probability = (a.playProbability?.(nearAlgae) + b.playProbability?.(nearAlgae)) * 0.5;
+
+        if (Math.random() > probability) {
+          const cooldownUntilSec = this.simTimeSec + 10;
+          a.delayPlayEligibility?.(cooldownUntilSec);
+          b.delayPlayEligibility?.(cooldownUntilSec);
+          continue;
+        }
+
+        const duration = rand(4, 7);
+        const sessionId = this.nextPlaySessionId++;
+        const untilSec = this.simTimeSec + duration;
+
+        const runner = Math.random() < 0.5 ? a : b;
+        const initialChaser = runner === a ? b : a;
+
+        runner.startPlay?.({
+          sessionId,
+          role: 'RUNNER',
+          untilSec,
+          targetFishId: initialChaser.id,
+          startedNearAlgae: nearAlgae,
+          simTimeSec: this.simTimeSec
+        });
+
+        initialChaser.startPlay?.({
+          sessionId,
+          role: 'CHASER',
+          untilSec,
+          targetFishId: runner.id,
+          startedNearAlgae: nearAlgae,
+          simTimeSec: this.simTimeSec
+        });
+
+        const chaserIds = [initialChaser.id];
+        for (const candidate of this.fish) {
+          if (candidate.id === runner.id || candidate.id === initialChaser.id) continue;
+          if (!candidate.canStartPlay?.(this.simTimeSec)) continue;
+
+          const d = Math.hypot(candidate.position.x - midpoint.x, candidate.position.y - midpoint.y);
+          if (d > encounterRadius * 1.25) continue;
+          if (Math.random() >= 0.55) continue;
+
+          candidate.startPlay?.({
+            sessionId,
+            role: 'CHASER',
+            untilSec,
+            targetFishId: runner.id,
+            startedNearAlgae: nearAlgae,
+            simTimeSec: this.simTimeSec
+          });
+          chaserIds.push(candidate.id);
+          if (chaserIds.length >= 5) break;
+        }
+
+        this.playSessions.push({
+          id: sessionId,
+          runnerFishId: runner.id,
+          chaserFishIds: chaserIds,
+          untilSec,
+          startedNearAlgae: nearAlgae,
+          origin: midpoint
+        });
+
+        return;
+      }
+    }
   }
 
   #updateFishLifeState() {
@@ -264,7 +501,7 @@ export class World {
         item.y = bottomY;
         item.vy *= FOOD_FALL_DAMPING;
       } else {
-        item.vy = Math.min(item.vy, 26);
+        item.vy = Math.min(item.vy, FOOD_MAX_FALL_SPEED);
       }
 
       if (Number.isFinite(item.ttl) && item.ttl <= 0) this.food.splice(i, 1);
@@ -272,7 +509,7 @@ export class World {
   }
 
   #seedBubbles() {
-    const count = 36;
+    const count = CONFIG.world.bubbles.seedCount;
     this.bubbles = Array.from({ length: count }, () => makeBubble(this.bounds));
   }
 

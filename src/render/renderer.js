@@ -83,6 +83,8 @@ export class Renderer {
     this.#clipTankWater(ctx);
     this.#drawCachedBackground(ctx);
     this.#drawWaterPlants(ctx, time);
+    this.#drawGroundAlgae(ctx, time);
+    this.#drawPlayEffects(ctx, time);
     this.#drawWaterParticles(ctx, delta);
     this.#drawBubbles(ctx);
     this.#drawFood(ctx);
@@ -184,6 +186,66 @@ export class Renderer {
     ctx.restore();
   }
 
+
+  #drawGroundAlgae(ctx, time) {
+    const sx = this.tankRect.width / this.world.bounds.width;
+    const sy = this.tankRect.height / this.world.bounds.height;
+
+    ctx.save();
+    ctx.lineCap = 'round';
+
+    for (const algae of this.world.groundAlgae ?? []) {
+      const baseX = this.tankRect.x + algae.x * sx;
+      const baseY = this.tankRect.y + algae.y * sy;
+      const h = algae.height * sy;
+      const w = algae.width * sx;
+      const sway = Math.sin(time * algae.swayRate + algae.phase) * algae.swayAmp * sx;
+
+      ctx.strokeStyle = 'hsla(115deg 58% 62% / 0.52)';
+      ctx.lineWidth = Math.max(0.9, w * 0.21);
+
+      ctx.beginPath();
+      ctx.moveTo(baseX, baseY);
+      ctx.quadraticCurveTo(baseX - w * 0.3 + sway * 0.3, baseY - h * 0.52, baseX + sway, baseY - h);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(baseX - w * 0.2, baseY);
+      ctx.quadraticCurveTo(baseX - w * 0.55 + sway * 0.2, baseY - h * 0.48, baseX + sway * 0.72, baseY - h * 0.86);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  #drawPlayEffects(ctx, time) {
+    const sx = this.tankRect.width / this.world.bounds.width;
+    const sy = this.tankRect.height / this.world.bounds.height;
+
+    for (const session of this.world.playSessions ?? []) {
+      if (!session.startedNearAlgae) continue;
+      const x = this.tankRect.x + session.origin.x * sx;
+      const y = this.tankRect.y + session.origin.y * sy;
+      const life = Math.max(0, session.untilSec - this.world.simTimeSec);
+      const pulse = (Math.sin(time * 0.007 + session.id) + 1) * 0.5;
+      const r1 = (16 + pulse * 8) * sx;
+      const r2 = (28 + pulse * 12) * sx;
+      const alpha = Math.min(0.34, 0.14 + life * 0.02);
+
+      ctx.beginPath();
+      ctx.strokeStyle = `rgba(164, 255, 169, ${alpha})`;
+      ctx.lineWidth = 1.2;
+      ctx.arc(x, y, r1, 0, TAU);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.strokeStyle = `rgba(150, 240, 158, ${alpha * 0.7})`;
+      ctx.lineWidth = 0.9;
+      ctx.arc(x, y, r2, 0, TAU);
+      ctx.stroke();
+    }
+  }
+
   #drawTankDropShadow(ctx) {
     const { x, y, width, height } = this.tankRect;
     const g = ctx.createRadialGradient(x + width * 0.5, y + height + 8, width * 0.2, x + width * 0.5, y + height + 8, width * 0.8);
@@ -277,13 +339,22 @@ export class Renderer {
 
   #drawFish(ctx, fish, position, time) {
     const orientation = fish.heading();
-    const bodyLength = fish.size * 1.32;
-    const bodyHeight = fish.size * 0.73;
+    const rp = typeof fish.getRenderParams === 'function'
+      ? fish.getRenderParams()
+      : { radius: fish.size, bodyLength: fish.size * 1.32, bodyHeight: fish.size * 0.73, tailWagAmp: fish.size * 0.13, eyeScale: 1, saturationMult: 1, lightnessMult: 1 };
+
+    const bodyLength = rp.bodyLength;
+    const bodyHeight = rp.bodyHeight;
     const isDead = fish.lifeState === 'DEAD';
     const isSkeleton = fish.lifeState === 'SKELETON';
-    const tailWag = isDead || isSkeleton ? 0 : Math.sin(time * 0.004 + position.x * 0.008) * fish.size * 0.13;
-    const tint = Math.sin((fish.colorHue + fish.size) * 0.14) * 3;
-    const light = 54 + Math.sin(fish.size * 0.33) * 4;
+    const tailWag = isDead || isSkeleton ? 0 : Math.sin(time * 0.004 + position.x * 0.008) * rp.tailWagAmp;
+    const tint = Math.sin((fish.colorHue + rp.radius) * 0.14) * 3;
+
+    const baseLight = 54 + Math.sin(rp.radius * 0.33) * 4;
+    const light = baseLight * (rp.lightnessMult ?? 1);
+
+    const sat = Math.max(18, Math.min(76, 52 * (rp.saturationMult ?? 1)));
+
 
     ctx.save();
     ctx.translate(position.x, position.y);
@@ -293,7 +364,7 @@ export class Renderer {
     const bodyPath = new Path2D();
     bodyPath.ellipse(0, 0, bodyLength * 0.5, bodyHeight * 0.5, 0, 0, TAU);
 
-    ctx.fillStyle = isSkeleton ? 'hsl(36deg 8% 72%)' : (isDead ? 'hsl(0deg 0% 56%)' : `hsl(${fish.colorHue + tint}deg 52% ${light}%)`);
+    ctx.fillStyle = isSkeleton ? 'hsl(36deg 8% 72%)' : (isDead ? 'hsl(0deg 0% 56%)' : `hsl(${fish.colorHue + tint}deg ${sat}% ${light}%)`);
     ctx.fill(bodyPath);
 
     if (fish.id === this.world.selectedFishId) {
@@ -310,7 +381,7 @@ export class Renderer {
     ctx.strokeStyle = 'rgba(205, 230, 245, 0.13)';
     ctx.stroke(bodyPath);
 
-    ctx.fillStyle = isSkeleton ? 'hsl(35deg 9% 54%)' : (isDead ? 'hsl(0deg 0% 42%)' : `hsl(${fish.colorHue + tint - 8}deg 40% ${light - 12}%)`);
+    ctx.fillStyle = isSkeleton ? 'hsl(35deg 9% 54%)' : (isDead ? 'hsl(0deg 0% 42%)' : `hsl(${fish.colorHue + tint - 8}deg ${Math.max(12, sat - 12)}% ${light - 12}%)`);
     ctx.beginPath();
     ctx.moveTo(-bodyLength * 0.52, 0);
     ctx.lineTo(-bodyLength * 0.84, bodyHeight * 0.35 + tailWag);
@@ -321,17 +392,17 @@ export class Renderer {
     if (!isSkeleton) {
       ctx.fillStyle = 'rgba(255,255,255,0.7)';
       ctx.beginPath();
-      ctx.arc(bodyLength * 0.22, -bodyHeight * 0.12, fish.size * 0.07, 0, TAU);
+      ctx.arc(bodyLength * 0.22, -bodyHeight * 0.12, rp.radius * 0.07 * (rp.eyeScale ?? 1), 0, TAU);
       ctx.fill();
 
       ctx.fillStyle = isDead ? '#47515a' : '#0c1f2f';
       ctx.beginPath();
-      ctx.arc(bodyLength * 0.24, -bodyHeight * 0.12, fish.size * 0.034, 0, TAU);
+      ctx.arc(bodyLength * 0.24, -bodyHeight * 0.12, rp.radius * 0.034 * (rp.eyeScale ?? 1), 0, TAU);
       ctx.fill();
     }
 
     const mouthOpen = isSkeleton ? 0 : (fish.mouthOpen01?.() ?? 0);
-    const mouthSize = fish.size * 0.05 + mouthOpen * fish.size * 0.055;
+    const mouthSize = rp.radius * 0.05 + mouthOpen * rp.radius * 0.055;
     const mouthX = bodyLength * 0.49;
 
     ctx.fillStyle = 'rgba(18, 28, 34, 0.8)';

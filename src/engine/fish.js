@@ -1,29 +1,38 @@
-const TAU = Math.PI * 2;
-const MAX_TILT = Math.PI / 3;
-const TARGET_REACHED_RADIUS = 18;
-const FACE_SWITCH_COS = 0.2;
-const MAX_TURN_RATE = 1.45;
-const DESIRED_TURN_RATE = 2.1;
-const SPEED_MULTIPLIER = 1.5;
-const FOOD_REACH_RADIUS = 14;
-const DEAD_SINK_SPEED = 30;
-const METABOLISM_COST_PER_PIXEL = 0.00004;
-const HUNGRY_THRESHOLD = 0.35;
-const STARVING_THRESHOLD = 0.72;
-const FOOD_VISION_RADIUS = {
-  HUNGRY: 120,
-  STARVING: 215
-};
-const FOOD_SPEED_BOOST = {
-  HUNGRY: 1.26,
-  STARVING: 1
-};
+import { CONFIG } from '../config.js';
+
+const TAU = CONFIG.fish.tau;
+const MAX_TILT = CONFIG.fish.maxTiltRad;
+const TARGET_REACHED_RADIUS = CONFIG.fish.targetReachedRadius;
+const FACE_SWITCH_COS = CONFIG.fish.faceSwitchCos;
+const MAX_TURN_RATE = CONFIG.fish.maxTurnRate;
+const DESIRED_TURN_RATE = CONFIG.fish.desiredTurnRate;
+const SPEED_MULTIPLIER = CONFIG.fish.speedMultiplier;
+const FOOD_REACH_RADIUS = CONFIG.fish.foodReachRadius;
+const DEAD_SINK_SPEED = CONFIG.fish.deadSinkSpeed;
+const METABOLISM_COST_PER_PIXEL = CONFIG.fish.metabolism.costPerPixel;
+const HUNGRY_THRESHOLD = CONFIG.fish.hunger.hungryThreshold;
+const STARVING_THRESHOLD = CONFIG.fish.hunger.starvingThreshold;
+const FOOD_VISION_RADIUS = CONFIG.fish.hunger.foodVisionRadius;
+const FOOD_SPEED_BOOST = CONFIG.fish.hunger.foodSpeedBoost;
+const SEEK_FORCE_MULTIPLIER = CONFIG.fish.hunger.seekForceMultiplier ?? 2.0;
+const PLAY_SPEED_BOOST = 1.45;
+const PLAY_RUNNER_SPEED_BOOST = 1.18;
+
+const AGE_CONFIG = CONFIG.fish.age;
+const GROWTH_CONFIG = CONFIG.fish.growth;
+const MORPH = CONFIG.fish.morph;
+const STAGE_SPEED = CONFIG.fish.stageSpeed;
 const FISH_BUILD_STAMP = new Date().toISOString();
 
 console.log(`[aquatab] Fish module loaded: ${import.meta.url} | BUILD: ${FISH_BUILD_STAMP}`);
 
 const rand = (min, max) => min + Math.random() * (max - min);
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+const clamp01 = (v) => clamp(v, 0, 1);
+const lerp = (a, b, t) => a + (b - a) * t;
+// Smooth-ish ease for growth transitions.
+const easeInOut = (t) => t * t * (3 - 2 * t);
 
 function normalizeAngle(angle) {
   let out = angle;
@@ -63,7 +72,29 @@ export class Fish {
     this.name = options.name ?? '';
     this.spawnTimeSec = options.spawnTimeSec ?? 0;
 
-    this.size = options.size ?? rand(14, 30);
+    // --- Life-cycle randoms (set once at birth) ---
+    const sizeRange = GROWTH_CONFIG.sizeFactorRange;
+    const growthRange = GROWTH_CONFIG.growthRateRange;
+
+    this.sizeFactor = options.sizeFactor ?? rand(sizeRange.min, sizeRange.max);
+    this.adultRadius = GROWTH_CONFIG.adultRadius * this.sizeFactor;
+
+    this.growthRate = options.growthRate ?? rand(growthRange.min, growthRange.max);
+
+    const lifeMean = AGE_CONFIG.lifespanMeanSec;
+    const lifeJitter = AGE_CONFIG.lifespanJitterSec;
+    this.lifespanSec = options.lifespanSec ?? rand(lifeMean - lifeJitter, lifeMean + lifeJitter);
+
+    const stageJitter = AGE_CONFIG.stageJitterSec;
+    this.stageShiftBabySec = options.stageShiftBabySec ?? rand(-stageJitter, stageJitter);
+    this.stageShiftJuvenileSec = options.stageShiftJuvenileSec ?? rand(-stageJitter, stageJitter);
+
+    // Current visual radius (updated each tick by updateLifeCycle()).
+    // Start small at birth.
+    this.size = this.adultRadius * GROWTH_CONFIG.birthScale;
+    this.lifeStage = 'BABY';
+    this.growth01 = 0;
+    this.ageSecCached = 0;
     this.colorHue = options.colorHue ?? rand(8, 42);
     this.speedFactor = options.speedFactor ?? rand(0.42, 0.68);
 
@@ -96,6 +127,18 @@ export class Fish {
     this.behavior = { mode: 'wander', targetFoodId: null, speedBoost: 1 };
     this.eatAnimTimer = 0;
     this.eatAnimDuration = 0.22;
+
+    this.playState = {
+      sessionId: null,
+      activeUntilSec: 0,
+      targetFishId: null,
+      role: 'NONE',
+      startedNearAlgae: false,
+      cooldownUntilSec: 0
+    };
+
+    // Cached reference for pursuit updates (set during decideBehavior).
+    this._worldRef = null;
   }
 
   setBounds(bounds) {
@@ -145,9 +188,83 @@ export class Fish {
     }
   }
 
-  decideBehavior(world) {
+  updatePlayState(simTimeSec) {
+    if (!this.isPlaying(simTimeSec)) return;
+    if (simTimeSec < this.playState.activeUntilSec) return;
+    this.stopPlay(simTimeSec);
+  }
+
+  isPlaying(simTimeSec) {
+    return this.lifeState === 'ALIVE' && this.playState.sessionId != null && simTimeSec < this.playState.activeUntilSec;
+  }
+
+  canStartPlay(simTimeSec) {
+    if (this.lifeState !== 'ALIVE') return false;
+    if (this.lifeStage === 'OLD') return false;
+    if (this.isPlaying(simTimeSec)) return false;
+    if (simTimeSec < this.playState.cooldownUntilSec) return false;
+    if (this.hungerState !== 'FED') return false;
+    return this.wellbeing01 >= 0.8;
+  }
+
+  startPlay({ sessionId, untilSec, role = 'CHASER', targetFishId, startedNearAlgae = false, simTimeSec = 0 }) {
+    this.playState.sessionId = sessionId;
+    this.playState.activeUntilSec = untilSec;
+    this.playState.role = role;
+    this.playState.targetFishId = targetFishId ?? null;
+    this.playState.startedNearAlgae = Boolean(startedNearAlgae);
+    this.wellbeing01 = clamp(this.wellbeing01 + 0.03, 0, 1);
+    this.playState.cooldownUntilSec = Math.max(this.playState.cooldownUntilSec, simTimeSec + rand(5, 10));
+  }
+
+  setPlayRole(role) {
+    this.playState.role = role;
+  }
+
+  setPlayTargetFish(targetFishId) {
+    this.playState.targetFishId = targetFishId ?? null;
+  }
+
+  delayPlayEligibility(untilSec) {
+    this.playState.cooldownUntilSec = Math.max(this.playState.cooldownUntilSec, untilSec);
+  }
+
+  stopPlay(simTimeSec = 0) {
+    this.playState.sessionId = null;
+    this.playState.activeUntilSec = 0;
+    this.playState.role = 'NONE';
+    this.playState.targetFishId = null;
+    this.playState.startedNearAlgae = false;
+    this.playState.cooldownUntilSec = Math.max(this.playState.cooldownUntilSec, simTimeSec + rand(5, 10));
+  }
+
+  playProbability(nearAlgae = false) {
+    if (this.lifeStage === 'OLD') return 0;
+
+    if (this.lifeStage === 'BABY') return nearAlgae ? 0.8 : 0.5;
+    if (this.lifeStage === 'JUVENILE') return nearAlgae ? 0.5 : 0.4;
+    if (this.lifeStage === 'ADULT') return 0.2;
+    return 0;
+  }
+
+  // Keep `dt` param for future time-based behaviors (cooldowns, sensing cadence, etc.).
+  decideBehavior(world, dt = 0) {
+    // Cache for pursuit targeting (food moves while sinking).
+    this._worldRef = world ?? null;
+
     if (this.lifeState !== 'ALIVE') {
       this.behavior = { mode: 'deadSink', targetFoodId: null, speedBoost: 1 };
+      return;
+    }
+
+    if (this.isPlaying(world?.simTimeSec ?? 0)) {
+      const isRunner = this.playState.role === 'RUNNER';
+      this.behavior = {
+        mode: isRunner ? 'playEvade' : 'playChase',
+        targetFoodId: null,
+        speedBoost: isRunner ? PLAY_RUNNER_SPEED_BOOST : PLAY_SPEED_BOOST,
+        targetFishId: this.playState.targetFishId
+      };
       return;
     }
 
@@ -177,9 +294,45 @@ export class Fish {
       return;
     }
 
+    // Pursuit: keep the target synced to the pellet's *current* position.
+    if (this.behavior.mode === 'seekFood' && this.behavior.targetFoodId && this._worldRef?.food) {
+      const food = this._worldRef.food.find((f) => f.id === this.behavior.targetFoodId);
+      if (food) this.target = { x: food.x, y: food.y };
+    }
+
+    if (this.behavior.mode === 'playChase' && this.behavior.targetFishId && this._worldRef?.fish) {
+      const targetFish = this._worldRef.fish.find((f) => f.id === this.behavior.targetFishId && f.lifeState === 'ALIVE');
+      if (targetFish) {
+        const lookAhead = targetFish.currentSpeed * Math.min(0.35, dt * 4);
+        this.target = {
+          x: targetFish.position.x + Math.cos(targetFish.headingAngle) * lookAhead,
+          y: targetFish.position.y + Math.sin(targetFish.headingAngle) * lookAhead
+        };
+      }
+    }
+
+    if (this.behavior.mode === 'playEvade' && this.behavior.targetFishId && this._worldRef?.fish) {
+      const hunter = this._worldRef.fish.find((f) => f.id === this.behavior.targetFishId && f.lifeState === 'ALIVE');
+      if (hunter) {
+        const awayX = this.position.x - hunter.position.x;
+        const awayY = this.position.y - hunter.position.y;
+        const mag = Math.hypot(awayX, awayY) || 1;
+        const escapeDistance = 82;
+        this.target = {
+          x: this.position.x + (awayX / mag) * escapeDistance,
+          y: this.position.y + (awayY / mag) * escapeDistance
+        };
+      }
+    }
+
     if (this.behavior.mode === 'wander' && this.#shouldRetarget()) this.target = this.#pickTarget();
 
     const seek = this.#seekVector();
+    if (this.behavior.mode === 'seekFood') {
+      // Make hungry fish look decisive.
+      seek.x *= SEEK_FORCE_MULTIPLIER;
+      seek.y *= SEEK_FORCE_MULTIPLIER;
+    }
     const avoidance = this.#wallAvoidanceVector();
     const desiredX = seek.x + avoidance.x;
     const desiredY = seek.y + avoidance.y;
@@ -193,7 +346,7 @@ export class Fish {
 
     this.cruisePhase = normalizeAngle(this.cruisePhase + dt * this.cruiseRate);
     const cruiseFactor = 1 + Math.sin(this.cruisePhase) * 0.18;
-    const speedBoost = this.behavior.mode === 'seekFood' ? this.behavior.speedBoost : 1;
+    const speedBoost = (this.behavior.mode === 'seekFood' || this.behavior.mode === 'playChase' || this.behavior.mode === 'playEvade') ? this.behavior.speedBoost : 1;
     const desiredSpeed = this.#baseSpeed() * cruiseFactor * speedBoost;
     this.currentSpeed += (desiredSpeed - this.currentSpeed) * Math.min(1, dt * 0.8);
 
@@ -226,10 +379,87 @@ export class Fish {
     const reachRadius = nearBottom ? FOOD_REACH_RADIUS * 1.7 : FOOD_REACH_RADIUS;
     if (Math.min(distHead, distBody) > reachRadius) return;
 
-    const consumed = world.consumeFood(targetFood.id, 0.42);
+    // Single bite: pellet disappears in one bite.
+    // Satiety remains partial (eat() scales recovery), so fish may continue seeking.
+    const consumed = world.consumeFood(targetFood.id, targetFood.amount);
     if (consumed <= 0) return;
     this.eatAnimTimer = this.eatAnimDuration;
     this.eat(consumed);
+  }
+
+
+
+  updateLifeCycle(simTimeSec) {
+    // Keep cached values for renderer/UI without requiring extra parameters elsewhere.
+    const ageSec = Math.max(0, simTimeSec - this.spawnTimeSec);
+    this.ageSecCached = ageSec;
+
+    // Stage thresholds with per-fish shifts (avoid sync).
+    const baseBabyEnd = AGE_CONFIG.stageBaseSec.babyEndSec;
+    const baseJuvenileEnd = AGE_CONFIG.stageBaseSec.juvenileEndSec;
+
+    let babyEnd = Math.max(30, baseBabyEnd + this.stageShiftBabySec);
+    let juvenileEnd = Math.max(babyEnd + 60, baseJuvenileEnd + this.stageShiftJuvenileSec);
+
+    // Effective age controls growth pace.
+    const effectiveAge = ageSec * this.growthRate;
+
+    // Stage selection (age-based, not hunger-based).
+    const oldStart = this.lifespanSec * AGE_CONFIG.oldStartRatio;
+
+    let stage = 'ADULT';
+    if (effectiveAge < babyEnd) stage = 'BABY';
+    else if (effectiveAge < juvenileEnd) stage = 'JUVENILE';
+    else if (ageSec >= oldStart) stage = 'OLD';
+
+    this.lifeStage = stage;
+
+    // Smooth growth from birthScale -> 1.0 until "adult" threshold.
+    const adultAgeSec = juvenileEnd;
+    const t = clamp01(effectiveAge / adultAgeSec);
+    this.growth01 = t;
+
+    const eased = easeInOut(t);
+    const scale = lerp(GROWTH_CONFIG.birthScale, 1, eased);
+    this.size = this.adultRadius * scale;
+
+    // Natural death by lifespan (simple baseline; later we can switch to probabilistic old-age death).
+    if (this.lifeState === 'ALIVE' && ageSec >= this.lifespanSec) {
+      this.lifeState = 'DEAD';
+      this.currentSpeed = 0;
+      this.behavior = { mode: 'deadSink', targetFoodId: null, speedBoost: 1 };
+    }
+  }
+
+  lifeStageLabel() {
+    switch (this.lifeStage) {
+      case 'BABY': return 'Yavru';
+      case 'JUVENILE': return 'Genç';
+      case 'ADULT': return 'Yetişkin';
+      case 'OLD': return 'Yaşlı';
+      default: return String(this.lifeStage ?? '');
+    }
+  }
+
+  getRenderParams() {
+    const morph = MORPH[this.lifeStage] ?? MORPH.ADULT;
+    // Condition affects "plumpness" and saturation a bit (middle-road model).
+    const condition01 = clamp01(1 - this.hunger01 * 0.9);
+
+    const bodyLength = this.size * 1.32 * morph.bodyLength;
+    const bodyHeight = this.size * 0.73 * morph.bodyHeight * lerp(0.92, 1.06, condition01);
+    const tailWagAmp = this.size * 0.13 * morph.tailLength;
+
+    return {
+      radius: this.size,
+      bodyLength,
+      bodyHeight,
+      tailWagAmp,
+      eyeScale: morph.eye * lerp(0.95, 1.05, condition01),
+      saturationMult: morph.saturation * lerp(0.92, 1.06, condition01),
+      lightnessMult: morph.lightness,
+      condition01
+    };
   }
 
 
@@ -263,7 +493,8 @@ export class Fish {
   }
 
   #baseSpeed() {
-    return (20 + this.size * 0.9 * this.speedFactor) * SPEED_MULTIPLIER;
+    const stageMul = STAGE_SPEED[this.lifeStage] ?? 1;
+    return (20 + this.size * 0.9 * this.speedFactor) * SPEED_MULTIPLIER * stageMul;
   }
 
   #findNearestFood(foodList) {
