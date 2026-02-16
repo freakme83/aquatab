@@ -87,6 +87,7 @@ export class Renderer {
     this.#drawPlayEffects(ctx, time);
     this.#drawWaterParticles(ctx, delta);
     this.#drawBubbles(ctx);
+    this.#drawFilterModule(ctx, time);
     this.#drawFood(ctx);
     this.#drawFishSchool(ctx, time);
     this.#drawCachedVignette(ctx);
@@ -301,6 +302,57 @@ export class Renderer {
       ctx.fill();
       ctx.stroke();
     }
+  }
+
+
+  #drawFilterModule(ctx, time) {
+    const water = this.world.water;
+    if (!water?.filterInstalled) return;
+
+    const sx = this.tankRect.width / this.world.bounds.width;
+    const sy = this.tankRect.height / this.world.bounds.height;
+    const moduleW = Math.max(16, 28 * sx);
+    const moduleH = Math.max(26, 52 * sy);
+    const x = this.tankRect.x + this.tankRect.width - moduleW - 10;
+    const y = this.tankRect.y + this.tankRect.height - moduleH - 10;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(25, 34, 43, 0.92)';
+    ctx.strokeStyle = 'rgba(180, 220, 240, 0.35)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(x, y, moduleW, moduleH, 5);
+    ctx.fill();
+    ctx.stroke();
+
+    const health = water.filter01 ?? 0;
+    const led = health > 0.6 ? 'rgba(96, 255, 140, 0.95)' : (health >= 0.2 ? 'rgba(255, 224, 99, 0.95)' : 'rgba(255, 82, 82, 0.95)');
+    ctx.fillStyle = led;
+    ctx.beginPath();
+    ctx.arc(x + moduleW * 0.5, y + 8, 3.2, 0, TAU);
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(145, 205, 236, 0.32)';
+    ctx.beginPath();
+    ctx.moveTo(x + moduleW * 0.28, y + moduleH * 0.28);
+    ctx.lineTo(x + moduleW * 0.28, y + moduleH * 0.84);
+    ctx.moveTo(x + moduleW * 0.72, y + moduleH * 0.28);
+    ctx.lineTo(x + moduleW * 0.72, y + moduleH * 0.84);
+    ctx.stroke();
+
+    if ((water.effectiveFilter01 ?? 0) > 0) {
+      const bubbleCount = this.quality === 'high' ? 4 : 2;
+      for (let i = 0; i < bubbleCount; i += 1) {
+        const bubbleY = y + moduleH * 0.88 - ((time * 0.05 + i * 8) % (moduleH * 0.75));
+        const bubbleX = x - 4 - Math.sin(time * 0.004 + i * 1.3) * 2;
+        ctx.beginPath();
+        ctx.fillStyle = 'rgba(188, 234, 255, 0.33)';
+        ctx.arc(bubbleX, bubbleY, 1.4 + (i % 2) * 0.4, 0, TAU);
+        ctx.fill();
+      }
+    }
+
+    ctx.restore();
   }
 
   #drawFood(ctx) {

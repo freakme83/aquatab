@@ -30,7 +30,16 @@ export const CONFIG = Object.freeze({
       baselineDecayPerSec: 0.0002,
       bioloadDirtPerSec: 0.00035,
       dirtPerExpiredFood: 0.015,
-      dirtToDecayMultiplier: 3
+      dirtToDecayMultiplier: 3,
+      filterDirtRemovePerSec: 0.0006,
+      wearBasePerSec: 0.00005,
+      wearBioloadFactor: 1.0,
+      wearDirtFactor: 2.5,
+      filterDepletedThreshold01: 0.1,
+      installDurationSec: 12,
+      maintenanceDurationSec: 12,
+      maintenanceCooldownSec: 25,
+      maintenanceRestoreTo01: 1.0
     }
   },
 

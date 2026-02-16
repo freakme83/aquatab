@@ -19,11 +19,15 @@ export class Panel {
     this.qualityStat = this.root.querySelector('[data-stat="quality"]');
     this.cleanlinessStat = this.root.querySelector('[data-stat="cleanliness"]');
     this.filterUnlockStat = this.root.querySelector('[data-stat="filterUnlock"]');
+    this.filterHealthStat = this.root.querySelector('[data-stat="filterHealth"]');
+    this.filterActionStat = this.root.querySelector('[data-stat="filterAction"]');
 
     this.fishSlider = this.root.querySelector('[data-control="fishCount"]');
     this.speedSlider = this.root.querySelector('[data-control="simSpeed"]');
     this.toggleButton = this.root.querySelector('[data-control="togglePause"]');
     this.qualityButton = this.root.querySelector('[data-control="toggleQuality"]');
+    this.installFilterButton = this.root.querySelector('[data-control="installFilter"]');
+    this.maintainFilterButton = this.root.querySelector('[data-control="maintainFilter"]');
 
     this.fishValue = this.root.querySelector('[data-value="fishCount"]');
     this.speedValue = this.root.querySelector('[data-value="simSpeed"]');
@@ -78,6 +82,14 @@ export class Panel {
     this.qualityButton.addEventListener('click', () => {
       const quality = this.handlers.onQualityToggle();
       this.#setQualityText(quality);
+    });
+
+    this.installFilterButton?.addEventListener('click', () => {
+      this.handlers.onFilterInstall?.();
+    });
+
+    this.maintainFilterButton?.addEventListener('click', () => {
+      this.handlers.onFilterMaintain?.();
     });
   }
 
@@ -144,7 +156,21 @@ export class Panel {
     this.#setQualityText(quality);
   }
 
-  updateStats({ fps, fishCount, quality, cleanliness01, filterUnlocked, foodsConsumedCount, filterUnlockThreshold }) {
+  updateStats({
+    fps,
+    fishCount,
+    quality,
+    cleanliness01,
+    filterUnlocked,
+    foodsConsumedCount,
+    filterUnlockThreshold,
+    filterInstalled,
+    filter01,
+    installProgress01,
+    maintenanceProgress01,
+    maintenanceCooldownSec,
+    filterDepletedThreshold01
+  }) {
     this.fpsStat.textContent = String(Math.round(fps));
     this.fishCountStat.textContent = String(fishCount);
     this.#setQualityText(quality);
@@ -155,13 +181,55 @@ export class Panel {
     }
 
     if (this.filterUnlockStat) {
-      if (filterUnlocked) {
-        this.filterUnlockStat.textContent = 'Filter: Unlocked';
+      if (!filterUnlocked) {
+        this.filterUnlockStat.textContent = 'Filter: Locked';
+      } else if (!filterInstalled) {
+        this.filterUnlockStat.textContent = 'Filter: Available';
       } else {
+        this.filterUnlockStat.textContent = `Filter: Installed (${Math.round(Math.max(0, filter01 ?? 0) * 100)}%)`;
+      }
+    }
+
+    if (this.filterHealthStat) {
+      if (!filterUnlocked) {
         const consumed = Math.max(0, Math.floor(foodsConsumedCount ?? 0));
         const threshold = Math.max(0, Math.floor(filterUnlockThreshold ?? 0));
-        this.filterUnlockStat.textContent = `Filter: Locked (${consumed} / ${threshold})`;
+        this.filterHealthStat.textContent = `${consumed} / ${threshold}`;
+      } else if (!filterInstalled && (installProgress01 ?? 0) <= 0) {
+        this.filterHealthStat.textContent = 'Ready to install';
+      } else {
+        this.filterHealthStat.textContent = `${Math.round(Math.max(0, filter01 ?? 0) * 100)}%`;
       }
+    }
+
+    const isInstalling = (installProgress01 ?? 0) > 0;
+    const isMaintaining = (maintenanceProgress01 ?? 0) > 0;
+    const canInstall = filterUnlocked && !filterInstalled && !isInstalling;
+    const canMaintain = filterInstalled && !isInstalling && !isMaintaining && (maintenanceCooldownSec ?? 0) <= 0;
+    const depleted = filterInstalled && !isMaintaining && (filter01 ?? 0) <= (filterDepletedThreshold01 ?? 0.1);
+
+    if (this.filterActionStat) {
+      if (isInstalling) {
+        this.filterActionStat.textContent = `Installing... ${Math.round((installProgress01 ?? 0) * 100)}%`;
+      } else if (isMaintaining) {
+        this.filterActionStat.textContent = `Maintaining... ${Math.round((maintenanceProgress01 ?? 0) * 100)}%`;
+      } else if (depleted) {
+        this.filterActionStat.textContent = 'Maintenance required';
+      } else if (filterInstalled && (maintenanceCooldownSec ?? 0) > 0) {
+        this.filterActionStat.textContent = `Maintenance cooldown: ${Math.ceil(maintenanceCooldownSec ?? 0)}s`;
+      } else {
+        this.filterActionStat.textContent = '--';
+      }
+    }
+
+    if (this.installFilterButton) {
+      this.installFilterButton.hidden = !canInstall;
+      this.installFilterButton.disabled = !canInstall;
+    }
+
+    if (this.maintainFilterButton) {
+      this.maintainFilterButton.hidden = !filterInstalled;
+      this.maintainFilterButton.disabled = !canMaintain;
     }
   }
 
