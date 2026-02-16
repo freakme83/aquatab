@@ -39,15 +39,16 @@ body::before {
   padding: clamp(20px, 3.5vw, 48px);
   display: grid;
   grid-template-columns: minmax(0, 1fr) 288px;
-  gap: clamp(16px, 2.3vw, 28px);
+  gap: clamp(8px, 1.2vw, 16px);
   align-items: start;
 }
 
 .tank-stage {
   min-width: 0;
   height: var(--tank-height);
-  display: grid;
-  place-items: center;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
 }
 
 .tank-shell {
@@ -270,16 +271,16 @@ input[type='range'] {
 }
 
 .tab-content[data-content='fish'] {
-  overflow: hidden;
+  overflow-y: auto;
 }
 
 .fish-inspector {
   grid-template-rows: minmax(160px, 1fr) auto;
-  min-height: 100%;
+  min-height: 0;
 }
 
 .fish-list {
-  min-height: 0;
+  min-height: 120px;
   max-height: none;
   overflow-y: auto;
   padding-right: 2px;
