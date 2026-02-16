@@ -16,8 +16,6 @@ const FOOD_FALL_DAMPING = CONFIG.world.food.fallDamping;
 const FOOD_MAX_FALL_SPEED = CONFIG.world.food.maxFallSpeed;
 const AGE_CONFIG = CONFIG.fish.age;
 const GROWTH_CONFIG = CONFIG.fish.growth;
-const FISH_DEAD_TO_SKELETON_SEC = CONFIG.world.fishLifecycle.deadToSkeletonSec;
-const FISH_SKELETON_TO_REMOVE_SEC = CONFIG.world.fishLifecycle.skeletonToRemoveSec;
 const WATER_CONFIG = CONFIG.world.water;
 const WATER_INITIAL_HYGIENE01 = 1;
 const WATER_INITIAL_DIRT01 = 0;
@@ -26,6 +24,11 @@ const WATER_BASELINE_DECAY_PER_SEC = Math.max(0, WATER_CONFIG.baselineDecayPerSe
 const WATER_BIOLOAD_DIRT_PER_SEC = Math.max(0, WATER_CONFIG.bioloadDirtPerSec ?? 0);
 const WATER_DIRT_PER_EXPIRED_FOOD = Math.max(0, WATER_CONFIG.dirtPerExpiredFood ?? 0);
 const WATER_DIRT_TO_DECAY_MULTIPLIER = Math.max(0, WATER_CONFIG.dirtToDecayMultiplier ?? 3);
+const CORPSE_GRACE_SEC = 120;
+const CORPSE_DIRT_STEP_SEC = 60;
+const CORPSE_DIRT_INITIAL01 = 0.07;
+const CORPSE_DIRT_STEP01 = 0.01;
+const CORPSE_DIRT_MAX01 = 0.12;
 
 function makeBubble(bounds) {
   return {
@@ -40,6 +43,8 @@ function makeBubble(bounds) {
 
 export class World {
   constructor(width, height, initialFishCount = 20) {
+    const normalizedInitialFishCount = Math.max(1, Math.min(50, Math.round(initialFishCount)));
+
     this.bounds = { width, height, sandHeight: this.#computeSandHeight(height) };
     this.fish = [];
     this.food = [];
@@ -52,6 +57,11 @@ export class World {
     this.nextPlaySessionId = 1;
     this.simTimeSec = 0;
     this.selectedFishId = null;
+
+    this.initialFishCount = normalizedInitialFishCount;
+    this.foodsConsumedCount = 0;
+    this.filterUnlockThreshold = this.initialFishCount * 4;
+    this.filterUnlocked = false;
 
     // Simple event queue for UI/telemetry/achievements.
     // Use `world.flushEvents()` from main loop if/when needed.
@@ -66,7 +76,7 @@ export class World {
     this.paused = false;
     this.speedMultiplier = 1;
 
-    this.setFishCount(initialFishCount);
+    this.setFishCount(this.initialFishCount);
     this.#seedBubbles();
     this.#seedGroundAlgae();
   }
@@ -207,6 +217,15 @@ export class World {
     }
 
     if (consumed > 0) this.emit('food:consume', { foodId, consumed });
+
+    if (consumed > 0) {
+      this.foodsConsumedCount += 1;
+
+      if (!this.filterUnlocked && this.foodsConsumedCount >= this.filterUnlockThreshold) {
+        this.filterUnlocked = true;
+      }
+    }
+
     return consumed;
   }
 
@@ -235,6 +254,17 @@ export class World {
   discardFish(fishId) {
     const index = this.fish.findIndex((entry) => entry.id === fishId && entry.lifeState !== 'ALIVE');
     if (index < 0) return false;
+    this.fish.splice(index, 1);
+    if (this.selectedFishId === fishId) this.selectedFishId = null;
+    return true;
+  }
+
+  removeCorpse(fishId) {
+    const index = this.fish.findIndex((entry) => entry.id === fishId && entry.lifeState === 'DEAD');
+    if (index < 0) return false;
+
+    const fish = this.fish[index];
+    fish.corpseRemoved = true;
     this.fish.splice(index, 1);
     if (this.selectedFishId === fishId) this.selectedFishId = null;
     return true;
@@ -311,6 +341,34 @@ export class World {
     this.expiredFoodSinceLastWaterUpdate = 0;
 
     if (!Number.isFinite(dtSec) || dtSec <= 0) return;
+
+    for (let i = this.fish.length - 1; i >= 0; i -= 1) {
+      const fish = this.fish[i];
+      if (fish.lifeState !== 'DEAD' || fish.corpseRemoved) continue;
+
+      if (fish.deadAtSec == null) fish.deadAtSec = this.simTimeSec;
+
+      const ageDeadSec = Math.max(0, this.simTimeSec - fish.deadAtSec);
+      let targetContribution = 0;
+
+      if (ageDeadSec >= CORPSE_GRACE_SEC) {
+        const minutesAfterGrace = Math.floor((ageDeadSec - CORPSE_GRACE_SEC) / CORPSE_DIRT_STEP_SEC);
+        targetContribution = clamp(CORPSE_DIRT_INITIAL01 + CORPSE_DIRT_STEP01 * minutesAfterGrace, 0, CORPSE_DIRT_MAX01);
+      }
+
+      const alreadyApplied = clamp(fish.corpseDirtApplied01 ?? 0, 0, CORPSE_DIRT_MAX01);
+      const delta = targetContribution - alreadyApplied;
+      if (delta > 0) {
+        this.water.dirt01 = clamp(this.water.dirt01 + delta, 0, 1);
+        fish.corpseDirtApplied01 = targetContribution;
+      }
+
+      if (fish.corpseDirtApplied01 >= CORPSE_DIRT_MAX01) {
+        fish.corpseRemoved = true;
+        this.fish.splice(i, 1);
+        if (this.selectedFishId === fish.id) this.selectedFishId = null;
+      }
+    }
 
     const fishCount = this.fish.length;
     const bioload = fishCount / WATER_REFERENCE_FISH_COUNT;
@@ -504,20 +562,6 @@ export class World {
       const fish = this.fish[i];
       if (fish.lifeState === 'DEAD') {
         if (fish.deadAtSec == null) fish.deadAtSec = this.simTimeSec;
-        if (this.simTimeSec - fish.deadAtSec >= FISH_DEAD_TO_SKELETON_SEC) {
-          fish.lifeState = 'SKELETON';
-          fish.skeletonAtSec = this.simTimeSec;
-          fish.behavior = { mode: 'deadSink', targetFoodId: null, speedBoost: 1 };
-        }
-        continue;
-      }
-
-      if (fish.lifeState === 'SKELETON') {
-        if (fish.skeletonAtSec == null) fish.skeletonAtSec = this.simTimeSec;
-        if (this.simTimeSec - fish.skeletonAtSec >= FISH_SKELETON_TO_REMOVE_SEC) {
-          this.fish.splice(i, 1);
-          if (this.selectedFishId === fish.id) this.selectedFishId = null;
-        }
       }
     }
   }
