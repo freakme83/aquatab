@@ -1,0 +1,605 @@
+import { CONFIG } from '../config.js';
+
+const TAU = CONFIG.fish.tau;
+const MAX_TILT = CONFIG.fish.maxTiltRad;
+const TARGET_REACHED_RADIUS = CONFIG.fish.targetReachedRadius;
+const FACE_SWITCH_COS = CONFIG.fish.faceSwitchCos;
+const MAX_TURN_RATE = CONFIG.fish.maxTurnRate;
+const DESIRED_TURN_RATE = CONFIG.fish.desiredTurnRate;
+const SPEED_MULTIPLIER = CONFIG.fish.speedMultiplier;
+const FOOD_REACH_RADIUS = CONFIG.fish.foodReachRadius;
+const DEAD_SINK_SPEED = CONFIG.fish.deadSinkSpeed;
+const METABOLISM_COST_PER_PIXEL = CONFIG.fish.metabolism.costPerPixel;
+const HUNGRY_THRESHOLD = CONFIG.fish.hunger.hungryThreshold;
+const STARVING_THRESHOLD = CONFIG.fish.hunger.starvingThreshold;
+const FOOD_VISION_RADIUS = CONFIG.fish.hunger.foodVisionRadius;
+const FOOD_SPEED_BOOST = CONFIG.fish.hunger.foodSpeedBoost;
+const SEEK_FORCE_MULTIPLIER = CONFIG.fish.hunger.seekForceMultiplier ?? 2.0;
+
+const AGE_CONFIG = CONFIG.fish.age;
+const GROWTH_CONFIG = CONFIG.fish.growth;
+const MORPH = CONFIG.fish.morph;
+const STAGE_SPEED = CONFIG.fish.stageSpeed;
+const FISH_BUILD_STAMP = new Date().toISOString();
+
+console.log(`[aquatab] Fish module loaded: ${import.meta.url} | BUILD: ${FISH_BUILD_STAMP}`);
+
+const rand = (min, max) => min + Math.random() * (max - min);
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+const clamp01 = (v) => clamp(v, 0, 1);
+const lerp = (a, b, t) => a + (b - a) * t;
+// Smooth-ish ease for growth transitions.
+const easeInOut = (t) => t * t * (3 - 2 * t);
+
+function normalizeAngle(angle) {
+  let out = angle;
+  while (out <= -Math.PI) out += TAU;
+  while (out > Math.PI) out -= TAU;
+  return out;
+}
+
+function shortestAngleDelta(from, to) {
+  return normalizeAngle(to - from);
+}
+
+function moveTowardsAngle(current, target, maxStep) {
+  const delta = shortestAngleDelta(current, target);
+  if (Math.abs(delta) <= maxStep) return normalizeAngle(target);
+  return normalizeAngle(current + Math.sign(delta) * maxStep);
+}
+
+function resolveFacingByCos(angle, previousFacing) {
+  const cosValue = Math.cos(angle);
+  if (cosValue > FACE_SWITCH_COS) return 1;
+  if (cosValue < -FACE_SWITCH_COS) return -1;
+  return previousFacing;
+}
+
+function clampAngleForFacing(angle, facing) {
+  const base = facing === -1 ? Math.PI : 0;
+  const relative = normalizeAngle(angle - base);
+  return normalizeAngle(base + clamp(relative, -MAX_TILT, MAX_TILT));
+}
+
+export class Fish {
+  constructor(bounds, options = {}) {
+    this.bounds = bounds;
+
+    this.id = options.id ?? 0;
+    this.name = options.name ?? '';
+    this.spawnTimeSec = options.spawnTimeSec ?? 0;
+
+    // --- Life-cycle randoms (set once at birth) ---
+    const sizeRange = GROWTH_CONFIG.sizeFactorRange;
+    const growthRange = GROWTH_CONFIG.growthRateRange;
+
+    this.sizeFactor = options.sizeFactor ?? rand(sizeRange.min, sizeRange.max);
+    this.adultRadius = GROWTH_CONFIG.adultRadius * this.sizeFactor;
+
+    this.growthRate = options.growthRate ?? rand(growthRange.min, growthRange.max);
+
+    const lifeMean = AGE_CONFIG.lifespanMeanSec;
+    const lifeJitter = AGE_CONFIG.lifespanJitterSec;
+    this.lifespanSec = options.lifespanSec ?? rand(lifeMean - lifeJitter, lifeMean + lifeJitter);
+
+    const stageJitter = AGE_CONFIG.stageJitterSec;
+    this.stageShiftBabySec = options.stageShiftBabySec ?? rand(-stageJitter, stageJitter);
+    this.stageShiftJuvenileSec = options.stageShiftJuvenileSec ?? rand(-stageJitter, stageJitter);
+
+    // Current visual radius (updated each tick by updateLifeCycle()).
+    // Start small at birth.
+    this.size = this.adultRadius * GROWTH_CONFIG.birthScale;
+    this.lifeStage = 'BABY';
+    this.growth01 = 0;
+    this.ageSecCached = 0;
+    this.colorHue = options.colorHue ?? rand(8, 42);
+    this.speedFactor = options.speedFactor ?? rand(0.42, 0.68);
+
+    this.position = options.position
+      ? { x: options.position.x, y: options.position.y }
+      : { x: bounds.width * 0.5, y: bounds.height * 0.5 };
+
+    this.facing = Math.random() < 0.5 ? -1 : 1;
+    const initialHeading = options.headingAngle ?? (this.facing === -1 ? Math.PI : 0);
+    this.facing = resolveFacingByCos(initialHeading, this.facing);
+
+    this.headingAngle = clampAngleForFacing(initialHeading, this.facing);
+    this.desiredAngle = this.headingAngle;
+
+    this.currentSpeed = this.#baseSpeed() * rand(0.9, 1.06);
+    this.cruisePhase = rand(0, TAU);
+    this.cruiseRate = rand(0.35, 0.7);
+
+    this.target = this.#pickTarget();
+    this.lastDistanceMoved = 0;
+
+    this.sex = Math.random() < 0.5 ? 'female' : 'male';
+    this.energy01 = 1;
+    this.hunger01 = 0;
+    this.wellbeing01 = 1;
+    this.hungerState = 'FED';
+    this.lifeState = 'ALIVE';
+    this.deadAtSec = null;
+    this.skeletonAtSec = null;
+    this.behavior = { mode: 'wander', targetFoodId: null, speedBoost: 1 };
+    this.eatAnimTimer = 0;
+    this.eatAnimDuration = 0.22;
+
+    // Cached reference for pursuit updates (set during decideBehavior).
+    this._worldRef = null;
+  }
+
+  setBounds(bounds) {
+    this.bounds = bounds;
+    const movement = this.#movementBounds();
+    this.position.x = clamp(this.position.x, movement.minX, movement.maxX);
+    this.position.y = clamp(this.position.y, movement.minY, movement.maxY);
+    if (!this.#isTargetInBounds(this.target)) this.target = this.#pickTarget();
+  }
+
+  heading() {
+    const stableFacing = resolveFacingByCos(this.headingAngle, this.facing);
+    this.facing = stableFacing;
+
+    const base = stableFacing === -1 ? Math.PI : 0;
+    const localTilt = clamp(normalizeAngle(this.headingAngle - base), -MAX_TILT, MAX_TILT);
+
+    return { tilt: localTilt, facing: stableFacing };
+  }
+
+  updateMetabolism(dt) {
+    if (!Number.isFinite(dt) || dt <= 0) return;
+
+    this.eatAnimTimer = Math.max(0, this.eatAnimTimer - dt);
+
+    if (this.lifeState !== 'ALIVE') {
+      this.energy01 = 0;
+      this.hunger01 = 1;
+      this.wellbeing01 = 0;
+      this.hungerState = 'STARVING';
+      return;
+    }
+
+    const energyDelta = this.lastDistanceMoved * METABOLISM_COST_PER_PIXEL;
+    this.energy01 = clamp(this.energy01 - energyDelta, 0, 1);
+    this.hunger01 = 1 - this.energy01;
+    this.wellbeing01 = clamp(1 - this.hunger01 ** 1.3, 0, 1);
+
+    if (this.hunger01 >= STARVING_THRESHOLD) this.hungerState = 'STARVING';
+    else if (this.hunger01 >= HUNGRY_THRESHOLD) this.hungerState = 'HUNGRY';
+    else this.hungerState = 'FED';
+
+    if (this.energy01 <= 0) {
+      this.lifeState = 'DEAD';
+      this.currentSpeed = 0;
+      this.behavior = { mode: 'deadSink', targetFoodId: null, speedBoost: 1 };
+    }
+  }
+
+  // Keep `dt` param for future time-based behaviors (cooldowns, sensing cadence, etc.).
+  decideBehavior(world, dt = 0) {
+    // Cache for pursuit targeting (food moves while sinking).
+    this._worldRef = world ?? null;
+
+    if (this.lifeState !== 'ALIVE') {
+      this.behavior = { mode: 'deadSink', targetFoodId: null, speedBoost: 1 };
+      return;
+    }
+
+    if (this.hungerState === 'FED') {
+      this.behavior = { mode: 'wander', targetFoodId: null, speedBoost: 1 };
+      return;
+    }
+
+    const visibleFood = this.#findNearestFood(world?.food ?? []);
+    if (!visibleFood) {
+      this.behavior = { mode: 'wander', targetFoodId: null, speedBoost: 1 };
+      return;
+    }
+
+    this.behavior = {
+      mode: 'seekFood',
+      targetFoodId: visibleFood.id,
+      speedBoost: FOOD_SPEED_BOOST[this.hungerState] ?? 1
+    };
+    this.target = { x: visibleFood.x, y: visibleFood.y };
+  }
+
+  applySteering(dt) {
+    if (this.behavior.mode === 'deadSink') {
+      this.#applyDeadSink(dt);
+      this.lastDistanceMoved = 0;
+      return;
+    }
+
+    // Pursuit: keep the target synced to the pellet's *current* position.
+    if (this.behavior.mode === 'seekFood' && this.behavior.targetFoodId && this._worldRef?.food) {
+      const food = this._worldRef.food.find((f) => f.id === this.behavior.targetFoodId);
+      if (food) this.target = { x: food.x, y: food.y };
+    }
+
+    if (this.behavior.mode === 'wander' && this.#shouldRetarget()) this.target = this.#pickTarget();
+
+    const seek = this.#seekVector();
+    if (this.behavior.mode === 'seekFood') {
+      // Make hungry fish look decisive.
+      seek.x *= SEEK_FORCE_MULTIPLIER;
+      seek.y *= SEEK_FORCE_MULTIPLIER;
+    }
+    const avoidance = this.#wallAvoidanceVector();
+    const desiredX = seek.x + avoidance.x;
+    const desiredY = seek.y + avoidance.y;
+
+    const rawDesiredAngle = Math.atan2(desiredY, desiredX);
+    this.facing = resolveFacingByCos(rawDesiredAngle, this.facing);
+
+    const constrainedDesired = clampAngleForFacing(rawDesiredAngle, this.facing);
+    this.desiredAngle = moveTowardsAngle(this.desiredAngle, constrainedDesired, DESIRED_TURN_RATE * dt);
+    this.headingAngle = moveTowardsAngle(this.headingAngle, this.desiredAngle, MAX_TURN_RATE * dt);
+
+    this.cruisePhase = normalizeAngle(this.cruisePhase + dt * this.cruiseRate);
+    const cruiseFactor = 1 + Math.sin(this.cruisePhase) * 0.18;
+    const speedBoost = this.behavior.mode === 'seekFood' ? this.behavior.speedBoost : 1;
+    const desiredSpeed = this.#baseSpeed() * cruiseFactor * speedBoost;
+    this.currentSpeed += (desiredSpeed - this.currentSpeed) * Math.min(1, dt * 0.8);
+
+    const prevX = this.position.x;
+    const prevY = this.position.y;
+    this.position.x += Math.cos(this.headingAngle) * this.currentSpeed * dt;
+    this.position.y += Math.sin(this.headingAngle) * this.currentSpeed * dt;
+
+    this.#resolveCollisions();
+    this.lastDistanceMoved = Math.hypot(this.position.x - prevX, this.position.y - prevY);
+  }
+
+  eat(foodAmount) {
+    if (this.lifeState !== 'ALIVE') return;
+
+    const recovered = clamp(foodAmount * 0.3, 0, 1);
+    this.energy01 = clamp(this.energy01 + recovered, 0, 1);
+    this.hunger01 = 1 - this.energy01;
+  }
+
+  tryConsumeFood(world) {
+    if (this.behavior.mode !== 'seekFood' || !this.behavior.targetFoodId) return;
+    const targetFood = world?.food?.find((entry) => entry.id === this.behavior.targetFoodId);
+    if (!targetFood) return;
+
+    const head = this.headPoint();
+    const distHead = Math.hypot(targetFood.x - head.x, targetFood.y - head.y);
+    const distBody = Math.hypot(targetFood.x - this.position.x, targetFood.y - this.position.y);
+    const nearBottom = targetFood.y >= this.bounds.height - 8;
+    const reachRadius = nearBottom ? FOOD_REACH_RADIUS * 1.7 : FOOD_REACH_RADIUS;
+    if (Math.min(distHead, distBody) > reachRadius) return;
+
+    // Single bite: pellet disappears in one bite.
+    // Satiety remains partial (eat() scales recovery), so fish may continue seeking.
+    const consumed = world.consumeFood(targetFood.id, targetFood.amount);
+    if (consumed <= 0) return;
+    this.eatAnimTimer = this.eatAnimDuration;
+    this.eat(consumed);
+  }
+
+
+
+  updateLifeCycle(simTimeSec) {
+    // Keep cached values for renderer/UI without requiring extra parameters elsewhere.
+    const ageSec = Math.max(0, simTimeSec - this.spawnTimeSec);
+    this.ageSecCached = ageSec;
+
+    // Stage thresholds with per-fish shifts (avoid sync).
+    const baseBabyEnd = AGE_CONFIG.stageBaseSec.babyEndSec;
+    const baseJuvenileEnd = AGE_CONFIG.stageBaseSec.juvenileEndSec;
+
+    let babyEnd = Math.max(30, baseBabyEnd + this.stageShiftBabySec);
+    let juvenileEnd = Math.max(babyEnd + 60, baseJuvenileEnd + this.stageShiftJuvenileSec);
+
+    // Effective age controls growth pace.
+    const effectiveAge = ageSec * this.growthRate;
+
+    // Stage selection (age-based, not hunger-based).
+    const oldStart = this.lifespanSec * AGE_CONFIG.oldStartRatio;
+
+    let stage = 'ADULT';
+    if (effectiveAge < babyEnd) stage = 'BABY';
+    else if (effectiveAge < juvenileEnd) stage = 'JUVENILE';
+    else if (ageSec >= oldStart) stage = 'OLD';
+
+    this.lifeStage = stage;
+
+    // Smooth growth from birthScale -> 1.0 until "adult" threshold.
+    const adultAgeSec = juvenileEnd;
+    const t = clamp01(effectiveAge / adultAgeSec);
+    this.growth01 = t;
+
+    const eased = easeInOut(t);
+    const scale = lerp(GROWTH_CONFIG.birthScale, 1, eased);
+    this.size = this.adultRadius * scale;
+
+    // Natural death by lifespan (simple baseline; later we can switch to probabilistic old-age death).
+    if (this.lifeState === 'ALIVE' && ageSec >= this.lifespanSec) {
+      this.lifeState = 'DEAD';
+      this.currentSpeed = 0;
+      this.behavior = { mode: 'deadSink', targetFoodId: null, speedBoost: 1 };
+    }
+  }
+
+  lifeStageLabel() {
+    switch (this.lifeStage) {
+      case 'BABY': return 'Yavru';
+      case 'JUVENILE': return 'Genç';
+      case 'ADULT': return 'Yetişkin';
+      case 'OLD': return 'Yaşlı';
+      default: return String(this.lifeStage ?? '');
+    }
+  }
+
+  getRenderParams() {
+    const morph = MORPH[this.lifeStage] ?? MORPH.ADULT;
+    // Condition affects "plumpness" and saturation a bit (middle-road model).
+    const condition01 = clamp01(1 - this.hunger01 * 0.9);
+
+    const bodyLength = this.size * 1.32 * morph.bodyLength;
+    const bodyHeight = this.size * 0.73 * morph.bodyHeight * lerp(0.92, 1.06, condition01);
+    const tailWagAmp = this.size * 0.13 * morph.tailLength;
+
+    return {
+      radius: this.size,
+      bodyLength,
+      bodyHeight,
+      tailWagAmp,
+      eyeScale: morph.eye * lerp(0.95, 1.05, condition01),
+      saturationMult: morph.saturation * lerp(0.92, 1.06, condition01),
+      lightnessMult: morph.lightness,
+      condition01
+    };
+  }
+  toJSON() {
+    return {
+      id: this.id,
+      name: this.name,
+      sex: this.sex,
+      spawnTimeSec: this.spawnTimeSec,
+
+      // Life-cycle randoms
+      sizeFactor: this.sizeFactor,
+      growthRate: this.growthRate,
+      lifespanSec: this.lifespanSec,
+      stageShiftBabySec: this.stageShiftBabySec,
+      stageShiftJuvenileSec: this.stageShiftJuvenileSec,
+
+      // Appearance / movement personality
+      colorHue: this.colorHue,
+      speedFactor: this.speedFactor,
+
+      // Kinematics / state
+      position: { x: this.position.x, y: this.position.y },
+      facing: this.facing,
+      headingAngle: this.headingAngle,
+      desiredAngle: this.desiredAngle,
+      currentSpeed: this.currentSpeed,
+      cruisePhase: this.cruisePhase,
+      cruiseRate: this.cruiseRate,
+      target: this.target ? { x: this.target.x, y: this.target.y } : null,
+
+      // Needs / life
+      energy01: this.energy01,
+      hunger01: this.hunger01,
+      wellbeing01: this.wellbeing01,
+      hungerState: this.hungerState,
+      lifeState: this.lifeState,
+      deadAtSec: this.deadAtSec,
+      skeletonAtSec: this.skeletonAtSec,
+
+      // Behavior
+      behavior: this.behavior ? { ...this.behavior } : null,
+      eatAnimTimer: this.eatAnimTimer
+    };
+  }
+
+  static fromJSON(bounds, data) {
+    const fish = new Fish(bounds, {
+      id: data.id,
+      name: data.name ?? '',
+      sex: data.sex,
+      spawnTimeSec: data.spawnTimeSec ?? 0,
+
+      sizeFactor: data.sizeFactor,
+      growthRate: data.growthRate,
+      lifespanSec: data.lifespanSec,
+      stageShiftBabySec: data.stageShiftBabySec,
+      stageShiftJuvenileSec: data.stageShiftJuvenileSec,
+
+      colorHue: data.colorHue,
+      speedFactor: data.speedFactor,
+
+      position: data.position,
+      headingAngle: data.headingAngle
+    });
+
+    // Restore runtime state
+    fish.facing = typeof data.facing === 'number' ? data.facing : fish.facing;
+    fish.desiredAngle = typeof data.desiredAngle === 'number' ? data.desiredAngle : fish.desiredAngle;
+    fish.currentSpeed = typeof data.currentSpeed === 'number' ? data.currentSpeed : fish.currentSpeed;
+    fish.cruisePhase = typeof data.cruisePhase === 'number' ? data.cruisePhase : fish.cruisePhase;
+    fish.cruiseRate = typeof data.cruiseRate === 'number' ? data.cruiseRate : fish.cruiseRate;
+    if (data.target && Number.isFinite(data.target.x) && Number.isFinite(data.target.y)) {
+      fish.target = { x: data.target.x, y: data.target.y };
+    }
+
+    fish.energy01 = Number.isFinite(data.energy01) ? data.energy01 : fish.energy01;
+    fish.hunger01 = Number.isFinite(data.hunger01) ? data.hunger01 : fish.hunger01;
+    fish.wellbeing01 = Number.isFinite(data.wellbeing01) ? data.wellbeing01 : fish.wellbeing01;
+    fish.hungerState = data.hungerState ?? fish.hungerState;
+
+    fish.lifeState = data.lifeState ?? fish.lifeState;
+    fish.deadAtSec = Number.isFinite(data.deadAtSec) ? data.deadAtSec : fish.deadAtSec;
+    fish.skeletonAtSec = Number.isFinite(data.skeletonAtSec) ? data.skeletonAtSec : fish.skeletonAtSec;
+
+    fish.behavior = data.behavior ? { ...data.behavior } : fish.behavior;
+    fish.eatAnimTimer = Number.isFinite(data.eatAnimTimer) ? data.eatAnimTimer : fish.eatAnimTimer;
+
+    return fish;
+  }
+
+
+
+
+  ageSeconds(simTimeSec) {
+    return Math.max(0, simTimeSec - this.spawnTimeSec);
+  }
+
+  mouthOpen01() {
+    if (this.eatAnimTimer <= 0) return 0;
+    const progress = 1 - this.eatAnimTimer / this.eatAnimDuration;
+    return Math.sin(progress * Math.PI);
+  }
+
+  headPoint() {
+    const bodyLength = this.size * 1.32;
+    const headOffset = bodyLength * 0.22;
+    return {
+      x: this.position.x + Math.cos(this.headingAngle) * headOffset,
+      y: this.position.y + Math.sin(this.headingAngle) * headOffset
+    };
+  }
+
+  debugMovementBounds() {
+    const movement = this.#movementBounds();
+    return {
+      x: movement.minX,
+      y: movement.minY,
+      width: movement.maxX - movement.minX,
+      height: movement.maxY - movement.minY
+    };
+  }
+
+  #baseSpeed() {
+    const stageMul = STAGE_SPEED[this.lifeStage] ?? 1;
+    return (20 + this.size * 0.9 * this.speedFactor) * SPEED_MULTIPLIER * stageMul;
+  }
+
+  #findNearestFood(foodList) {
+    const visionRadius = FOOD_VISION_RADIUS[this.hungerState] ?? 0;
+    if (visionRadius <= 0) return null;
+
+    let best = null;
+    let bestDist = Infinity;
+
+    for (const food of foodList) {
+      const dist = Math.hypot(food.x - this.position.x, food.y - this.position.y);
+      if (dist > visionRadius || dist >= bestDist) continue;
+      best = food;
+      bestDist = dist;
+    }
+
+    return best;
+  }
+
+  #applyDeadSink(dt) {
+    const movement = this.#movementBounds();
+    this.currentSpeed = 0;
+    this.desiredAngle = Math.PI / 2;
+    this.headingAngle = this.desiredAngle;
+
+    this.position.y = Math.min(movement.maxY, this.position.y + DEAD_SINK_SPEED * dt);
+    this.position.x = clamp(this.position.x, movement.minX, movement.maxX);
+  }
+
+  #movementBounds() {
+    const margin = this.size * 0.62;
+    const bottomOffset = Math.max(2, this.size * 0.18);
+    const maxY = Math.max(margin, this.bounds.height - bottomOffset);
+
+    return {
+      minX: margin,
+      maxX: Math.max(margin, this.bounds.width - margin),
+      minY: margin,
+      maxY
+    };
+  }
+
+  #pickTarget() {
+    const inset = clamp(Math.min(this.bounds.width, this.bounds.height) * 0.04, 8, 18);
+    const swimHeight = Math.max(inset, this.bounds.height - inset);
+
+    return {
+      x: rand(inset, Math.max(inset, this.bounds.width - inset)),
+      y: rand(inset, Math.max(inset, swimHeight))
+    };
+  }
+
+  #isTargetInBounds(target) {
+    if (!target) return false;
+    return target.x >= 0 && target.x <= this.bounds.width && target.y >= 0 && target.y <= this.bounds.height;
+  }
+
+  #shouldRetarget() {
+    const dist = Math.hypot(this.target.x - this.position.x, this.target.y - this.position.y);
+    if (dist <= TARGET_REACHED_RADIUS) return true;
+    return Math.random() < 0.0025;
+  }
+
+  #seekVector() {
+    const dx = this.target.x - this.position.x;
+    const dy = this.target.y - this.position.y;
+    const mag = Math.hypot(dx, dy) || 1;
+    return { x: dx / mag, y: dy / mag };
+  }
+
+  #wallAvoidanceVector() {
+    const movement = this.#movementBounds();
+    const influence = clamp(Math.min(this.bounds.width, this.bounds.height) * 0.22, 45, 110);
+    const strength = 2.2;
+
+    let ax = 0;
+    let ay = 0;
+
+    const dLeft = this.position.x - movement.minX;
+    const dRight = movement.maxX - this.position.x;
+    const dTop = this.position.y - movement.minY;
+    const dBottom = movement.maxY - this.position.y;
+
+    if (dLeft < influence) ax += ((influence - dLeft) / influence) ** 2 * strength;
+    if (dRight < influence) ax -= ((influence - dRight) / influence) ** 2 * strength;
+    if (dTop < influence) ay += ((influence - dTop) / influence) ** 2 * strength;
+    if (dBottom < influence) ay -= ((influence - dBottom) / influence) ** 2 * strength;
+
+    return { x: ax, y: ay };
+  }
+
+  #resolveCollisions() {
+    const movement = this.#movementBounds();
+
+    let hitX = false;
+    let hitY = false;
+
+    if (this.position.x <= movement.minX) {
+      this.position.x = movement.minX;
+      hitX = true;
+    } else if (this.position.x >= movement.maxX) {
+      this.position.x = movement.maxX;
+      hitX = true;
+    }
+
+    if (this.position.y <= movement.minY) {
+      this.position.y = movement.minY;
+      hitY = true;
+    } else if (this.position.y >= movement.maxY) {
+      this.position.y = movement.maxY;
+      hitY = true;
+    }
+
+    if (hitX) this.headingAngle = Math.PI - this.headingAngle;
+    if (hitY) this.headingAngle = -this.headingAngle;
+
+    if (hitX || hitY) {
+      this.facing = resolveFacingByCos(this.headingAngle, this.facing);
+      this.headingAngle = clampAngleForFacing(this.headingAngle, this.facing);
+      this.desiredAngle = this.headingAngle;
+      this.target = this.#pickTarget();
+      this.currentSpeed = Math.max(this.currentSpeed, this.#baseSpeed() * 0.95);
+    }
+  }
+}
