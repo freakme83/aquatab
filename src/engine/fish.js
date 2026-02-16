@@ -22,6 +22,12 @@ const AGE_CONFIG = CONFIG.fish.age;
 const GROWTH_CONFIG = CONFIG.fish.growth;
 const MORPH = CONFIG.fish.morph;
 const STAGE_SPEED = CONFIG.fish.stageSpeed;
+const WATER_WELLBEING = CONFIG.fish.waterWellbeing ?? {};
+const WATER_STRESS_START_HYGIENE01 = Math.max(0.05, Math.min(1, WATER_WELLBEING.stressStartHygiene01 ?? 0.7));
+const WATER_STRESS_CURVE_POWER = Math.max(1, WATER_WELLBEING.stressCurvePower ?? 1.35);
+const WATER_STRESS_PER_SEC = Math.max(0, WATER_WELLBEING.stressPerSec ?? 0.006);
+const WATER_AGE_SENSITIVITY_MIN = Math.max(0, WATER_WELLBEING.ageSensitivityMin ?? 1);
+const WATER_AGE_SENSITIVITY_EDGE_BOOST = Math.max(0, WATER_WELLBEING.ageSensitivityEdgeBoost ?? 0.6);
 const FISH_BUILD_STAMP = new Date().toISOString();
 
 console.log(`[aquatab] Fish module loaded: ${import.meta.url} | BUILD: ${FISH_BUILD_STAMP}`);
@@ -120,6 +126,7 @@ export class Fish {
     this.energy01 = 1;
     this.hunger01 = 0;
     this.wellbeing01 = 1;
+    this.waterPenalty01 = 0;
     this.hungerState = 'FED';
     this.lifeState = 'ALIVE';
     this.deadAtSec = null;
@@ -159,7 +166,7 @@ export class Fish {
     return { tilt: localTilt, facing: stableFacing };
   }
 
-  updateMetabolism(dt) {
+  updateMetabolism(dt, world) {
     if (!Number.isFinite(dt) || dt <= 0) return;
 
     this.eatAnimTimer = Math.max(0, this.eatAnimTimer - dt);
@@ -175,7 +182,17 @@ export class Fish {
     const energyDelta = this.lastDistanceMoved * METABOLISM_COST_PER_PIXEL;
     this.energy01 = clamp(this.energy01 - energyDelta, 0, 1);
     this.hunger01 = 1 - this.energy01;
-    this.wellbeing01 = clamp(1 - this.hunger01 ** 1.3, 0, 1);
+    const baseWellbeingFromHunger = clamp(1 - this.hunger01 ** 1.3, 0, 1);
+
+    const hygiene01 = clamp01(world?.water?.hygiene01 ?? 1);
+    const waterStress = this.#waterStressFromHygiene(hygiene01);
+    if (waterStress > 0) {
+      const ageSensitivity = this.#waterAgeSensitivity();
+      const waterPenaltyDelta = WATER_STRESS_PER_SEC * waterStress * ageSensitivity * dt;
+      this.waterPenalty01 = clamp(this.waterPenalty01 + waterPenaltyDelta, 0, 1);
+    }
+
+    this.wellbeing01 = clamp(baseWellbeingFromHunger - this.waterPenalty01, 0, 1);
 
     if (this.hunger01 >= STARVING_THRESHOLD) this.hungerState = 'STARVING';
     else if (this.hunger01 >= HUNGRY_THRESHOLD) this.hungerState = 'HUNGRY';
@@ -186,6 +203,19 @@ export class Fish {
       this.currentSpeed = 0;
       this.behavior = { mode: 'deadSink', targetFoodId: null, speedBoost: 1 };
     }
+  }
+
+  #waterStressFromHygiene(hygiene01) {
+    if (hygiene01 >= WATER_STRESS_START_HYGIENE01) return 0;
+    const rawStress = (WATER_STRESS_START_HYGIENE01 - hygiene01) / WATER_STRESS_START_HYGIENE01;
+    return clamp01(rawStress ** WATER_STRESS_CURVE_POWER);
+  }
+
+  #waterAgeSensitivity() {
+    const ageRatio = clamp01(this.ageSecCached / Math.max(1, this.lifespanSec));
+    const distanceFromMidlife = Math.abs(ageRatio - 0.5) * 2;
+    const uCurve = distanceFromMidlife ** 2;
+    return WATER_AGE_SENSITIVITY_MIN + WATER_AGE_SENSITIVITY_EDGE_BOOST * uCurve;
   }
 
   updatePlayState(simTimeSec) {
