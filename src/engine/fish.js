@@ -184,8 +184,8 @@ export class Fish {
     this.hunger01 = 1 - this.energy01;
     const baseWellbeingFromHunger = clamp(1 - this.hunger01 ** 1.3, 0, 1);
 
-    const hygiene01 = clamp01(world?.water?.hygiene01 ?? 1);
-    const waterStress = this.#waterStressFromHygiene(hygiene01);
+    const waterHygiene01 = clamp01(world?.water?.hygiene01 ?? 1);
+    const waterStress = this.#waterStressFromHygiene(waterHygiene01);
     if (waterStress > 0) {
       const ageSensitivity = this.#waterAgeSensitivity();
       const waterPenaltyDelta = WATER_STRESS_PER_SEC * waterStress * ageSensitivity * dt;
@@ -193,14 +193,6 @@ export class Fish {
     }
 
     this.wellbeing01 = clamp(baseWellbeingFromHunger - this.waterPenalty01, 0, 1);
-
-    const hygiene01 = clamp01(world?.water?.hygiene01 ?? 1);
-    const waterStress = this.#waterStressFromHygiene(hygiene01);
-    if (waterStress > 0) {
-      const ageSensitivity = this.#waterAgeSensitivity();
-      const waterWellbeingDecay = WATER_STRESS_PER_SEC * waterStress * ageSensitivity * dt;
-      this.wellbeing01 = clamp(this.wellbeing01 - waterWellbeingDecay, 0, 1);
-    }
 
     if (this.hunger01 >= STARVING_THRESHOLD) this.hungerState = 'STARVING';
     else if (this.hunger01 >= HUNGRY_THRESHOLD) this.hungerState = 'HUNGRY';
