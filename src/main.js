@@ -119,7 +119,10 @@ function tick(now) {
     fps,
     fishCount: world.fish.length,
     quality,
-    cleanliness01: world.water.hygiene01
+    cleanliness01: world.water.hygiene01,
+    filterUnlocked: world.filterUnlocked,
+    foodsConsumedCount: world.foodsConsumedCount,
+    filterUnlockThreshold: world.filterUnlockThreshold
   });
   panel.updateFishInspector(world.fish, world.selectedFishId, world.simTimeSec);
 
