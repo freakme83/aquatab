@@ -46,12 +46,14 @@ export const CONFIG = Object.freeze({
       hungryThreshold: 0.35,
       starvingThreshold: 0.72,
       foodVisionRadius: {
-        HUNGRY: 120,
-        STARVING: 215
+        // Calibrated for 1200x700 tank so hungry fish can detect food
+        // without needing to almost collide with it.
+        HUNGRY: 320,
+        STARVING: 650
       },
       foodSpeedBoost: {
-        HUNGRY: 1.26,
-        STARVING: 1
+        HUNGRY: 1.3,
+        STARVING: 1.6
       }
     }
   }

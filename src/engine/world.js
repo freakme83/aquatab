@@ -4,18 +4,16 @@
  */
 
 import { Fish } from './fish.js';
-import { CONFIG } from './config.js';
 
-const MAX_TILT = CONFIG.world.maxTiltRad;
+const MAX_TILT = Math.PI / 3;
 const rand = (min, max) => min + Math.random() * (max - min);
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
-const FOOD_DEFAULT_AMOUNT = CONFIG.world.food.defaultAmount;
-const FOOD_DEFAULT_TTL = CONFIG.world.food.defaultTtlSec;
-const FOOD_FALL_ACCEL = CONFIG.world.food.fallAccel;
-const FOOD_FALL_DAMPING = CONFIG.world.food.fallDamping;
-const FOOD_MAX_FALL_SPEED = CONFIG.world.food.maxFallSpeed;
-const FISH_DEAD_TO_SKELETON_SEC = CONFIG.world.fishLifecycle.deadToSkeletonSec;
-const FISH_SKELETON_TO_REMOVE_SEC = CONFIG.world.fishLifecycle.skeletonToRemoveSec;
+const FOOD_DEFAULT_AMOUNT = 1;
+const FOOD_DEFAULT_TTL = 120;
+const FOOD_FALL_ACCEL = 8;
+const FOOD_FALL_DAMPING = 0.15;
+const FISH_DEAD_TO_SKELETON_SEC = 120;
+const FISH_SKELETON_TO_REMOVE_SEC = 120;
 
 function makeBubble(bounds) {
   return {
@@ -33,21 +31,11 @@ export class World {
     this.bounds = { width, height, sandHeight: this.#computeSandHeight(height) };
     this.fish = [];
     this.food = [];
-    // Forward-compatible containers for new systems.
-    this.poop = [];
-    this.eggs = [];
     this.bubbles = [];
     this.nextFoodId = 1;
     this.nextFishId = 1;
     this.simTimeSec = 0;
     this.selectedFishId = null;
-
-    // Simple event queue for UI/telemetry/achievements.
-    // Use `world.flushEvents()` from main loop if/when needed.
-    this.events = [];
-
-    // Global environment state (will grow over time).
-    this.water = { ...CONFIG.world.water };
 
     this.paused = false;
     this.speedMultiplier = 1;
@@ -56,25 +44,9 @@ export class World {
     this.#seedBubbles();
   }
 
-  emit(type, payload = {}) {
-    this.events.push({
-      type,
-      t: this.simTimeSec,
-      payload
-    });
-  }
 
-  flushEvents() {
-    const out = this.events;
-    this.events = [];
-    return out;
-  }
-
-
-  #computeSandHeight(height) {
-    // Placeholder: keep as a function so we can later model a real sand layer.
-    // Returning 0 keeps current visuals/physics unchanged.
-    return Math.max(0, Math.min(0, height));
+  #computeSandHeight(_height) {
+    return 0;
   }
 
   #swimHeight() {
@@ -157,8 +129,6 @@ export class World {
       ttl,
       vy: rand(8, 20)
     });
-
-    this.emit('food:spawn', { x: clampedX, y: clampedY, amount, ttl });
   }
 
   consumeFood(foodId, amountToConsume = 0.5) {
@@ -171,7 +141,6 @@ export class World {
       this.food = this.food.filter((entry) => entry.id !== foodId);
     }
 
-    if (consumed > 0) this.emit('food:consume', { foodId, consumed });
     return consumed;
   }
 
@@ -295,7 +264,7 @@ export class World {
         item.y = bottomY;
         item.vy *= FOOD_FALL_DAMPING;
       } else {
-        item.vy = Math.min(item.vy, FOOD_MAX_FALL_SPEED);
+        item.vy = Math.min(item.vy, 26);
       }
 
       if (Number.isFinite(item.ttl) && item.ttl <= 0) this.food.splice(i, 1);
@@ -303,7 +272,7 @@ export class World {
   }
 
   #seedBubbles() {
-    const count = CONFIG.world.bubbles.seedCount;
+    const count = 36;
     this.bubbles = Array.from({ length: count }, () => makeBubble(this.bounds));
   }
 
