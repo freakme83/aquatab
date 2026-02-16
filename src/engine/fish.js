@@ -15,6 +15,7 @@ const STARVING_THRESHOLD = CONFIG.fish.hunger.starvingThreshold;
 const FOOD_VISION_RADIUS = CONFIG.fish.hunger.foodVisionRadius;
 const FOOD_SPEED_BOOST = CONFIG.fish.hunger.foodSpeedBoost;
 const SEEK_FORCE_MULTIPLIER = CONFIG.fish.hunger.seekForceMultiplier ?? 2.0;
+const PLAY_SPEED_BOOST = 1.35;
 
 const AGE_CONFIG = CONFIG.fish.age;
 const GROWTH_CONFIG = CONFIG.fish.growth;
@@ -126,6 +127,14 @@ export class Fish {
     this.eatAnimTimer = 0;
     this.eatAnimDuration = 0.22;
 
+    this.playState = {
+      sessionId: null,
+      activeUntilSec: 0,
+      targetFishId: null,
+      startedNearAlgae: false,
+      cooldownUntilSec: 0
+    };
+
     // Cached reference for pursuit updates (set during decideBehavior).
     this._worldRef = null;
   }
@@ -177,6 +186,55 @@ export class Fish {
     }
   }
 
+  updatePlayState(simTimeSec) {
+    if (!this.isPlaying(simTimeSec)) return;
+    if (simTimeSec < this.playState.activeUntilSec) return;
+    this.stopPlay(simTimeSec);
+  }
+
+  isPlaying(simTimeSec) {
+    return this.lifeState === 'ALIVE' && this.playState.sessionId != null && simTimeSec < this.playState.activeUntilSec;
+  }
+
+  canStartPlay(simTimeSec) {
+    if (this.lifeState !== 'ALIVE') return false;
+    if (this.lifeStage === 'OLD') return false;
+    if (this.isPlaying(simTimeSec)) return false;
+    if (simTimeSec < this.playState.cooldownUntilSec) return false;
+    if (this.hungerState !== 'FED') return false;
+    return this.wellbeing01 >= 0.8;
+  }
+
+  startPlay({ sessionId, untilSec, targetFishId, startedNearAlgae = false, simTimeSec = 0 }) {
+    this.playState.sessionId = sessionId;
+    this.playState.activeUntilSec = untilSec;
+    this.playState.targetFishId = targetFishId ?? null;
+    this.playState.startedNearAlgae = Boolean(startedNearAlgae);
+    this.wellbeing01 = clamp(this.wellbeing01 + 0.03, 0, 1);
+    this.playState.cooldownUntilSec = Math.max(this.playState.cooldownUntilSec, simTimeSec + rand(5, 10));
+  }
+
+  setPlayTargetFish(targetFishId) {
+    this.playState.targetFishId = targetFishId ?? null;
+  }
+
+  stopPlay(simTimeSec = 0) {
+    this.playState.sessionId = null;
+    this.playState.activeUntilSec = 0;
+    this.playState.targetFishId = null;
+    this.playState.startedNearAlgae = false;
+    this.playState.cooldownUntilSec = Math.max(this.playState.cooldownUntilSec, simTimeSec + rand(5, 10));
+  }
+
+  playProbability(nearAlgae = false) {
+    if (this.lifeStage === 'OLD') return 0;
+
+    if (this.lifeStage === 'BABY') return nearAlgae ? 0.8 : 0.5;
+    if (this.lifeStage === 'JUVENILE') return nearAlgae ? 0.5 : 0.4;
+    if (this.lifeStage === 'ADULT') return 0.2;
+    return 0;
+  }
+
   // Keep `dt` param for future time-based behaviors (cooldowns, sensing cadence, etc.).
   decideBehavior(world, dt = 0) {
     // Cache for pursuit targeting (food moves while sinking).
@@ -184,6 +242,16 @@ export class Fish {
 
     if (this.lifeState !== 'ALIVE') {
       this.behavior = { mode: 'deadSink', targetFoodId: null, speedBoost: 1 };
+      return;
+    }
+
+    if (this.isPlaying(world?.simTimeSec ?? 0)) {
+      this.behavior = {
+        mode: 'playChase',
+        targetFoodId: null,
+        speedBoost: PLAY_SPEED_BOOST,
+        targetFishId: this.playState.targetFishId
+      };
       return;
     }
 
@@ -219,6 +287,17 @@ export class Fish {
       if (food) this.target = { x: food.x, y: food.y };
     }
 
+    if (this.behavior.mode === 'playChase' && this.behavior.targetFishId && this._worldRef?.fish) {
+      const targetFish = this._worldRef.fish.find((f) => f.id === this.behavior.targetFishId && f.lifeState === 'ALIVE');
+      if (targetFish) {
+        const lookAhead = targetFish.currentSpeed * Math.min(0.35, dt * 4);
+        this.target = {
+          x: targetFish.position.x + Math.cos(targetFish.headingAngle) * lookAhead,
+          y: targetFish.position.y + Math.sin(targetFish.headingAngle) * lookAhead
+        };
+      }
+    }
+
     if (this.behavior.mode === 'wander' && this.#shouldRetarget()) this.target = this.#pickTarget();
 
     const seek = this.#seekVector();
@@ -240,7 +319,7 @@ export class Fish {
 
     this.cruisePhase = normalizeAngle(this.cruisePhase + dt * this.cruiseRate);
     const cruiseFactor = 1 + Math.sin(this.cruisePhase) * 0.18;
-    const speedBoost = this.behavior.mode === 'seekFood' ? this.behavior.speedBoost : 1;
+    const speedBoost = (this.behavior.mode === 'seekFood' || this.behavior.mode === 'playChase') ? this.behavior.speedBoost : 1;
     const desiredSpeed = this.#baseSpeed() * cruiseFactor * speedBoost;
     this.currentSpeed += (desiredSpeed - this.currentSpeed) * Math.min(1, dt * 0.8);
 
