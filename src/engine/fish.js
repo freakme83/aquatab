@@ -126,6 +126,7 @@ export class Fish {
     this.energy01 = 1;
     this.hunger01 = 0;
     this.wellbeing01 = 1;
+    this.waterPenalty01 = 0;
     this.hungerState = 'FED';
     this.lifeState = 'ALIVE';
     this.deadAtSec = null;
@@ -181,7 +182,17 @@ export class Fish {
     const energyDelta = this.lastDistanceMoved * METABOLISM_COST_PER_PIXEL;
     this.energy01 = clamp(this.energy01 - energyDelta, 0, 1);
     this.hunger01 = 1 - this.energy01;
-    this.wellbeing01 = clamp(1 - this.hunger01 ** 1.3, 0, 1);
+    const baseWellbeingFromHunger = clamp(1 - this.hunger01 ** 1.3, 0, 1);
+
+    const hygiene01 = clamp01(world?.water?.hygiene01 ?? 1);
+    const waterStress = this.#waterStressFromHygiene(hygiene01);
+    if (waterStress > 0) {
+      const ageSensitivity = this.#waterAgeSensitivity();
+      const waterPenaltyDelta = WATER_STRESS_PER_SEC * waterStress * ageSensitivity * dt;
+      this.waterPenalty01 = clamp(this.waterPenalty01 + waterPenaltyDelta, 0, 1);
+    }
+
+    this.wellbeing01 = clamp(baseWellbeingFromHunger - this.waterPenalty01, 0, 1);
 
     const hygiene01 = clamp01(world?.water?.hygiene01 ?? 1);
     const waterStress = this.#waterStressFromHygiene(hygiene01);
