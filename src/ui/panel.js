@@ -17,6 +17,7 @@ export class Panel {
     this.fpsStat = this.root.querySelector('[data-stat="fps"]');
     this.fishCountStat = this.root.querySelector('[data-stat="fishCount"]');
     this.qualityStat = this.root.querySelector('[data-stat="quality"]');
+    this.cleanlinessStat = this.root.querySelector('[data-stat="cleanliness"]');
 
     this.fishSlider = this.root.querySelector('[data-control="fishCount"]');
     this.speedSlider = this.root.querySelector('[data-control="simSpeed"]');
@@ -142,10 +143,15 @@ export class Panel {
     this.#setQualityText(quality);
   }
 
-  updateStats({ fps, fishCount, quality }) {
+  updateStats({ fps, fishCount, quality, cleanliness01 }) {
     this.fpsStat.textContent = String(Math.round(fps));
     this.fishCountStat.textContent = String(fishCount);
     this.#setQualityText(quality);
+
+    if (this.cleanlinessStat) {
+      const cleanlinessPct = Math.round((cleanliness01 ?? 1) * 100);
+      this.cleanlinessStat.textContent = `${cleanlinessPct}%`;
+    }
   }
 
   updateFishInspector(fishList, selectedFishId, simTimeSec) {

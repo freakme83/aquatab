@@ -24,7 +24,13 @@ export const CONFIG = Object.freeze({
     },
     // Placeholder for future global systems.
     water: {
-      hygiene01: 1
+      hygiene01: 1,
+      dirt01: 0,
+      referenceFishCount: 20,
+      baselineDecayPerSec: 0.0002,
+      bioloadDirtPerSec: 0.00035,
+      dirtPerExpiredFood: 0.015,
+      dirtToDecayMultiplier: 3
     }
   },
 
@@ -106,7 +112,15 @@ export const CONFIG = Object.freeze({
       JUVENILE: 1.04,
       ADULT: 1.0,
       OLD: 0.88
-    }
+    },
+
+    waterWellbeing: {
+      stressStartHygiene01: 0.7,
+      stressCurvePower: 1.35,
+      stressPerSec: 0.0012,
+      ageSensitivityMin: 1,
+      ageSensitivityEdgeBoost: 0.6
+    },
 
   }
 });
