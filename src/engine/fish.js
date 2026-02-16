@@ -15,7 +15,8 @@ const STARVING_THRESHOLD = CONFIG.fish.hunger.starvingThreshold;
 const FOOD_VISION_RADIUS = CONFIG.fish.hunger.foodVisionRadius;
 const FOOD_SPEED_BOOST = CONFIG.fish.hunger.foodSpeedBoost;
 const SEEK_FORCE_MULTIPLIER = CONFIG.fish.hunger.seekForceMultiplier ?? 2.0;
-const PLAY_SPEED_BOOST = 1.35;
+const PLAY_SPEED_BOOST = 1.45;
+const PLAY_RUNNER_SPEED_BOOST = 1.18;
 
 const AGE_CONFIG = CONFIG.fish.age;
 const GROWTH_CONFIG = CONFIG.fish.growth;
@@ -131,6 +132,7 @@ export class Fish {
       sessionId: null,
       activeUntilSec: 0,
       targetFishId: null,
+      role: 'NONE',
       startedNearAlgae: false,
       cooldownUntilSec: 0
     };
@@ -205,22 +207,32 @@ export class Fish {
     return this.wellbeing01 >= 0.8;
   }
 
-  startPlay({ sessionId, untilSec, targetFishId, startedNearAlgae = false, simTimeSec = 0 }) {
+  startPlay({ sessionId, untilSec, role = 'CHASER', targetFishId, startedNearAlgae = false, simTimeSec = 0 }) {
     this.playState.sessionId = sessionId;
     this.playState.activeUntilSec = untilSec;
+    this.playState.role = role;
     this.playState.targetFishId = targetFishId ?? null;
     this.playState.startedNearAlgae = Boolean(startedNearAlgae);
     this.wellbeing01 = clamp(this.wellbeing01 + 0.03, 0, 1);
     this.playState.cooldownUntilSec = Math.max(this.playState.cooldownUntilSec, simTimeSec + rand(5, 10));
   }
 
+  setPlayRole(role) {
+    this.playState.role = role;
+  }
+
   setPlayTargetFish(targetFishId) {
     this.playState.targetFishId = targetFishId ?? null;
+  }
+
+  delayPlayEligibility(untilSec) {
+    this.playState.cooldownUntilSec = Math.max(this.playState.cooldownUntilSec, untilSec);
   }
 
   stopPlay(simTimeSec = 0) {
     this.playState.sessionId = null;
     this.playState.activeUntilSec = 0;
+    this.playState.role = 'NONE';
     this.playState.targetFishId = null;
     this.playState.startedNearAlgae = false;
     this.playState.cooldownUntilSec = Math.max(this.playState.cooldownUntilSec, simTimeSec + rand(5, 10));
@@ -246,10 +258,11 @@ export class Fish {
     }
 
     if (this.isPlaying(world?.simTimeSec ?? 0)) {
+      const isRunner = this.playState.role === 'RUNNER';
       this.behavior = {
-        mode: 'playChase',
+        mode: isRunner ? 'playEvade' : 'playChase',
         targetFoodId: null,
-        speedBoost: PLAY_SPEED_BOOST,
+        speedBoost: isRunner ? PLAY_RUNNER_SPEED_BOOST : PLAY_SPEED_BOOST,
         targetFishId: this.playState.targetFishId
       };
       return;
@@ -298,6 +311,20 @@ export class Fish {
       }
     }
 
+    if (this.behavior.mode === 'playEvade' && this.behavior.targetFishId && this._worldRef?.fish) {
+      const hunter = this._worldRef.fish.find((f) => f.id === this.behavior.targetFishId && f.lifeState === 'ALIVE');
+      if (hunter) {
+        const awayX = this.position.x - hunter.position.x;
+        const awayY = this.position.y - hunter.position.y;
+        const mag = Math.hypot(awayX, awayY) || 1;
+        const escapeDistance = 82;
+        this.target = {
+          x: this.position.x + (awayX / mag) * escapeDistance,
+          y: this.position.y + (awayY / mag) * escapeDistance
+        };
+      }
+    }
+
     if (this.behavior.mode === 'wander' && this.#shouldRetarget()) this.target = this.#pickTarget();
 
     const seek = this.#seekVector();
@@ -319,7 +346,7 @@ export class Fish {
 
     this.cruisePhase = normalizeAngle(this.cruisePhase + dt * this.cruiseRate);
     const cruiseFactor = 1 + Math.sin(this.cruisePhase) * 0.18;
-    const speedBoost = (this.behavior.mode === 'seekFood' || this.behavior.mode === 'playChase') ? this.behavior.speedBoost : 1;
+    const speedBoost = (this.behavior.mode === 'seekFood' || this.behavior.mode === 'playChase' || this.behavior.mode === 'playEvade') ? this.behavior.speedBoost : 1;
     const desiredSpeed = this.#baseSpeed() * cruiseFactor * speedBoost;
     this.currentSpeed += (desiredSpeed - this.currentSpeed) * Math.min(1, dt * 0.8);
 

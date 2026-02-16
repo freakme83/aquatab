@@ -49,7 +49,6 @@ export class World {
     // Use `world.flushEvents()` from main loop if/when needed.
     this.events = [];
     this.playSessions = [];
-    this.playPairCooldowns = new Map();
     this.groundAlgae = [];
 
     // Global environment state (will grow over time).
@@ -278,6 +277,7 @@ export class World {
     for (const fish of this.fish) fish.updateLifeCycle?.(this.simTimeSec);
     for (const fish of this.fish) fish.updatePlayState?.(this.simTimeSec);
     this.#updatePlaySessions();
+    this.#tryExpandPlaySessions();
     this.#tryStartPlaySessions();
     for (const fish of this.fish) fish.updateMetabolism(delta);
     for (const fish of this.fish) fish.decideBehavior(this, delta);
@@ -303,42 +303,74 @@ export class World {
     }));
   }
 
-  #cleanupPairCooldowns() {
-    for (const [key, until] of this.playPairCooldowns.entries()) {
-      if (until <= this.simTimeSec) this.playPairCooldowns.delete(key);
-    }
-  }
-
   #updatePlaySessions() {
     this.playSessions = this.playSessions.filter((session) => {
-      const participants = session.fishIds
+      const runner = this.fish.find((f) => f.id === session.runnerFishId);
+      const chasers = session.chaserFishIds
         .map((id) => this.fish.find((f) => f.id === id))
         .filter((fish) => fish && fish.isPlaying?.(this.simTimeSec));
 
-      if (participants.length < 2 || this.simTimeSec >= session.untilSec) {
-        for (const fish of participants) fish.stopPlay?.(this.simTimeSec);
+      const runnerAliveInSession = runner && runner.isPlaying?.(this.simTimeSec);
+      if (!runnerAliveInSession || chasers.length < 1 || this.simTimeSec >= session.untilSec) {
+        if (runnerAliveInSession) runner.stopPlay?.(this.simTimeSec);
+        for (const fish of chasers) fish.stopPlay?.(this.simTimeSec);
         return false;
       }
 
-      session.fishIds = participants.map((fish) => fish.id);
-      for (let i = 0; i < participants.length; i += 1) {
-        const hunter = participants[i];
-        const target = participants[(i + 1) % participants.length];
-        hunter.setPlayTargetFish?.(target.id);
+      session.chaserFishIds = chasers.map((fish) => fish.id);
+      runner.setPlayRole?.('RUNNER');
+      const closestChaser = chasers.reduce((best, current) => {
+        if (!best) return current;
+        const currDist = Math.hypot(runner.position.x - current.position.x, runner.position.y - current.position.y);
+        const bestDist = Math.hypot(runner.position.x - best.position.x, runner.position.y - best.position.y);
+        return currDist < bestDist ? current : best;
+      }, null);
+      runner.setPlayTargetFish?.(closestChaser?.id ?? null);
+
+      for (const chaser of chasers) {
+        chaser.setPlayRole?.('CHASER');
+        chaser.setPlayTargetFish?.(runner.id);
       }
+
+      session.origin = {
+        x: (runner.position.x + (chasers[0]?.position.x ?? runner.position.x)) * 0.5,
+        y: (runner.position.y + (chasers[0]?.position.y ?? runner.position.y)) * 0.5
+      };
 
       return true;
     });
-
-    this.#cleanupPairCooldowns();
-  }
-
-  #pairKey(a, b) {
-    return a < b ? `${a}-${b}` : `${b}-${a}`;
   }
 
   #isNearGroundAlgae(point) {
     return this.groundAlgae.some((algae) => Math.hypot(point.x - algae.x, point.y - algae.y) <= algae.radius);
+  }
+
+  #tryExpandPlaySessions() {
+    const joinRadius = 82;
+
+    for (const session of this.playSessions) {
+      const runner = this.fish.find((f) => f.id === session.runnerFishId);
+      if (!runner || !runner.isPlaying?.(this.simTimeSec)) continue;
+
+      const anchor = runner.position;
+      for (const candidate of this.fish) {
+        if (!candidate.canStartPlay?.(this.simTimeSec)) continue;
+
+        const d = Math.hypot(candidate.position.x - anchor.x, candidate.position.y - anchor.y);
+        if (d > joinRadius) continue;
+        if (Math.random() > 0.45) continue;
+
+        candidate.startPlay?.({
+          sessionId: session.id,
+          role: 'CHASER',
+          untilSec: session.untilSec,
+          targetFishId: runner.id,
+          startedNearAlgae: session.startedNearAlgae,
+          simTimeSec: this.simTimeSec
+        });
+        session.chaserFishIds.push(candidate.id);
+      }
+    }
   }
 
   #tryStartPlaySessions() {
@@ -354,10 +386,6 @@ export class World {
         const b = this.fish[j];
         if (!b.canStartPlay?.(this.simTimeSec)) continue;
 
-        const key = this.#pairKey(a.id, b.id);
-        const pairCooldownUntil = this.playPairCooldowns.get(key) ?? 0;
-        if (pairCooldownUntil > this.simTimeSec) continue;
-
         const dist = Math.hypot(a.position.x - b.position.x, a.position.y - b.position.y);
         if (dist > encounterRadius) continue;
 
@@ -369,40 +397,63 @@ export class World {
         const nearAlgae = this.#isNearGroundAlgae(midpoint);
         const probability = (a.playProbability?.(nearAlgae) + b.playProbability?.(nearAlgae)) * 0.5;
 
-        this.playPairCooldowns.set(key, this.simTimeSec + rand(1.5, 3.2));
-        if (Math.random() > probability) continue;
-
-        const group = [a, b];
-        for (const candidate of this.fish) {
-          if (group.includes(candidate)) continue;
-          if (!candidate.canStartPlay?.(this.simTimeSec)) continue;
-          const d = Math.hypot(candidate.position.x - midpoint.x, candidate.position.y - midpoint.y);
-          if (d > encounterRadius * 1.25) continue;
-          if (Math.random() < 0.55) group.push(candidate);
-          if (group.length >= 6) break;
+        if (Math.random() > probability) {
+          const cooldownUntilSec = this.simTimeSec + 10;
+          a.delayPlayEligibility?.(cooldownUntilSec);
+          b.delayPlayEligibility?.(cooldownUntilSec);
+          continue;
         }
-
-        if (group.length < 2) continue;
 
         const duration = rand(4, 7);
         const sessionId = this.nextPlaySessionId++;
         const untilSec = this.simTimeSec + duration;
 
-        for (let k = 0; k < group.length; k += 1) {
-          const fish = group[k];
-          const target = group[(k + 1) % group.length];
-          fish.startPlay?.({
+        const runner = Math.random() < 0.5 ? a : b;
+        const initialChaser = runner === a ? b : a;
+
+        runner.startPlay?.({
+          sessionId,
+          role: 'RUNNER',
+          untilSec,
+          targetFishId: initialChaser.id,
+          startedNearAlgae: nearAlgae,
+          simTimeSec: this.simTimeSec
+        });
+
+        initialChaser.startPlay?.({
+          sessionId,
+          role: 'CHASER',
+          untilSec,
+          targetFishId: runner.id,
+          startedNearAlgae: nearAlgae,
+          simTimeSec: this.simTimeSec
+        });
+
+        const chaserIds = [initialChaser.id];
+        for (const candidate of this.fish) {
+          if (candidate.id === runner.id || candidate.id === initialChaser.id) continue;
+          if (!candidate.canStartPlay?.(this.simTimeSec)) continue;
+
+          const d = Math.hypot(candidate.position.x - midpoint.x, candidate.position.y - midpoint.y);
+          if (d > encounterRadius * 1.25) continue;
+          if (Math.random() >= 0.55) continue;
+
+          candidate.startPlay?.({
             sessionId,
+            role: 'CHASER',
             untilSec,
-            targetFishId: target.id,
+            targetFishId: runner.id,
             startedNearAlgae: nearAlgae,
             simTimeSec: this.simTimeSec
           });
+          chaserIds.push(candidate.id);
+          if (chaserIds.length >= 5) break;
         }
 
         this.playSessions.push({
           id: sessionId,
-          fishIds: group.map((fish) => fish.id),
+          runnerFishId: runner.id,
+          chaserFishIds: chaserIds,
           untilSec,
           startedNearAlgae: nearAlgae,
           origin: midpoint
