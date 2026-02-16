@@ -42,7 +42,9 @@ const panel = new Panel(panelRoot, {
   },
   onFishSelect: (fishId) => world.toggleFishSelection(fishId),
   onFishRename: (fishId, name) => world.renameFish(fishId, name),
-  onFishDiscard: (fishId) => world.discardFish(fishId)
+  onFishDiscard: (fishId) => world.discardFish(fishId),
+  onFilterInstall: () => world.installWaterFilter?.(),
+  onFilterMaintain: () => world.maintainWaterFilter?.()
 });
 
 renderer.setQuality(quality);
@@ -191,7 +193,13 @@ function tick(now) {
     cleanliness01: world.water.hygiene01,
     filterUnlocked: world.filterUnlocked,
     foodsConsumedCount: world.foodsConsumedCount,
-    filterUnlockThreshold: world.filterUnlockThreshold
+    filterUnlockThreshold: world.filterUnlockThreshold,
+    filterInstalled: world.water.filterInstalled,
+    filter01: world.water.filter01,
+    installProgress01: world.water.installProgress01,
+    maintenanceProgress01: world.water.maintenanceProgress01,
+    maintenanceCooldownSec: world.water.maintenanceCooldownSec,
+    filterDepletedThreshold01: world.filterDepletedThreshold01
   });
   panel.updateFishInspector(world.fish, world.selectedFishId, world.simTimeSec);
   updateCorpseActionButton();
