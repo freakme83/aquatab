@@ -159,9 +159,20 @@ export class Panel {
 
     const sorted = [...fishList].sort((a, b) => a.id - b.id);
 
+    const selectedFish = sorted.find((fish) => fish.id === selectedFishId) ?? null;
+    const selectedLiveAgeSec = selectedFish ? Math.floor(selectedFish.ageSeconds(simTimeSec)) : -1;
+    const selectedHungerPct = selectedFish ? Math.round((selectedFish.hunger01 ?? 0) * 100) : -1;
+    const selectedWellbeingPct = selectedFish ? Math.round((selectedFish.wellbeing01 ?? 0) * 100) : -1;
+    const selectedGrowthPct = selectedFish ? Math.round((selectedFish.growth01 ?? 0) * 100) : -1;
+
     const signature = sorted
       .map((fish) => `${fish.id}|${fish.name ?? ''}|${fish.lifeState}|${fish.hungerState}|${fish.lifeStage ?? ''}`)
-      .join(';') + `::selected=${selectedFishId ?? 'none'}`;
+      .join(';')
+      + `::selected=${selectedFishId ?? 'none'}`
+      + `::age=${selectedLiveAgeSec}`
+      + `::hunger=${selectedHungerPct}`
+      + `::wellbeing=${selectedWellbeingPct}`
+      + `::growth=${selectedGrowthPct}`;
 
     if (signature === this.lastInspectorSignature) return;
     this.lastInspectorSignature = signature;
@@ -179,7 +190,6 @@ export class Panel {
       })
       .join('');
 
-    const selectedFish = sorted.find((fish) => fish.id === selectedFishId) ?? null;
     this.currentInspectorSelectedFishId = selectedFish?.id ?? null;
 
     const detailHtml = selectedFish
