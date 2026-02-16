@@ -34,25 +34,25 @@ body::before {
 }
 
 .page-layout {
+  --tank-height: clamp(460px, 82vh, 790px);
   min-height: 100vh;
   padding: clamp(20px, 3.5vw, 48px);
   display: grid;
   grid-template-columns: minmax(0, 1fr) 288px;
   gap: clamp(16px, 2.3vw, 28px);
-  align-items: center;
+  align-items: start;
 }
 
 .tank-stage {
   min-width: 0;
-  height: min(82vh, 860px);
+  height: var(--tank-height);
   display: grid;
   place-items: center;
 }
 
 .tank-shell {
   width: min(100%, 980px);
-  height: min(82vh, 790px);
-  min-height: 460px;
+  height: var(--tank-height);
   border-radius: 14px;
   box-shadow: 0 18px 38px rgba(0, 0, 0, 0.32), 0 3px 10px rgba(0, 0, 0, 0.24);
 }
@@ -66,6 +66,10 @@ body::before {
 
 .ui-deck {
   width: 100%;
+  height: var(--tank-height);
+  position: sticky;
+  top: clamp(20px, 3.5vw, 48px);
+  align-self: start;
   border-radius: 12px;
   border: 1px solid var(--deck-border);
   background: var(--deck-bg);
@@ -73,6 +77,8 @@ body::before {
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.26);
   overflow: hidden;
   z-index: 4;
+  display: flex;
+  flex-direction: column;
 }
 
 .deck-header {
@@ -116,6 +122,9 @@ body::before {
 .tab-content {
   display: none;
   padding: 11px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .tab-content.active {
@@ -202,7 +211,9 @@ input[type='range'] {
     position: fixed;
     right: 14px;
     bottom: 64px;
+    top: auto;
     width: min(320px, calc(100vw - 28px));
+    height: auto;
     max-height: min(76vh, 560px);
     overflow-y: auto;
     transform: translateY(calc(100% + 24px));
@@ -259,19 +270,17 @@ input[type='range'] {
 }
 
 .tab-content[data-content='fish'] {
-  max-height: min(58vh, 520px);
   overflow: hidden;
 }
 
 .fish-inspector {
-  grid-template-rows: minmax(140px, 1fr) auto;
-  min-height: 0;
-  max-height: min(52vh, 470px);
+  grid-template-rows: minmax(160px, 1fr) auto;
+  min-height: 100%;
 }
 
 .fish-list {
   min-height: 0;
-  max-height: min(36vh, 320px);
+  max-height: none;
   overflow-y: auto;
   padding-right: 2px;
 }
