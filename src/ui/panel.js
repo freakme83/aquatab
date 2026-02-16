@@ -160,7 +160,7 @@ export class Panel {
     const sorted = [...fishList].sort((a, b) => a.id - b.id);
 
     const signature = sorted
-      .map((fish) => `${fish.id}|${fish.name ?? ''}|${fish.lifeState}|${fish.hungerState}`)
+      .map((fish) => `${fish.id}|${fish.name ?? ''}|${fish.lifeState}|${fish.hungerState}|${fish.lifeStage ?? ''}`)
       .join(';') + `::selected=${selectedFishId ?? 'none'}`;
 
     if (signature === this.lastInspectorSignature) return;
@@ -169,7 +169,8 @@ export class Panel {
     const listHtml = sorted
       .map((fish) => {
         const selectedClass = fish.id === selectedFishId ? ' selected' : '';
-        const state = `${fish.lifeState} · ${fish.hungerState}`;
+        const stageLabel = typeof fish.lifeStageLabel === 'function' ? fish.lifeStageLabel() : (fish.lifeStage ?? '');
+        const state = `${fish.lifeState} · ${stageLabel} · ${fish.hungerState}`;
         const liveName = fish.name?.trim() || '';
         const draftName = this.nameDraftByFishId.get(fish.id) ?? liveName;
         const rawLabel = draftName ? `${draftName} (#${fish.id})` : `#${fish.id}`;
@@ -218,8 +219,10 @@ export class Panel {
       <label class="control-group fish-name-group"><span>İsim</span><input type="text" maxlength="24" value="${this.#escapeAttribute(draftName)}" data-fish-name-input placeholder="Balık ismi" /></label>
       <div class="stat-row"><span>Cinsiyet</span><strong>${fish.sex}</strong></div>
       <div class="stat-row"><span>Life</span><strong>${fish.lifeState}</strong></div>
+      <div class="stat-row"><span>Yaş Evresi</span><strong>${typeof fish.lifeStageLabel === 'function' ? fish.lifeStageLabel() : (fish.lifeStage ?? '')}</strong></div>
       <div class="stat-row"><span>Hunger</span><strong>${fish.hungerState} (${Math.round(fish.hunger01 * 100)}%)</strong></div>
       <div class="stat-row"><span>Wellbeing</span><strong>${Math.round(fish.wellbeing01 * 100)}%</strong></div>
+      <div class="stat-row"><span>Büyüme</span><strong>${Math.round((fish.growth01 ?? 0) * 100)}%</strong></div>
       <div class="stat-row"><span>Akvaryum Süresi</span><strong>${mm}:${ss}</strong></div>
       ${canDiscard ? '<div class="button-row"><button type="button" data-fish-discard>At</button></div>' : ''}
     `;
