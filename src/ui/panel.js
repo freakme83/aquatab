@@ -8,6 +8,8 @@ export class Panel {
     this.root = rootElement;
     this.handlers = handlers;
     this.nameDraftByFishId = new Map();
+    this.currentInspectorSelectedFishId = null;
+    this.lastInspectorSignature = null;
 
     this.tabButtons = [...this.root.querySelectorAll('.tab-button')];
     this.tabContents = [...this.root.querySelectorAll('.tab-content')];
@@ -30,6 +32,7 @@ export class Panel {
     this.#bindTabs();
     this.#bindControls();
     this.#bindDeckToggle();
+    this.#bindFishInspectorDelegates();
   }
 
   #bindTabs() {
@@ -85,6 +88,45 @@ export class Panel {
     });
   }
 
+  #bindFishInspectorDelegates() {
+    if (!this.fishInspector) return;
+
+    this.fishInspector.addEventListener('pointerdown', (event) => {
+      const rowButton = event.target.closest('[data-fish-id]');
+      if (!rowButton) return;
+      event.preventDefault();
+      this.handlers.onFishSelect?.(Number(rowButton.dataset.fishId));
+    });
+
+    this.fishInspector.addEventListener('input', (event) => {
+      const input = event.target.closest('[data-fish-name-input]');
+      if (!input || this.currentInspectorSelectedFishId == null) return;
+      this.nameDraftByFishId.set(this.currentInspectorSelectedFishId, input.value);
+    });
+
+    this.fishInspector.addEventListener('keydown', (event) => {
+      const input = event.target.closest('[data-fish-name-input]');
+      if (!input) return;
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        input.blur();
+      }
+    });
+
+    this.fishInspector.addEventListener('blur', (event) => {
+      const input = event.target.closest('[data-fish-name-input]');
+      if (!input || this.currentInspectorSelectedFishId == null) return;
+      this.handlers.onFishRename?.(this.currentInspectorSelectedFishId, input.value);
+      this.nameDraftByFishId.set(this.currentInspectorSelectedFishId, input.value.trim());
+    }, true);
+
+    this.fishInspector.addEventListener('click', (event) => {
+      const discardButton = event.target.closest('[data-fish-discard]');
+      if (!discardButton || this.currentInspectorSelectedFishId == null) return;
+      this.handlers.onFishDiscard?.(this.currentInspectorSelectedFishId);
+    });
+  }
+
   #setQualityText(quality) {
     const label = quality === 'low' ? 'Low' : 'High';
     this.qualityStat.textContent = label;
@@ -112,7 +154,18 @@ export class Panel {
     const activeInput = this.fishInspector.querySelector('[data-fish-name-input]:focus');
     if (activeInput) return;
 
+    const previousList = this.fishInspector.querySelector('.fish-list');
+    const previousScrollTop = previousList?.scrollTop ?? 0;
+
     const sorted = [...fishList].sort((a, b) => a.id - b.id);
+
+    const signature = sorted
+      .map((fish) => `${fish.id}|${fish.name ?? ''}|${fish.lifeState}|${fish.hungerState}`)
+      .join(';') + `::selected=${selectedFishId ?? 'none'}`;
+
+    if (signature === this.lastInspectorSignature) return;
+    this.lastInspectorSignature = signature;
+
     const listHtml = sorted
       .map((fish) => {
         const selectedClass = fish.id === selectedFishId ? ' selected' : '';
@@ -126,6 +179,8 @@ export class Panel {
       .join('');
 
     const selectedFish = sorted.find((fish) => fish.id === selectedFishId) ?? null;
+    this.currentInspectorSelectedFishId = selectedFish?.id ?? null;
+
     const detailHtml = selectedFish
       ? this.#fishDetailsMarkup(selectedFish, simTimeSec)
       : '<p class="fish-empty">Bir balık seçin.</p>';
@@ -135,37 +190,8 @@ export class Panel {
       <div class="fish-detail">${detailHtml}</div>
     `;
 
-    this.fishInspector.querySelectorAll('[data-fish-id]').forEach((el) => {
-      el.addEventListener('click', () => {
-        this.handlers.onFishSelect?.(Number(el.dataset.fishId));
-      });
-    });
-
-    const nameInput = this.fishInspector.querySelector('[data-fish-name-input]');
-    if (nameInput && selectedFish) {
-      const commit = () => {
-        this.handlers.onFishRename?.(selectedFish.id, nameInput.value);
-        this.nameDraftByFishId.set(selectedFish.id, nameInput.value.trim());
-      };
-
-      nameInput.addEventListener('input', () => {
-        this.nameDraftByFishId.set(selectedFish.id, nameInput.value);
-      });
-      nameInput.addEventListener('blur', commit);
-      nameInput.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter') {
-          event.preventDefault();
-          nameInput.blur();
-        }
-      });
-    }
-
-    const discardButton = this.fishInspector.querySelector('[data-fish-discard]');
-    if (discardButton && selectedFish) {
-      discardButton.addEventListener('click', () => {
-        this.handlers.onFishDiscard?.(selectedFish.id);
-      });
-    }
+    const nextList = this.fishInspector.querySelector('.fish-list');
+    if (nextList) nextList.scrollTop = previousScrollTop;
   }
 
   #escapeHtml(value) {

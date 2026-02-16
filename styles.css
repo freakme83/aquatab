@@ -260,18 +260,20 @@ input[type='range'] {
 
 .tab-content[data-content='fish'] {
   max-height: min(58vh, 520px);
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .fish-inspector {
-  grid-template-rows: auto auto;
+  grid-template-rows: minmax(140px, 1fr) auto;
   min-height: 0;
+  max-height: min(52vh, 470px);
 }
 
 .fish-list {
   min-height: 0;
-  max-height: min(38vh, 360px);
+  max-height: min(36vh, 320px);
   overflow-y: auto;
+  padding-right: 2px;
 }
 
 .fish-name-group input[type='text'] {
