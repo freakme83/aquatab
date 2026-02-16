@@ -40,6 +40,8 @@ function makeBubble(bounds) {
 
 export class World {
   constructor(width, height, initialFishCount = 20) {
+    const normalizedInitialFishCount = Math.max(1, Math.min(50, Math.round(initialFishCount)));
+
     this.bounds = { width, height, sandHeight: this.#computeSandHeight(height) };
     this.fish = [];
     this.food = [];
@@ -52,6 +54,11 @@ export class World {
     this.nextPlaySessionId = 1;
     this.simTimeSec = 0;
     this.selectedFishId = null;
+
+    this.initialFishCount = normalizedInitialFishCount;
+    this.foodsConsumedCount = 0;
+    this.filterUnlockThreshold = this.initialFishCount * 4;
+    this.filterUnlocked = false;
 
     // Simple event queue for UI/telemetry/achievements.
     // Use `world.flushEvents()` from main loop if/when needed.
@@ -66,7 +73,7 @@ export class World {
     this.paused = false;
     this.speedMultiplier = 1;
 
-    this.setFishCount(initialFishCount);
+    this.setFishCount(this.initialFishCount);
     this.#seedBubbles();
     this.#seedGroundAlgae();
   }
@@ -207,6 +214,15 @@ export class World {
     }
 
     if (consumed > 0) this.emit('food:consume', { foodId, consumed });
+
+    if (consumed > 0) {
+      this.foodsConsumedCount += 1;
+
+      if (!this.filterUnlocked && this.foodsConsumedCount >= this.filterUnlockThreshold) {
+        this.filterUnlocked = true;
+      }
+    }
+
     return consumed;
   }
 
