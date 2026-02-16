@@ -84,8 +84,7 @@ let lastTime = performance.now();
 let fps = 60;
 
 const SIMULATION_STEP_SEC = 1 / 60;
-const MAX_CATCHUP_SEC = 0.25;
-const MAX_RENDER_DELTA_SEC = 0.05;
+const MAX_DELTA_SEC = 0.05;
 let simulationTime = performance.now();
 let intervalDriverId = null;
 
@@ -93,7 +92,7 @@ function advanceSimulation(now = performance.now()) {
   const elapsedSec = Math.max(0, (now - simulationTime) / 1000);
   simulationTime = now;
 
-  let remaining = Math.min(elapsedSec, MAX_CATCHUP_SEC);
+  let remaining = Math.min(elapsedSec, MAX_DELTA_SEC);
   while (remaining > 0) {
     const delta = Math.min(SIMULATION_STEP_SEC, remaining);
     world.update(delta);
@@ -115,24 +114,25 @@ function stopIntervalDriver() {
 }
 
 function syncDriverToVisibility() {
-  if (document.hidden) {
-    startIntervalDriver();
+  if (document.visibilityState === 'visible') {
+    stopIntervalDriver();
+
+    // Avoid fast-forward after returning from a hidden tab.
+    const now = performance.now();
+    simulationTime = now;
+    lastTime = now;
     return;
   }
 
-  stopIntervalDriver();
+  startIntervalDriver();
 
-  // Avoid fast-forward after returning from a hidden tab.
-  const now = performance.now();
-  simulationTime = now;
-  lastTime = now;
 }
 
 document.addEventListener('visibilitychange', syncDriverToVisibility);
 syncDriverToVisibility();
 
 function tick(now) {
-  const rawDelta = Math.min(MAX_RENDER_DELTA_SEC, (now - lastTime) / 1000);
+  const rawDelta = Math.min(MAX_DELTA_SEC, (now - lastTime) / 1000);
   lastTime = now;
 
   if (rawDelta > 0) {
@@ -140,7 +140,7 @@ function tick(now) {
     fps += (instantFps - fps) * 0.1;
   }
 
-  if (!document.hidden) {
+  if (document.visibilityState === 'visible') {
     advanceSimulation(now);
     renderer.render(now, rawDelta);
   }
