@@ -18,12 +18,32 @@ export class Panel {
     this.fishCountStat = this.root.querySelector('[data-stat="fishCount"]');
     this.qualityStat = this.root.querySelector('[data-stat="quality"]');
     this.cleanlinessStat = this.root.querySelector('[data-stat="cleanliness"]');
-    this.filterUnlockStat = this.root.querySelector('[data-stat="filterUnlock"]');
 
     this.fishSlider = this.root.querySelector('[data-control="fishCount"]');
     this.speedSlider = this.root.querySelector('[data-control="simSpeed"]');
     this.toggleButton = this.root.querySelector('[data-control="togglePause"]');
     this.qualityButton = this.root.querySelector('[data-control="toggleQuality"]');
+
+    this.filterAccordion = this.root.querySelector('[data-filter-accordion]');
+    this.filterAccordionToggle = this.root.querySelector('[data-control="toggleFilterAccordion"]');
+    this.filterContent = this.root.querySelector('[data-filter-content]');
+    this.filterMessage = this.root.querySelector('[data-filter-message]');
+    this.filterFeedProgress = this.root.querySelector('[data-filter-feed-progress]');
+    this.filterInstallProgressRow = this.root.querySelector('[data-filter-install-progress-row]');
+    this.filterInstallProgress = this.root.querySelector('[data-filter-install-progress]');
+    this.filterInstallBarTrack = this.root.querySelector('[data-filter-install-bar-track]');
+    this.filterInstallBar = this.root.querySelector('[data-filter-install-bar]');
+    this.filterStatusRow = this.root.querySelector('[data-filter-status-row]');
+    this.filterStatus = this.root.querySelector('[data-filter-status]');
+    this.filterHealthRow = this.root.querySelector('[data-filter-health-row]');
+    this.filterHealth = this.root.querySelector('[data-filter-health]');
+    this.filterActionRow = this.root.querySelector('[data-filter-action-row]');
+    this.filterAction = this.root.querySelector('[data-filter-action]');
+    this.filterToggleRow = this.root.querySelector('[data-filter-toggle-row]');
+
+    this.installFilterButton = this.root.querySelector('[data-control="installFilter"]');
+    this.maintainFilterButton = this.root.querySelector('[data-control="maintainFilter"]');
+    this.toggleFilterPowerButton = this.root.querySelector('[data-control="toggleFilterPower"]');
 
     this.fishValue = this.root.querySelector('[data-value="fishCount"]');
     this.speedValue = this.root.querySelector('[data-value="simSpeed"]');
@@ -78,6 +98,25 @@ export class Panel {
     this.qualityButton.addEventListener('click', () => {
       const quality = this.handlers.onQualityToggle();
       this.#setQualityText(quality);
+    });
+
+    this.filterAccordionToggle?.addEventListener('click', () => {
+      const nextOpen = this.filterAccordion?.dataset.open !== 'true';
+      if (this.filterAccordion) this.filterAccordion.dataset.open = String(nextOpen);
+      this.filterAccordionToggle?.setAttribute('aria-expanded', String(nextOpen));
+      if (this.filterContent) this.filterContent.hidden = !nextOpen;
+    });
+
+    this.installFilterButton?.addEventListener('click', () => {
+      this.handlers.onFilterInstall?.();
+    });
+
+    this.maintainFilterButton?.addEventListener('click', () => {
+      this.handlers.onFilterMaintain?.();
+    });
+
+    this.toggleFilterPowerButton?.addEventListener('click', () => {
+      this.handlers.onFilterTogglePower?.();
     });
   }
 
@@ -144,7 +183,22 @@ export class Panel {
     this.#setQualityText(quality);
   }
 
-  updateStats({ fps, fishCount, quality, cleanliness01, filterUnlocked, foodsConsumedCount, filterUnlockThreshold }) {
+  updateStats({
+    fps,
+    fishCount,
+    quality,
+    cleanliness01,
+    filterUnlocked,
+    foodsConsumedCount,
+    filterUnlockThreshold,
+    filterInstalled,
+    filterEnabled,
+    filter01,
+    installProgress01,
+    maintenanceProgress01,
+    maintenanceCooldownSec,
+    filterDepletedThreshold01
+  }) {
     this.fpsStat.textContent = String(Math.round(fps));
     this.fishCountStat.textContent = String(fishCount);
     this.#setQualityText(quality);
@@ -154,14 +208,72 @@ export class Panel {
       this.cleanlinessStat.textContent = `${cleanlinessPct}%`;
     }
 
-    if (this.filterUnlockStat) {
-      if (filterUnlocked) {
-        this.filterUnlockStat.textContent = 'Filter: Unlocked';
+    const consumed = Math.max(0, Math.floor(foodsConsumedCount ?? 0));
+    const target = Math.max(0, Math.floor(filterUnlockThreshold ?? 0));
+    const isInstalling = (installProgress01 ?? 0) > 0;
+    const isMaintaining = (maintenanceProgress01 ?? 0) > 0;
+    const depleted = filterInstalled && !isMaintaining && (filter01 ?? 0) <= (filterDepletedThreshold01 ?? 0.1);
+
+    if (this.filterAccordion) {
+      this.filterAccordion.classList.toggle('is-dim', !filterInstalled);
+    }
+
+    if (this.filterFeedProgress) {
+      this.filterFeedProgress.textContent = `${consumed} / ${target}`;
+    }
+
+    if (this.filterMessage) {
+      if (!filterUnlocked) {
+        this.filterMessage.textContent = `To install the filter: feed your fish ${target} times.`;
+      } else if (isInstalling) {
+        this.filterMessage.textContent = `Installing... ${Math.round((installProgress01 ?? 0) * 100)}%`;
+      } else if (!filterInstalled) {
+        this.filterMessage.textContent = 'Filter available. Install to start cleaning water.';
       } else {
-        const consumed = Math.max(0, Math.floor(foodsConsumedCount ?? 0));
-        const threshold = Math.max(0, Math.floor(filterUnlockThreshold ?? 0));
-        this.filterUnlockStat.textContent = `Filter: Locked (${consumed} / ${threshold})`;
+        this.filterMessage.textContent = 'Filter installed and ready.';
       }
+    }
+
+    if (this.filterInstallProgressRow) this.filterInstallProgressRow.hidden = !isInstalling;
+    if (this.filterInstallBarTrack) this.filterInstallBarTrack.hidden = !isInstalling;
+    if (this.filterInstallProgress) this.filterInstallProgress.textContent = `${Math.round((installProgress01 ?? 0) * 100)}%`;
+    if (this.filterInstallBar) this.filterInstallBar.style.width = `${Math.round((installProgress01 ?? 0) * 100)}%`;
+
+    if (this.installFilterButton) {
+      const canInstall = filterUnlocked && !filterInstalled && !isInstalling;
+      this.installFilterButton.hidden = !canInstall;
+      this.installFilterButton.disabled = !canInstall;
+    }
+
+    if (this.filterStatusRow) this.filterStatusRow.hidden = !filterInstalled;
+    if (this.filterStatus) this.filterStatus.textContent = filterEnabled ? 'ON' : 'OFF';
+
+    if (this.filterHealthRow) this.filterHealthRow.hidden = !filterInstalled;
+    if (this.filterHealth) this.filterHealth.textContent = `${Math.round(Math.max(0, filter01 ?? 0) * 100)}%`;
+
+    if (this.filterActionRow) this.filterActionRow.hidden = !filterInstalled;
+    if (this.filterAction) {
+      if (isMaintaining) {
+        this.filterAction.textContent = `Maintaining... ${Math.round((maintenanceProgress01 ?? 0) * 100)}%`;
+      } else if (depleted) {
+        this.filterAction.textContent = 'Maintenance required';
+      } else if ((maintenanceCooldownSec ?? 0) > 0) {
+        this.filterAction.textContent = `Maintenance cooldown: ${Math.ceil(maintenanceCooldownSec ?? 0)}s`;
+      } else {
+        this.filterAction.textContent = '--';
+      }
+    }
+
+    if (this.filterToggleRow) this.filterToggleRow.hidden = !filterInstalled;
+    if (this.toggleFilterPowerButton) {
+      this.toggleFilterPowerButton.hidden = !filterInstalled;
+      this.toggleFilterPowerButton.textContent = filterEnabled ? 'Turn OFF' : 'Turn ON';
+    }
+
+    if (this.maintainFilterButton) {
+      const canMaintain = filterInstalled && !isInstalling && !isMaintaining && (maintenanceCooldownSec ?? 0) <= 0;
+      this.maintainFilterButton.hidden = !filterInstalled;
+      this.maintainFilterButton.disabled = !canMaintain;
     }
   }
 

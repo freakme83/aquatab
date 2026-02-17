@@ -36,7 +36,6 @@
           <div class="stat-row"><span>Fish</span><strong data-stat="fishCount">0</strong></div>
           <div class="stat-row"><span>Quality</span><strong data-stat="quality">High</strong></div>
           <div class="stat-row"><span>Temizlik</span><strong data-stat="cleanliness">100%</strong></div>
-          <div class="stat-row"><span>Filter</span><strong data-stat="filterUnlock">Filter: Locked (0 / 0)</strong></div>
         </section>
 
         <section class="tab-content" data-content="controls" role="tabpanel">
@@ -56,6 +55,25 @@
             <button type="button" data-control="togglePause">Pause</button>
             <button type="button" data-control="toggleQuality">Quality: High</button>
           </div>
+
+          <section class="filter-accordion is-dim" data-filter-accordion data-open="false">
+            <button class="filter-accordion-toggle" type="button" data-control="toggleFilterAccordion" aria-expanded="false">
+              <span>Water Filter</span>
+              <span class="filter-accordion-chevron">▾</span>
+            </button>
+            <div class="filter-accordion-content" data-filter-content hidden>
+              <p class="filter-message" data-filter-message>To install the filter: feed your fish 0 times.</p>
+              <div class="stat-row"><span>Feed count progress</span><strong data-filter-feed-progress>0 / 0</strong></div>
+              <div class="stat-row" data-filter-install-progress-row hidden><span>Install progress</span><strong data-filter-install-progress>0%</strong></div>
+              <div class="progress-track" data-filter-install-bar-track hidden><div class="progress-fill" data-filter-install-bar></div></div>
+              <div class="stat-row" data-filter-status-row hidden><span>Status</span><strong data-filter-status>OFF</strong></div>
+              <div class="stat-row" data-filter-health-row hidden><span>Filter health</span><strong data-filter-health>0%</strong></div>
+              <div class="stat-row" data-filter-action-row hidden><span>Filter action</span><strong data-filter-action>--</strong></div>
+              <div class="button-row"><button type="button" data-control="installFilter" hidden>Install water filter</button></div>
+              <div class="button-row" data-filter-toggle-row hidden><button type="button" data-control="toggleFilterPower">On / Off</button></div>
+              <div class="button-row"><button type="button" data-control="maintainFilter" hidden>Maintain filter</button></div>
+            </div>
+          </section>
         </section>
 
         <section class="tab-content" data-content="fish" role="tabpanel">

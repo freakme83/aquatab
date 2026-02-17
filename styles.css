@@ -297,3 +297,66 @@ input[type='range'] {
   width: 100%;
   pointer-events: auto;
 }
+
+
+.button-row button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.filter-accordion {
+  margin-top: 12px;
+  border: 1px solid var(--deck-border);
+  border-radius: 10px;
+  background: rgba(20, 38, 56, 0.42);
+}
+
+.filter-accordion.is-dim {
+  opacity: 0.58;
+}
+
+.filter-accordion-toggle {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text-main);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 9px 10px;
+  cursor: pointer;
+  font-size: 0.82rem;
+}
+
+.filter-accordion[data-open='true'] .filter-accordion-chevron {
+  transform: rotate(180deg);
+}
+
+.filter-accordion-chevron {
+  transition: transform 140ms ease;
+}
+
+.filter-accordion-content {
+  border-top: 1px solid var(--deck-border);
+  padding: 9px 10px 10px;
+}
+
+.filter-message {
+  margin: 0 0 8px;
+  color: var(--text-soft);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(119, 170, 211, 0.24);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, #58ace8, #96dbff);
+}
