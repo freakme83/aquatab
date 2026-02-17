@@ -374,6 +374,60 @@ input[type='range'] {
   padding-right: 2px;
 }
 
+
+.fish-detail-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin: 4px 0 8px;
+}
+
+.fish-detail-tab {
+  border: 1px solid var(--deck-border);
+  background: rgba(20, 37, 54, 0.6);
+  color: var(--text-soft);
+  border-radius: 7px;
+  padding: 5px 8px;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.fish-detail-tab.active {
+  color: var(--text-main);
+  background: rgba(85, 148, 198, 0.28);
+  border-color: rgba(140, 220, 255, 0.55);
+}
+
+.fish-detail-pane {
+  display: none;
+}
+
+.fish-detail-pane.active {
+  display: block;
+}
+
+.status-line {
+  margin: 6px 0 2px;
+  font-size: 0.8rem;
+}
+
+.status--pregnant {
+  color: #2ecc71;
+  font-weight: 600;
+}
+
+.history-children-list {
+  margin-top: 4px;
+  display: grid;
+  gap: 3px;
+}
+
+.history-child-item {
+  font-size: 0.78rem;
+  color: var(--text-soft);
+  padding-left: 2px;
+}
+
 .fish-name-group input[type='text'] {
   border: 1px solid var(--deck-border);
   background: rgba(18, 34, 49, 0.65);

@@ -71,7 +71,7 @@ export class Fish {
     this.bounds = bounds;
 
     this.id = options.id ?? 0;
-    this.name = options.name ?? '';
+    this.name = '';
     this.spawnTimeSec = options.spawnTimeSec ?? 0;
 
     // --- Life-cycle randoms (set once at birth) ---
@@ -162,6 +162,17 @@ export class Fish {
     };
 
     this.matingAnim = null;
+
+    this.history = {
+      motherId: options.history?.motherId ?? null,
+      fatherId: options.history?.fatherId ?? null,
+      childrenIds: Array.isArray(options.history?.childrenIds) ? [...options.history.childrenIds] : [],
+      bornInAquarium: Boolean(options.history?.bornInAquarium ?? false),
+      birthSimTimeSec: Number.isFinite(options.history?.birthSimTimeSec) ? options.history.birthSimTimeSec : 0,
+      deathSimTimeSec: Number.isFinite(options.history?.deathSimTimeSec) ? options.history.deathSimTimeSec : null,
+      mealsEaten: Math.max(0, Math.floor(options.history?.mealsEaten ?? 0)),
+      mateCount: Math.max(0, Math.floor(options.history?.mateCount ?? 0))
+    };
 
     // Cached reference for pursuit updates (set during decideBehavior).
     this._worldRef = null;
@@ -483,6 +494,7 @@ export class Fish {
     if (consumed <= 0) return;
     this.eatAnimTimer = this.eatAnimDuration;
     this.eat(consumed);
+    this.history.mealsEaten += 1;
   }
 
 
@@ -572,6 +584,13 @@ export class Fish {
 
   ageSeconds(simTimeSec) {
     return Math.max(0, simTimeSec - this.spawnTimeSec);
+  }
+
+  getLifeTimeSec(nowSec) {
+    const birth = Number.isFinite(this.history?.birthSimTimeSec) ? this.history.birthSimTimeSec : 0;
+    const death = this.history?.deathSimTimeSec;
+    if (Number.isFinite(death)) return Math.max(0, death - birth);
+    return Math.max(0, nowSec - birth);
   }
 
   mouthOpen01() {

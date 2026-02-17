@@ -9,11 +9,13 @@ export class Panel {
     this.handlers = handlers;
     this.nameDraftByFishId = new Map();
     this.currentInspectorSelectedFishId = null;
+    this.currentInspectorDetailTab = 'info';
     this.lastInspectorSignature = null;
 
     this.tabButtons = [...this.root.querySelectorAll('.tab-button')];
     this.tabContents = [...this.root.querySelectorAll('.tab-content')];
 
+    this.simTimeStat = this.root.querySelector('[data-stat="simTime"]');
     this.fishCountStat = this.root.querySelector('[data-stat="fishCount"]');
     this.cleanlinessStat = this.root.querySelector('[data-stat="cleanliness"]');
 
@@ -165,10 +167,17 @@ export class Panel {
       const input = event.target.closest('[data-fish-name-input]');
       if (!input || this.currentInspectorSelectedFishId == null) return;
       this.handlers.onFishRename?.(this.currentInspectorSelectedFishId, input.value);
-      this.nameDraftByFishId.set(this.currentInspectorSelectedFishId, input.value.trim());
+      this.nameDraftByFishId.delete(this.currentInspectorSelectedFishId);
     }, true);
 
     this.fishInspector.addEventListener('click', (event) => {
+      const detailTabButton = event.target.closest('[data-fish-detail-tab]');
+      if (detailTabButton) {
+        this.currentInspectorDetailTab = detailTabButton.dataset.fishDetailTab === 'history' ? 'history' : 'info';
+        this.lastInspectorSignature = null;
+        return;
+      }
+
       const discardButton = event.target.closest('[data-fish-discard]');
       if (!discardButton || this.currentInspectorSelectedFishId == null) return;
       this.handlers.onFishDiscard?.(this.currentInspectorSelectedFishId);
@@ -185,6 +194,7 @@ export class Panel {
   }
 
   updateStats({
+    simTimeSec,
     fishCount,
     cleanliness01,
     filterUnlocked,
@@ -198,6 +208,14 @@ export class Panel {
     maintenanceCooldownSec,
     filterDepletedThreshold01
   }) {
+    if (this.simTimeStat) {
+      const totalSec = Math.max(0, Math.floor(simTimeSec ?? 0));
+      const hh = String(Math.floor(totalSec / 3600)).padStart(2, '0');
+      const mm = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0');
+      const ss = String(totalSec % 60).padStart(2, '0');
+      this.simTimeStat.textContent = `${hh}:${mm}:${ss}`;
+    }
+
     this.fishCountStat.textContent = String(fishCount);
 
     if (this.cleanlinessStat) {
@@ -286,19 +304,28 @@ export class Panel {
     const sorted = [...fishList].sort((a, b) => a.id - b.id);
 
     const selectedFish = sorted.find((fish) => fish.id === selectedFishId) ?? null;
+    if ((selectedFish?.id ?? null) !== this.currentInspectorSelectedFishId) {
+      this.currentInspectorDetailTab = 'info';
+    }
+
     const selectedLiveAgeSec = selectedFish ? Math.floor(selectedFish.ageSeconds(simTimeSec)) : -1;
     const selectedHungerPct = selectedFish ? Math.round((selectedFish.hunger01 ?? 0) * 100) : -1;
     const selectedWellbeingPct = selectedFish ? Math.round((selectedFish.wellbeing01 ?? 0) * 100) : -1;
     const selectedGrowthPct = selectedFish ? Math.round((selectedFish.growth01 ?? 0) * 100) : -1;
+    const selectedHistorySnapshot = selectedFish
+      ? `${selectedFish.history?.mealsEaten ?? 0}|${selectedFish.history?.mateCount ?? 0}|${selectedFish.history?.childrenIds?.length ?? 0}|${selectedFish.history?.deathSimTimeSec ?? ''}|${selectedFish.repro?.state ?? ''}`
+      : 'none';
 
     const signature = sorted
-      .map((fish) => `${fish.id}|${fish.name ?? ''}|${fish.lifeState}|${fish.hungerState}|${fish.lifeStage ?? ''}`)
+      .map((fish) => `${fish.id}|${fish.name ?? ''}|${fish.lifeState}|${fish.hungerState}|${fish.lifeStage ?? ''}|${fish.repro?.state ?? ''}`)
       .join(';')
       + `::selected=${selectedFishId ?? 'none'}`
       + `::age=${selectedLiveAgeSec}`
       + `::hunger=${selectedHungerPct}`
       + `::wellbeing=${selectedWellbeingPct}`
-      + `::growth=${selectedGrowthPct}`;
+      + `::growth=${selectedGrowthPct}`
+      + `::history=${selectedHistorySnapshot}`
+      + `::detailTab=${this.currentInspectorDetailTab}`;
 
     if (signature === this.lastInspectorSignature) return;
     this.lastInspectorSignature = signature;
@@ -307,10 +334,10 @@ export class Panel {
       .map((fish) => {
         const selectedClass = fish.id === selectedFishId ? ' selected' : '';
         const stageLabel = typeof fish.lifeStageLabel === 'function' ? fish.lifeStageLabel() : (fish.lifeStage ?? '');
-        const state = `${fish.lifeState} · ${stageLabel} · ${fish.hungerState}`;
+        const state = `${stageLabel} · ${fish.hungerState}`;
         const liveName = fish.name?.trim() || '';
         const draftName = this.nameDraftByFishId.get(fish.id) ?? liveName;
-        const rawLabel = draftName ? `${draftName} (#${fish.id})` : `#${fish.id}`;
+        const rawLabel = draftName || 'Unnamed';
         const label = this.#escapeHtml(rawLabel);
         return `<button type="button" class="fish-row${selectedClass}" data-fish-id="${fish.id}">${label} · ${fish.sex} · ${state}</button>`;
       })
@@ -343,24 +370,77 @@ export class Panel {
   }
 
   #fishDetailsMarkup(fish, simTimeSec) {
-    const ageSec = Math.round(fish.ageSeconds(simTimeSec));
-    const mm = String(Math.floor(ageSec / 60)).padStart(2, '0');
-    const ss = String(ageSec % 60).padStart(2, '0');
     const canDiscard = fish.lifeState !== 'ALIVE';
     const liveName = fish.name?.trim() || '';
     const draftName = this.nameDraftByFishId.get(fish.id) ?? liveName;
+    const aquariumTime = this.#formatMMSS(fish.ageSeconds(simTimeSec));
 
-    return `
-      <div class="stat-row"><span>ID</span><strong>#${fish.id}</strong></div>
+    const isPregnant = fish.sex === 'female' && (fish.repro?.state === 'GRAVID' || fish.repro?.state === 'LAYING');
+    const pregnantMarkup = isPregnant
+      ? '<div class="status-line status--pregnant">pregnant</div>'
+      : '';
+
+    const infoRows = `
       <label class="control-group fish-name-group"><span>Name</span><input type="text" maxlength="24" value="${this.#escapeAttribute(draftName)}" data-fish-name-input placeholder="Fish name" /></label>
+      <div class="stat-row"><span>Fish ID</span><strong>${fish.id}</strong></div>
       <div class="stat-row"><span>Sex</span><strong>${fish.sex}</strong></div>
-      <div class="stat-row"><span>Life</span><strong>${fish.lifeState}</strong></div>
       <div class="stat-row"><span>Life Stage</span><strong>${typeof fish.lifeStageLabel === 'function' ? fish.lifeStageLabel() : (fish.lifeStage ?? '')}</strong></div>
       <div class="stat-row"><span>Hunger</span><strong>${fish.hungerState} (${Math.round(fish.hunger01 * 100)}%)</strong></div>
       <div class="stat-row"><span>Wellbeing</span><strong>${Math.round(fish.wellbeing01 * 100)}%</strong></div>
       <div class="stat-row"><span>Growth</span><strong>${Math.round((fish.growth01 ?? 0) * 100)}%</strong></div>
-      <div class="stat-row"><span>Aquarium Time</span><strong>${mm}:${ss}</strong></div>
+      <div class="stat-row"><span>Aquarium Time</span><strong>${aquariumTime}</strong></div>
+      ${pregnantMarkup}
+    `;
+
+    const history = fish.history ?? {};
+    const motherValue = history.motherId != null ? this.resolveFishLabelById(history.motherId) : '—';
+    const fatherValue = history.fatherId != null ? this.resolveFishLabelById(history.fatherId) : '—';
+    const lifetimeValue = this.#formatMMSS(typeof fish.getLifeTimeSec === 'function' ? fish.getLifeTimeSec(simTimeSec) : 0);
+    const childrenIds = Array.isArray(history.childrenIds) ? history.childrenIds : [];
+    const childLabels = childrenIds.map((id) => this.resolveFishLabelById(id));
+    const childrenSummary = childLabels.length > 0 ? childLabels.join(', ') : '—';
+    const childrenMarkup = childLabels.length > 0
+      ? childLabels.map((label) => `<div class="history-child-item">${this.#escapeHtml(label)}</div>`).join('')
+      : '<div class="history-child-item">—</div>';
+
+    const historyRows = `
+      <div class="stat-row"><span>Mother</span><strong>${this.#escapeHtml(motherValue)}</strong></div>
+      <div class="stat-row"><span>Father</span><strong>${this.#escapeHtml(fatherValue)}</strong></div>
+      <div class="stat-row"><span>Born in aquarium</span><strong>${history.bornInAquarium ? 'Yes' : 'No'}</strong></div>
+      <div class="stat-row"><span>Life duration</span><strong>${lifetimeValue}</strong></div>
+      <div class="stat-row"><span>Meals eaten</span><strong>${Math.max(0, Math.floor(history.mealsEaten ?? 0))}</strong></div>
+      <div class="stat-row"><span>Times mated</span><strong>${Math.max(0, Math.floor(history.mateCount ?? 0))}</strong></div>
+      <div class="stat-row"><span>Children</span><strong>${this.#escapeHtml(childrenSummary)}</strong></div>
+      <div class="history-children-list">${childrenMarkup}</div>
+    `;
+
+    const tabInfoActive = this.currentInspectorDetailTab !== 'history';
+    const tabHistoryActive = this.currentInspectorDetailTab === 'history';
+
+    return `
+      <div class="fish-detail-tabs" role="tablist" aria-label="Fish detail sections">
+        <button type="button" class="fish-detail-tab${tabInfoActive ? ' active' : ''}" data-fish-detail-tab="info" role="tab" aria-selected="${tabInfoActive}">Info</button>
+        <button type="button" class="fish-detail-tab${tabHistoryActive ? ' active' : ''}" data-fish-detail-tab="history" role="tab" aria-selected="${tabHistoryActive}">History</button>
+      </div>
+      <div class="fish-detail-pane${tabInfoActive ? ' active' : ''}" data-fish-detail-pane="info">${infoRows}</div>
+      <div class="fish-detail-pane${tabHistoryActive ? ' active' : ''}" data-fish-detail-pane="history">${historyRows}</div>
       ${canDiscard ? '<div class="button-row"><button type="button" data-fish-discard>Discard</button></div>' : ''}
     `;
+  }
+
+  resolveFishLabelById(id) {
+    if (id == null) return '—';
+    const directFish = this.handlers.onGetFishById?.(id);
+    const numericFish = directFish ?? this.handlers.onGetFishById?.(Number(id));
+    const fish = numericFish ?? null;
+    const resolvedName = fish?.name?.trim();
+    return resolvedName || String(id);
+  }
+
+  #formatMMSS(seconds) {
+    const total = Math.max(0, Math.floor(seconds ?? 0));
+    const mm = String(Math.floor(total / 60)).padStart(2, '0');
+    const ss = String(total % 60).padStart(2, '0');
+    return `${mm}:${ss}`;
   }
 }
