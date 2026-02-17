@@ -279,7 +279,7 @@ export class Panel {
 
     const detailHtml = selectedFish
       ? this.#fishDetailsMarkup(selectedFish, simTimeSec)
-      : '<p class="fish-empty">Bir balık seçin.</p>';
+      : '<p class="fish-empty">Select a fish.</p>';
 
     this.fishInspector.innerHTML = `
       <div class="fish-list">${listHtml}</div>
@@ -311,15 +311,15 @@ export class Panel {
 
     return `
       <div class="stat-row"><span>ID</span><strong>#${fish.id}</strong></div>
-      <label class="control-group fish-name-group"><span>İsim</span><input type="text" maxlength="24" value="${this.#escapeAttribute(draftName)}" data-fish-name-input placeholder="Balık ismi" /></label>
-      <div class="stat-row"><span>Cinsiyet</span><strong>${fish.sex}</strong></div>
+      <label class="control-group fish-name-group"><span>Name</span><input type="text" maxlength="24" value="${this.#escapeAttribute(draftName)}" data-fish-name-input placeholder="Fish name" /></label>
+      <div class="stat-row"><span>Sex</span><strong>${fish.sex}</strong></div>
       <div class="stat-row"><span>Life</span><strong>${fish.lifeState}</strong></div>
-      <div class="stat-row"><span>Yaş Evresi</span><strong>${typeof fish.lifeStageLabel === 'function' ? fish.lifeStageLabel() : (fish.lifeStage ?? '')}</strong></div>
+      <div class="stat-row"><span>Life Stage</span><strong>${typeof fish.lifeStageLabel === 'function' ? fish.lifeStageLabel() : (fish.lifeStage ?? '')}</strong></div>
       <div class="stat-row"><span>Hunger</span><strong>${fish.hungerState} (${Math.round(fish.hunger01 * 100)}%)</strong></div>
       <div class="stat-row"><span>Wellbeing</span><strong>${Math.round(fish.wellbeing01 * 100)}%</strong></div>
-      <div class="stat-row"><span>Büyüme</span><strong>${Math.round((fish.growth01 ?? 0) * 100)}%</strong></div>
-      <div class="stat-row"><span>Akvaryum Süresi</span><strong>${mm}:${ss}</strong></div>
-      ${canDiscard ? '<div class="button-row"><button type="button" data-fish-discard>At</button></div>' : ''}
+      <div class="stat-row"><span>Growth</span><strong>${Math.round((fish.growth01 ?? 0) * 100)}%</strong></div>
+      <div class="stat-row"><span>Aquarium Time</span><strong>${mm}:${ss}</strong></div>
+      ${canDiscard ? '<div class="button-row"><button type="button" data-fish-discard>Discard</button></div>' : ''}
     `;
   }
 }

@@ -465,10 +465,10 @@ export class Fish {
 
   lifeStageLabel() {
     switch (this.lifeStage) {
-      case 'BABY': return 'Yavru';
-      case 'JUVENILE': return 'Genç';
-      case 'ADULT': return 'Yetişkin';
-      case 'OLD': return 'Yaşlı';
+      case 'BABY': return 'Baby';
+      case 'JUVENILE': return 'Juvenile';
+      case 'ADULT': return 'Adult';
+      case 'OLD': return 'Old';
       default: return String(this.lifeStage ?? '');
     }
   }
