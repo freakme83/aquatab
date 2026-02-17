@@ -28,10 +28,6 @@ const WATER_STRESS_CURVE_POWER = Math.max(1, WATER_WELLBEING.stressCurvePower ??
 const WATER_STRESS_PER_SEC = Math.max(0, WATER_WELLBEING.stressPerSec ?? 0.006);
 const WATER_AGE_SENSITIVITY_MIN = Math.max(0, WATER_WELLBEING.ageSensitivityMin ?? 1);
 const WATER_AGE_SENSITIVITY_EDGE_BOOST = Math.max(0, WATER_WELLBEING.ageSensitivityEdgeBoost ?? 0.6);
-const FISH_BUILD_STAMP = new Date().toISOString();
-
-console.log(`[aquatab] Fish module loaded: ${import.meta.url} | BUILD: ${FISH_BUILD_STAMP}`);
-
 const rand = (min, max) => min + Math.random() * (max - min);
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 

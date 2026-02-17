@@ -9,9 +9,20 @@ import { Panel } from './ui/panel.js';
 
 const DEFAULT_INITIAL_FISH_COUNT = 4;
 
+const startScreen = document.getElementById('startScreen');
+const appRoot = document.getElementById('appRoot');
+const startFishSlider = document.querySelector('[data-start-control="initialFishCount"]');
+const startFishValue = document.querySelector('[data-start-value="initialFishCount"]');
+const startSimButton = document.getElementById('startSimButton');
+
 const canvas = document.getElementById('aquariumCanvas');
 const panelRoot = document.getElementById('panelRoot');
 const tankShell = canvas.closest('.tank-shell');
+
+let world = null;
+let renderer = null;
+let panel = null;
+let started = false;
 
 function measureCanvasSize() {
   const rect = canvas.getBoundingClientRect();
@@ -23,67 +34,14 @@ function measureCanvasSize() {
   };
 }
 
-const initialSize = measureCanvasSize();
-const initialFishCountSlider = document.querySelector('[data-control="fishCount"]');
-const initialFishCount = Number.parseInt(initialFishCountSlider?.value ?? String(DEFAULT_INITIAL_FISH_COUNT), 10);
-
-const world = new World(initialSize.width, initialSize.height, initialFishCount);
-const renderer = new Renderer(canvas, world);
-const debugBounds = new URLSearchParams(window.location.search).get('debugBounds') === '1';
-renderer.setDebugBounds(debugBounds);
-
-let quality = 'high';
-
-const panel = new Panel(panelRoot, {
-  onFishCountChange: (value) => world.setFishCount(value),
-  onSpeedChange: (value) => world.setSpeedMultiplier(value),
-  onPauseToggle: () => world.togglePause(),
-  onQualityToggle: () => {
-    quality = quality === 'high' ? 'low' : 'high';
-    renderer.setQuality(quality);
-    return quality;
-  },
-  onFishSelect: (fishId) => world.toggleFishSelection(fishId),
-  onFishRename: (fishId, name) => world.renameFish(fishId, name),
-  onFishDiscard: (fishId) => world.discardFish(fishId),
-  onFilterInstall: () => world.installWaterFilter?.(),
-  onFilterMaintain: () => world.maintainWaterFilter?.(),
-  onFilterTogglePower: () => world.toggleWaterFilterEnabled?.()
-});
-
-renderer.setQuality(quality);
-
-canvas.addEventListener('click', (event) => {
-  if (renderer.isFilterModuleHit?.(event.clientX, event.clientY) && world.water.filterInstalled) {
-    const enabled = world.toggleWaterFilterEnabled?.();
-    showFilterToast(enabled ? 'Filter ON' : 'Filter OFF');
-    return;
-  }
-
-  const worldPoint = renderer.toWorldPoint(event.clientX, event.clientY);
-  if (!worldPoint) return;
-
-  const clickedFish = world.findFishAt(worldPoint.x, worldPoint.y);
-  if (clickedFish) {
-    world.toggleFishSelection(clickedFish.id);
-    if (clickedFish.lifeState !== 'DEAD') panel.selectTab('fish');
-    return;
-  }
-
-  hideCorpseAction();
-  world.spawnFood(worldPoint.x, worldPoint.y);
-});
-
-panel.sync({
-  fishCount: world.fish.length,
-  speedMultiplier: world.speedMultiplier,
-  paused: world.paused,
-  quality
+startFishSlider?.addEventListener('input', (event) => {
+  const value = Number.parseInt(event.target.value, 10) || DEFAULT_INITIAL_FISH_COUNT;
+  if (startFishValue) startFishValue.textContent = String(value);
 });
 
 const corpseActionButton = document.createElement('button');
 corpseActionButton.type = 'button';
-corpseActionButton.textContent = 'Havuzdan al';
+corpseActionButton.textContent = 'Remove from tank';
 corpseActionButton.hidden = true;
 corpseActionButton.style.position = 'fixed';
 corpseActionButton.style.zIndex = '12';
@@ -124,6 +82,7 @@ function showFilterToast(textValue) {
 }
 
 function worldToClientPoint(worldX, worldY) {
+  if (!renderer || !world) return null;
   const canvasRect = canvas.getBoundingClientRect();
   const { x, y, width, height } = renderer.tankRect;
   if (!width || !height || world.bounds.width <= 0 || world.bounds.height <= 0) return null;
@@ -139,6 +98,7 @@ function hideCorpseAction() {
 }
 
 function updateCorpseActionButton() {
+  if (!world) return;
   const selectedFish = world.getSelectedFish?.();
   if (!selectedFish || selectedFish.lifeState !== 'DEAD') {
     hideCorpseAction();
@@ -158,6 +118,7 @@ function updateCorpseActionButton() {
 }
 
 corpseActionButton.addEventListener('click', () => {
+  if (!world) return;
   const selectedFish = world.getSelectedFish?.();
   if (!selectedFish || selectedFish.lifeState !== 'DEAD') {
     hideCorpseAction();
@@ -169,6 +130,7 @@ corpseActionButton.addEventListener('click', () => {
 });
 
 function resize() {
+  if (!started || !world || !renderer) return;
   const { width, height } = measureCanvasSize();
   world.resize(width, height);
   renderer.resize(width, height);
@@ -176,8 +138,6 @@ function resize() {
 
 window.addEventListener('resize', resize);
 new ResizeObserver(resize).observe(tankShell || canvas);
-resize();
-requestAnimationFrame(resize);
 
 /* -------------------------------------------------------------------------- */
 /* Simulation/render drivers (single active driver rule)                       */
@@ -187,19 +147,20 @@ let rafId = null;
 let bgIntervalId = null;
 
 let lastTime = performance.now();
-let fps = 60;
 
 const VISIBLE_MAX_STEP_SEC = 0.25;
 const HIDDEN_STEP_SEC = 0.25;
 const HIDDEN_TICK_MS = 1000;
 
 function stepVisibleSim(rawDeltaSec) {
+  if (!world) return;
   const dt = Math.min(VISIBLE_MAX_STEP_SEC, Math.max(0, rawDeltaSec));
   if (dt <= 0) return;
   world.update(dt);
 }
 
 function stepHiddenSim(rawDeltaSec) {
+  if (!world) return;
   let remaining = Math.max(0, rawDeltaSec);
   if (remaining <= 0) return;
 
@@ -211,22 +172,18 @@ function stepHiddenSim(rawDeltaSec) {
 }
 
 function tick(now) {
+  if (!world || !renderer || !panel) return;
+
   const rawDelta = (now - lastTime) / 1000;
   lastTime = now;
 
-  // For FPS calculation and rendering delta, keep it tight for stability.
   const renderDelta = Math.min(0.05, Math.max(0.000001, rawDelta));
-  const instantFps = 1 / renderDelta;
-  fps += (instantFps - fps) * 0.1;
 
-  // Visible: sim + render
   stepVisibleSim(rawDelta);
   renderer.render(now, renderDelta);
 
   panel.updateStats({
-    fps,
     fishCount: world.fish.length,
-    quality,
     cleanliness01: world.water.hygiene01,
     filterUnlocked: world.filterUnlocked,
     foodsConsumedCount: world.foodsConsumedCount,
@@ -246,7 +203,7 @@ function tick(now) {
 }
 
 function startRaf() {
-  if (rafId != null) return;
+  if (!started || rafId != null) return;
   lastTime = performance.now();
   rafId = requestAnimationFrame(tick);
 }
@@ -258,15 +215,13 @@ function stopRaf() {
 }
 
 function startBackgroundSim() {
-  if (bgIntervalId != null) return;
+  if (!started || bgIntervalId != null) return;
 
   let last = performance.now();
   bgIntervalId = setInterval(() => {
     const now = performance.now();
     const rawDelta = (now - last) / 1000;
     last = now;
-
-    // Hidden: advance sim only (no rendering). Catch up in coarse chunks.
     stepHiddenSim(rawDelta);
   }, HIDDEN_TICK_MS);
 }
@@ -278,21 +233,79 @@ function stopBackgroundSim() {
 }
 
 function syncDriversToVisibility() {
+  if (!started) return;
   if (document.visibilityState === 'hidden') {
-    // Hidden: sim continues, no rendering
     stopRaf();
     hideCorpseAction();
-    stopBackgroundSim(); // ensure no overlap
+    stopBackgroundSim();
     startBackgroundSim();
   } else {
-    // Visible: sim + render on RAF
     stopBackgroundSim();
-    stopRaf(); // safe restart (also resets lastTime in startRaf)
+    stopRaf();
     startRaf();
   }
 }
 
 document.addEventListener('visibilitychange', syncDriversToVisibility);
 
-// Start with correct mode
-syncDriversToVisibility();
+function startSimulation() {
+  if (started) return;
+
+  const selectedFishCount = Number.parseInt(startFishSlider?.value ?? String(DEFAULT_INITIAL_FISH_COUNT), 10);
+  const initialFishCount = Number.isFinite(selectedFishCount) ? selectedFishCount : DEFAULT_INITIAL_FISH_COUNT;
+
+  appRoot.hidden = false;
+  startScreen.hidden = true;
+
+  const initialSize = measureCanvasSize();
+  world = new World(initialSize.width, initialSize.height, initialFishCount);
+  renderer = new Renderer(canvas, world);
+
+  const panelHandlers = {
+    onSpeedChange: (value) => world.setSpeedMultiplier(value),
+    onPauseToggle: () => world.togglePause(),
+    onFishSelect: (fishId) => world.toggleFishSelection(fishId),
+    onFishRename: (fishId, name) => world.renameFish(fishId, name),
+    onFishDiscard: (fishId) => world.discardFish(fishId),
+    onFilterInstall: () => world.installWaterFilter?.(),
+    onFilterMaintain: () => world.maintainWaterFilter?.(),
+    onFilterTogglePower: () => world.toggleWaterFilterEnabled?.()
+  };
+  panel = new Panel(panelRoot, panelHandlers);
+
+  canvas.addEventListener('click', (event) => {
+    if (!world || !renderer) return;
+
+    if (renderer.isFilterModuleHit?.(event.clientX, event.clientY) && world.water.filterInstalled) {
+      const enabled = world.toggleWaterFilterEnabled?.();
+      showFilterToast(enabled ? 'Filter ON' : 'Filter OFF');
+      return;
+    }
+
+    const worldPoint = renderer.toWorldPoint(event.clientX, event.clientY);
+    if (!worldPoint) return;
+
+    const clickedFish = world.findFishAt(worldPoint.x, worldPoint.y);
+    if (clickedFish) {
+      world.toggleFishSelection(clickedFish.id);
+      if (clickedFish.lifeState !== 'DEAD') panel.selectTab('fish');
+      return;
+    }
+
+    hideCorpseAction();
+    world.spawnFood(worldPoint.x, worldPoint.y);
+  });
+
+  panel.sync({
+    speedMultiplier: world.speedMultiplier,
+    paused: world.paused
+  });
+
+  resize();
+  requestAnimationFrame(resize);
+
+  started = true;
+  syncDriversToVisibility();
+}
+
+startSimButton?.addEventListener('click', startSimulation);

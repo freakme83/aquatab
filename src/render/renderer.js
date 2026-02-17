@@ -5,7 +5,6 @@
 
 const TAU = Math.PI * 2;
 const rand = (min, max) => min + Math.random() * (max - min);
-const BUILD_STAMP = new Date().toISOString();
 
 export class Renderer {
   constructor(canvas, world) {
@@ -105,7 +104,6 @@ export class Renderer {
     this.#drawFood(ctx);
     this.#drawFishSchool(ctx, time);
     this.#drawCachedVignette(ctx);
-    this.#drawRuntimeStamp(ctx);
     ctx.restore();
 
     this.#drawTankFrame(ctx);
@@ -524,13 +522,6 @@ export class Renderer {
     ctx.drawImage(this.vignetteCanvas, x, y);
   }
 
-  #drawRuntimeStamp(ctx) {
-    const { x, y } = this.tankRect;
-    ctx.font = '600 11px Inter, Segoe UI, sans-serif';
-    ctx.fillStyle = 'rgba(230, 245, 255, 0.76)';
-    ctx.fillText('RENDERER: CLEAN_BASE v1', x + 10, y + 18);
-    ctx.fillText(`BUILD: ${BUILD_STAMP}`, x + 10, y + 34);
-  }
 
   #drawDebugBounds(ctx) {
     const { x, y, width, height } = this.tankRect;
