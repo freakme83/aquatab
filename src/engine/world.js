@@ -160,6 +160,7 @@ export class World {
     this.simTimeSec = 0;
     this.selectedFishId = null;
     this.nameCounts = new Map();
+    this.fishById = new Map();
 
     this.initialFishCount = normalizedInitialFishCount;
     this.foodsConsumedCount = 0;
@@ -239,6 +240,24 @@ export class World {
     return true;
   }
 
+  #registerFish(fish) {
+    if (!fish) return;
+    this.fishById.set(fish.id, fish);
+  }
+
+  #unregisterFishById(fishId) {
+    this.fishById.delete(fishId);
+  }
+
+  #rebuildFishById() {
+    this.fishById = new Map();
+    for (const fish of this.fish) this.#registerFish(fish);
+  }
+
+  getFishById(fishId) {
+    return this.fishById.get(fishId) ?? null;
+  }
+
 
   #usedNames(excludeFishId = null) {
     const names = new Set();
@@ -296,7 +315,7 @@ export class World {
     return candidate;
   }
 
-  #createFish({ sex, initialAgeSec = 0, hungryStart = false, position = null, traits = null, name = null } = {}) {
+  #createFish({ sex, initialAgeSec = 0, hungryStart = false, position = null, traits = null, name = null, bornInAquarium = false, motherId = null, fatherId = null } = {}) {
     const sizeRange = GROWTH_CONFIG.sizeFactorRange;
     const growthRange = GROWTH_CONFIG.growthRateRange;
 
@@ -340,7 +359,17 @@ export class World {
       position: { x: spawn.x, y: spawn.y },
       headingAngle: this.#randomHeading(),
       speedFactor: rand(0.42, 0.68),
-      traits: traits ?? undefined
+      traits: traits ?? undefined,
+      history: {
+        motherId: motherId != null ? String(motherId) : null,
+        fatherId: fatherId != null ? String(fatherId) : null,
+        childrenIds: [],
+        bornInAquarium,
+        birthSimTimeSec: this.simTimeSec,
+        deathSimTimeSec: null,
+        mealsEaten: 0,
+        mateCount: 0
+      }
     });
 
     if (sex === 'female' || sex === 'male') {
@@ -358,6 +387,7 @@ export class World {
     }
 
     fish.updateLifeCycle(this.simTimeSec);
+    this.#registerFish(fish);
     return fish;
   }
 
@@ -415,6 +445,7 @@ export class World {
 
     this.#shuffleArray(fishPool);
     this.fish = fishPool;
+    this.#rebuildFishById();
 
     if (!this.fish.some((f) => f.id === this.selectedFishId)) {
       this.selectedFishId = this.fish[0]?.id ?? null;
@@ -528,6 +559,7 @@ export class World {
     const index = this.fish.findIndex((entry) => entry.id === fishId && entry.lifeState !== 'ALIVE');
     if (index < 0) return false;
     this.fish.splice(index, 1);
+    this.#unregisterFishById(fishId);
     if (this.selectedFishId === fishId) this.selectedFishId = null;
     return true;
   }
@@ -539,6 +571,7 @@ export class World {
     const fish = this.fish[index];
     fish.corpseRemoved = true;
     this.fish.splice(index, 1);
+    this.#unregisterFishById(fishId);
     if (this.selectedFishId === fishId) this.selectedFishId = null;
     return true;
   }
@@ -563,7 +596,8 @@ export class World {
       this.fish.push(this.#createFish());
     }
     while (this.fish.length > clamped) {
-      this.fish.pop();
+      const removed = this.fish.pop();
+      if (removed) this.#unregisterFishById(removed.id);
     }
 
     if (!this.fish.some((f) => f.id === this.selectedFishId)) {
@@ -960,6 +994,9 @@ export class World {
 
     male.repro.cooldownUntilSec = nowSec + randRange(MATE_FATHER_COOLDOWN_SEC, 120, 240);
 
+    female.history.mateCount += 1;
+    male.history.mateCount += 1;
+
     female.matingAnim = {
       startSec: nowSec,
       durationSec: 1.1,
@@ -975,7 +1012,7 @@ export class World {
   }
 
   #layEggClutch(female, nowSec) {
-    const father = this.fish.find((f) => f.id === female.repro.fatherId) ?? null;
+    const father = this.getFishById(female.repro.fatherId) ?? null;
     const motherTraits = { ...(female.traits ?? {}) };
     const fatherTraits = father?.traits ? { ...father.traits } : { ...motherTraits };
     const clutchCount = Math.max(1, randIntInclusive(CLUTCH_SIZE, 1, 2));
@@ -1056,6 +1093,7 @@ export class World {
       const fish = this.fish[i];
       if (fish.lifeState === 'DEAD') {
         if (fish.deadAtSec == null) fish.deadAtSec = this.simTimeSec;
+        if (fish.history && fish.history.deathSimTimeSec == null) fish.history.deathSimTimeSec = this.simTimeSec;
       }
     }
   }
@@ -1128,11 +1166,27 @@ export class World {
         const baby = this.#createFish({
           initialAgeSec: 0,
           position: { x: spawnX, y: spawnY },
-          traits: babyTraits
+          traits: babyTraits,
+          bornInAquarium: true,
+          motherId: egg.motherId,
+          fatherId: egg.fatherId
         });
         baby.spawnTimeSec = this.simTimeSec;
         baby.ageSecCached = 0;
         this.fish.push(baby);
+
+        const mother = this.getFishById(egg.motherId);
+        if (mother) {
+          const babyId = String(baby.id);
+          if (!mother.history.childrenIds.includes(babyId)) mother.history.childrenIds.push(babyId);
+        }
+
+        const father = this.getFishById(egg.fatherId);
+        if (father) {
+          const babyId = String(baby.id);
+          if (!father.history.childrenIds.includes(babyId)) father.history.childrenIds.push(babyId);
+        }
+
         egg.state = 'HATCHED';
       } else {
         egg.state = 'FAILED';
