@@ -78,14 +78,25 @@ export class Fish {
     const sizeRange = GROWTH_CONFIG.sizeFactorRange;
     const growthRange = GROWTH_CONFIG.growthRateRange;
 
-    this.sizeFactor = options.sizeFactor ?? rand(sizeRange.min, sizeRange.max);
-    this.adultRadius = GROWTH_CONFIG.adultRadius * this.sizeFactor;
-
-    this.growthRate = options.growthRate ?? rand(growthRange.min, growthRange.max);
+    const baseTraits = {
+      colorHue: options.colorHue ?? rand(8, 42),
+      sizeFactor: options.sizeFactor ?? rand(sizeRange.min, sizeRange.max),
+      growthRate: options.growthRate ?? rand(growthRange.min, growthRange.max),
+      lifespanSec: null,
+      speedFactor: options.speedFactor ?? rand(0.42, 0.68)
+    };
 
     const lifeMean = AGE_CONFIG.lifespanMeanSec;
     const lifeJitter = AGE_CONFIG.lifespanJitterSec;
-    this.lifespanSec = options.lifespanSec ?? rand(lifeMean - lifeJitter, lifeMean + lifeJitter);
+    baseTraits.lifespanSec = options.lifespanSec ?? rand(lifeMean - lifeJitter, lifeMean + lifeJitter);
+    this.traits = {
+      ...baseTraits,
+      ...(options.traits ?? {})
+    };
+    // Backward compatibility for existing usage paths while traits are adopted.
+    Object.assign(this, this.traits);
+
+    this.adultRadius = GROWTH_CONFIG.adultRadius * this.traits.sizeFactor;
 
     const stageJitter = AGE_CONFIG.stageJitterSec;
     this.stageShiftBabySec = options.stageShiftBabySec ?? rand(-stageJitter, stageJitter);
@@ -97,9 +108,6 @@ export class Fish {
     this.lifeStage = 'BABY';
     this.growth01 = 0;
     this.ageSecCached = 0;
-    this.colorHue = options.colorHue ?? rand(8, 42);
-    this.speedFactor = options.speedFactor ?? rand(0.42, 0.68);
-
     this.position = options.position
       ? { x: options.position.x, y: options.position.y }
       : { x: bounds.width * 0.5, y: bounds.height * 0.5 };
@@ -140,6 +148,17 @@ export class Fish {
       role: 'NONE',
       startedNearAlgae: false,
       cooldownUntilSec: 0
+    };
+
+    this.repro = {
+      state: 'READY',
+      dueAtSec: null,
+      cooldownUntilSec: 0,
+      fatherId: null,
+      layTargetX: null,
+      layTargetY: null,
+      pregnancyStartSec: null,
+      layingStartedAtSec: null
     };
 
     // Cached reference for pursuit updates (set during decideBehavior).
@@ -285,6 +304,16 @@ export class Fish {
       return;
     }
 
+    if (this.repro?.state === 'LAYING' && Number.isFinite(this.repro.layTargetX) && Number.isFinite(this.repro.layTargetY)) {
+      this.behavior = {
+        mode: 'seekLayTarget',
+        targetFoodId: null,
+        speedBoost: 1
+      };
+      this.target = { x: this.repro.layTargetX, y: this.repro.layTargetY };
+      return;
+    }
+
     if (this.isPlaying(world?.simTimeSec ?? 0)) {
       const isRunner = this.playState.role === 'RUNNER';
       this.behavior = {
@@ -374,7 +403,7 @@ export class Fish {
 
     this.cruisePhase = normalizeAngle(this.cruisePhase + dt * this.cruiseRate);
     const cruiseFactor = 1 + Math.sin(this.cruisePhase) * 0.18;
-    const speedBoost = (this.behavior.mode === 'seekFood' || this.behavior.mode === 'playChase' || this.behavior.mode === 'playEvade') ? this.behavior.speedBoost : 1;
+    const speedBoost = (this.behavior.mode === 'seekFood' || this.behavior.mode === 'playChase' || this.behavior.mode === 'playEvade' || this.behavior.mode === 'seekLayTarget') ? this.behavior.speedBoost : 1;
     const desiredSpeed = this.#baseSpeed() * cruiseFactor * speedBoost;
     this.currentSpeed += (desiredSpeed - this.currentSpeed) * Math.min(1, dt * 0.8);
 
@@ -490,6 +519,15 @@ export class Fish {
     };
   }
 
+
+  pregnancySwell01(simTimeSec) {
+    if (this.repro?.state !== 'GRAVID' && this.repro?.state !== 'LAYING') return 0;
+    const start = this.repro?.pregnancyStartSec;
+    const due = this.repro?.dueAtSec;
+    if (!Number.isFinite(start) || !Number.isFinite(due) || due <= start) return 0;
+    const p = clamp01((simTimeSec - start) / (due - start));
+    return 0.10 * Math.sin(p * Math.PI);
+  }
 
   ageSeconds(simTimeSec) {
     return Math.max(0, simTimeSec - this.spawnTimeSec);
