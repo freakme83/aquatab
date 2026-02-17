@@ -69,6 +69,9 @@ export class Fish {
     this.id = options.id ?? 0;
     this.name = options.name ?? '';
     this.spawnTimeSec = options.spawnTimeSec ?? 0;
+    this.motherId = options.motherId ?? null;
+    this.fatherId = options.fatherId ?? null;
+    this.bornInAquarium = options.bornInAquarium ?? false;
 
     // --- Life-cycle randoms (set once at birth) ---
     const sizeRange = GROWTH_CONFIG.sizeFactorRange;
@@ -125,6 +128,13 @@ export class Fish {
     this.behavior = { mode: 'wander', targetFoodId: null, speedBoost: 1 };
     this.eatAnimTimer = 0;
     this.eatAnimDuration = 0.22;
+
+    this.mealsEaten = options.mealsEaten ?? 0;
+    this.matingCount = options.matingCount ?? 0;
+    this.childrenIds = [...(options.childrenIds ?? [])];
+    this.lastMatedAtSec = options.lastMatedAtSec ?? -Infinity;
+    this.pregnantById = options.pregnantById ?? null;
+    this.pregnantUntilSec = options.pregnantUntilSec ?? null;
 
     // Cached reference for pursuit updates (set during decideBehavior).
     this._worldRef = null;
@@ -279,6 +289,7 @@ export class Fish {
     if (consumed <= 0) return;
     this.eatAnimTimer = this.eatAnimDuration;
     this.eat(consumed);
+    this.mealsEaten += 1;
   }
 
 
@@ -356,6 +367,24 @@ export class Fish {
     };
   }
 
+
+  isPregnant(simTimeSec) {
+    return this.sex === 'female'
+      && this.lifeState === 'ALIVE'
+      && Number.isFinite(this.pregnantUntilSec)
+      && simTimeSec < this.pregnantUntilSec;
+  }
+
+  temporaryStatuses(simTimeSec) {
+    const statuses = [];
+    if (this.isPregnant(simTimeSec)) statuses.push('pregnant');
+    return statuses;
+  }
+
+  totalLifeSeconds(simTimeSec) {
+    const endSec = Number.isFinite(this.deadAtSec) ? this.deadAtSec : simTimeSec;
+    return Math.max(0, endSec - this.spawnTimeSec);
+  }
 
   ageSeconds(simTimeSec) {
     return Math.max(0, simTimeSec - this.spawnTimeSec);

@@ -25,6 +25,15 @@ export const CONFIG = Object.freeze({
     // Placeholder for future global systems.
     water: {
       hygiene01: 1
+    },
+    reproduction: {
+      matingDistance: 120,
+      matingChancePerSecond: 0.014,
+      matingCooldownSec: 120,
+      gestationSec: 180,
+      minOffspring: 1,
+      maxOffspring: 3,
+      maxPopulation: 50
     }
   },
 

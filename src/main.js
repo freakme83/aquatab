@@ -83,6 +83,26 @@ requestAnimationFrame(resize);
 let lastTime = performance.now();
 let fps = 60;
 
+const SIMULATION_STEP_SEC = 1 / 60;
+const MAX_CATCHUP_SEC = 5;
+let simulationTime = performance.now();
+
+function advanceSimulation(now = performance.now()) {
+  const elapsedSec = Math.max(0, (now - simulationTime) / 1000);
+  simulationTime = now;
+
+  let remaining = Math.min(elapsedSec, MAX_CATCHUP_SEC);
+  while (remaining > 0) {
+    const delta = Math.min(SIMULATION_STEP_SEC, remaining);
+    world.update(delta);
+    remaining -= delta;
+  }
+}
+
+setInterval(() => {
+  advanceSimulation();
+}, SIMULATION_STEP_SEC * 1000);
+
 function tick(now) {
   const rawDelta = Math.min(0.05, (now - lastTime) / 1000);
   lastTime = now;
@@ -92,10 +112,10 @@ function tick(now) {
     fps += (instantFps - fps) * 0.1;
   }
 
-  world.update(rawDelta);
+  advanceSimulation(now);
   renderer.render(now, rawDelta);
 
-  panel.updateStats({ fps, fishCount: world.fish.length, quality });
+  panel.updateStats({ fps, fishCount: world.fish.length, quality, simTimeSec: world.simTimeSec });
   panel.updateFishInspector(world.fish, world.selectedFishId, world.simTimeSec);
 
   // TODO: Phase 2 - add event queue for feeding and item interactions.

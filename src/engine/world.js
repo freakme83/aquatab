@@ -18,6 +18,7 @@ const AGE_CONFIG = CONFIG.fish.age;
 const GROWTH_CONFIG = CONFIG.fish.growth;
 const FISH_DEAD_TO_SKELETON_SEC = CONFIG.world.fishLifecycle.deadToSkeletonSec;
 const FISH_SKELETON_TO_REMOVE_SEC = CONFIG.world.fishLifecycle.skeletonToRemoveSec;
+const REPRODUCTION_CONFIG = CONFIG.world.reproduction;
 
 function makeBubble(bounds) {
   return {
@@ -110,7 +111,7 @@ export class World {
     return true;
   }
 
-  #createFish() {
+  #createFish(options = {}) {
     const sizeRange = GROWTH_CONFIG.sizeFactorRange;
     const growthRange = GROWTH_CONFIG.growthRateRange;
 
@@ -133,15 +134,20 @@ export class World {
       spawn = this.#randomSpawn(birthRadius);
     }
 
+    const spawnBase = options.position ?? spawn;
+
     return new Fish(this.bounds, {
       id: this.nextFishId++,
-      spawnTimeSec: this.simTimeSec,
+      spawnTimeSec: options.spawnTimeSec ?? this.simTimeSec,
       sizeFactor,
       growthRate: rand(growthRange.min, growthRange.max),
       lifespanSec,
       stageShiftBabySec,
       stageShiftJuvenileSec,
-      position: { x: spawn.x, y: spawn.y },
+      position: { x: spawnBase.x, y: spawnBase.y },
+      motherId: options.motherId ?? null,
+      fatherId: options.fatherId ?? null,
+      bornInAquarium: options.bornInAquarium ?? false,
       headingAngle: this.#randomHeading(),
       speedFactor: rand(0.42, 0.68)
     });
@@ -275,6 +281,7 @@ export class World {
     for (const fish of this.fish) fish.tryConsumeFood(this);
 
     this.#updateFishLifeState();
+    this.#updateReproduction(delta);
     this.#updateFood(delta);
     this.#updateBubbles(delta);
   }
@@ -302,6 +309,86 @@ export class World {
     }
   }
 
+
+  #isFishAdult(fish) {
+    return fish.lifeStage === 'ADULT' || fish.lifeStage === 'OLD';
+  }
+
+  #distance(a, b) {
+    return Math.hypot(a.position.x - b.position.x, a.position.y - b.position.y);
+  }
+
+  #updateReproduction(delta) {
+    if (!Number.isFinite(delta) || delta <= 0) return;
+
+    for (const fish of this.fish) {
+      if (fish.sex !== 'female' || fish.lifeState !== 'ALIVE') continue;
+
+      if (Number.isFinite(fish.pregnantUntilSec) && this.simTimeSec >= fish.pregnantUntilSec) {
+        this.#layEggs(fish);
+        continue;
+      }
+
+      if (fish.isPregnant?.(this.simTimeSec)) continue;
+      if (!this.#isFishAdult(fish)) continue;
+      if (fish.hungerState === 'STARVING') continue;
+      if (this.simTimeSec - (fish.lastMatedAtSec ?? -Infinity) < REPRODUCTION_CONFIG.matingCooldownSec) continue;
+
+      const mate = this.fish.find((candidate) => (
+        candidate.id !== fish.id
+        && candidate.sex === 'male'
+        && candidate.lifeState === 'ALIVE'
+        && this.#isFishAdult(candidate)
+        && candidate.hungerState !== 'STARVING'
+        && this.simTimeSec - (candidate.lastMatedAtSec ?? -Infinity) >= REPRODUCTION_CONFIG.matingCooldownSec
+        && this.#distance(fish, candidate) <= REPRODUCTION_CONFIG.matingDistance
+      ));
+
+      if (!mate) continue;
+      const matingChance = REPRODUCTION_CONFIG.matingChancePerSecond * delta;
+      if (Math.random() > matingChance) continue;
+
+      fish.pregnantById = mate.id;
+      fish.pregnantUntilSec = this.simTimeSec + REPRODUCTION_CONFIG.gestationSec;
+      fish.lastMatedAtSec = this.simTimeSec;
+      mate.lastMatedAtSec = this.simTimeSec;
+      fish.matingCount = (fish.matingCount ?? 0) + 1;
+      mate.matingCount = (mate.matingCount ?? 0) + 1;
+
+      this.emit('fish:mated', { femaleId: fish.id, maleId: mate.id });
+    }
+  }
+
+  #layEggs(mother) {
+    const fatherId = Number.isFinite(mother.pregnantById) ? mother.pregnantById : null;
+    const father = this.fish.find((f) => f.id === fatherId) ?? null;
+    const babyCount = Math.max(1, Math.round(rand(REPRODUCTION_CONFIG.minOffspring, REPRODUCTION_CONFIG.maxOffspring)));
+
+    for (let i = 0; i < babyCount; i += 1) {
+      if (this.fish.length >= REPRODUCTION_CONFIG.maxPopulation) break;
+      const jitter = { x: rand(-16, 16), y: rand(-10, 10) };
+      const position = {
+        x: clamp(mother.position.x + jitter.x, 0, this.bounds.width),
+        y: clamp(mother.position.y + jitter.y, 0, this.#swimHeight())
+      };
+
+      const child = this.#createFish({
+        motherId: mother.id,
+        fatherId,
+        bornInAquarium: true,
+        spawnTimeSec: this.simTimeSec,
+        position
+      });
+
+      this.fish.push(child);
+      mother.childrenIds = [...(mother.childrenIds ?? []), child.id];
+      if (father) father.childrenIds = [...(father.childrenIds ?? []), child.id];
+      this.emit('fish:born', { childId: child.id, motherId: mother.id, fatherId });
+    }
+
+    mother.pregnantById = null;
+    mother.pregnantUntilSec = null;
+  }
 
   #updateFood(delta) {
     const bottomY = this.#swimHeight();
