@@ -9,14 +9,18 @@ import { CONFIG } from '../config.js';
 const MAX_TILT = CONFIG.world.maxTiltRad;
 const rand = (min, max) => min + Math.random() * (max - min);
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+const clamp01 = (v) => clamp(v, 0, 1);
 const FOOD_DEFAULT_AMOUNT = CONFIG.world.food.defaultAmount;
 const FOOD_DEFAULT_TTL = CONFIG.world.food.defaultTtlSec;
 const FOOD_FALL_ACCEL = CONFIG.world.food.fallAccel;
 const FOOD_FALL_DAMPING = CONFIG.world.food.fallDamping;
 const FOOD_MAX_FALL_SPEED = CONFIG.world.food.maxFallSpeed;
 const AGE_CONFIG = CONFIG.fish.age;
+const INITIAL_MAX_AGE_SEC = Math.max(0, AGE_CONFIG.INITIAL_MAX_AGE_SEC ?? 1200);
 const GROWTH_CONFIG = CONFIG.fish.growth;
 const WATER_CONFIG = CONFIG.world.water;
+const REPRO_CONFIG = CONFIG.reproduction ?? {};
+const MATE_MIN_HYGIENE = clamp01(REPRO_CONFIG.MATE_MIN_HYGIENE ?? 0.6);
 const WATER_INITIAL_HYGIENE01 = 1;
 const WATER_INITIAL_DIRT01 = 0;
 const WATER_REFERENCE_FISH_COUNT = Math.max(1, WATER_CONFIG.referenceFishCount ?? 20);
@@ -40,6 +44,49 @@ const CORPSE_DIRT_INITIAL01 = 0.07;
 const CORPSE_DIRT_STEP01 = 0.01;
 const CORPSE_DIRT_MAX01 = 0.12;
 
+function inheritTraits(motherTraits, fatherTraits, config = {}) {
+  const mother = motherTraits ?? {};
+  const father = fatherTraits ?? mother;
+  const child = {};
+  const keys = Object.keys(mother);
+  const mutationPct = Math.max(0, Number(config?.TRAIT_MUTATION_PCT ?? 0));
+
+  for (const key of keys) {
+    const mVal = mother[key];
+    const fVal = father[key];
+
+    if (typeof mVal === 'number' && Number.isFinite(mVal) && typeof fVal === 'number' && Number.isFinite(fVal)) {
+      const mean = (mVal + fVal) / 2;
+      const mutation = mean * (Math.random() * 2 - 1) * mutationPct;
+      const value = mean + mutation;
+      child[key] = Number.isFinite(value) ? value : mean;
+    }
+  }
+
+  // ---- Clamp critical traits safely ----
+  if (child.colorHue !== undefined) {
+    child.colorHue = ((child.colorHue % 360) + 360) % 360;
+  }
+
+  if (child.sizeFactor !== undefined) {
+    child.sizeFactor = Math.max(0.6, Math.min(1.4, child.sizeFactor));
+  }
+
+  if (child.growthRate !== undefined) {
+    child.growthRate = Math.max(0.5, Math.min(1.8, child.growthRate));
+  }
+
+  if (child.speedFactor !== undefined) {
+    child.speedFactor = Math.max(0.6, Math.min(1.6, child.speedFactor));
+  }
+
+  if (child.lifespanSec !== undefined) {
+    child.lifespanSec = Math.max(30, child.lifespanSec);
+  }
+
+  return child;
+}
+
 function makeBubble(bounds) {
   return {
     x: rand(0, bounds.width),
@@ -60,6 +107,21 @@ export class World {
     this.food = [];
     // Forward-compatible containers for new systems.
     this.poop = [];
+    // egg structure:
+    // {
+    //   id,
+    //   x,
+    //   y,
+    //   laidAtSec,
+    //   hatchAtSec,
+    //   motherId,
+    //   fatherId,
+    //   motherTraits,
+    //   fatherTraits,
+    //   state,         // INCUBATING | HATCHED | FAILED
+    //   canBeEaten,    // boolean (FUTURE HOOK: some species may eat eggs)
+    //   nutrition      // number  (FUTURE HOOK: hunger/wellbeing effects)
+    // }
     this.eggs = [];
     this.bubbles = [];
     this.nextFoodId = 1;
@@ -144,7 +206,7 @@ export class World {
     return true;
   }
 
-  #createFish({ sex, initialAgeRatio = 0, hungryStart = false } = {}) {
+  #createFish({ sex, initialAgeSec = 0, hungryStart = false, position = null, traits = null } = {}) {
     const sizeRange = GROWTH_CONFIG.sizeFactorRange;
     const growthRange = GROWTH_CONFIG.growthRateRange;
 
@@ -160,16 +222,26 @@ export class World {
     const stageShiftBabySec = rand(-stageJitter, stageJitter);
     const stageShiftJuvenileSec = rand(-stageJitter, stageJitter);
 
-    let spawn = this.#randomSpawn(birthRadius);
+    const explicitPosition = position && Number.isFinite(position.x) && Number.isFinite(position.y);
+    let spawn = explicitPosition
+      ? { x: position.x, y: position.y, size: birthRadius }
+      : this.#randomSpawn(birthRadius);
 
-    for (let i = 0; i < 20; i += 1) {
-      if (this.#isSpawnClear(spawn, birthRadius)) break;
-      spawn = this.#randomSpawn(birthRadius);
+    if (!explicitPosition) {
+      for (let i = 0; i < 20; i += 1) {
+        if (this.#isSpawnClear(spawn, birthRadius)) break;
+        spawn = this.#randomSpawn(birthRadius);
+      }
     }
+
+    spawn.x = clamp(spawn.x, 0, this.bounds.width);
+    spawn.y = clamp(spawn.y, 0, this.#swimHeight());
+
+    const normalizedInitialAgeSec = Math.min(Math.max(0, initialAgeSec), INITIAL_MAX_AGE_SEC);
 
     const fish = new Fish(this.bounds, {
       id: this.nextFishId++,
-      spawnTimeSec: this.simTimeSec - Math.max(0, Math.min(0.8, initialAgeRatio)) * lifespanSec,
+      spawnTimeSec: this.simTimeSec - normalizedInitialAgeSec,
       sizeFactor,
       growthRate: rand(growthRange.min, growthRange.max),
       lifespanSec,
@@ -177,7 +249,8 @@ export class World {
       stageShiftJuvenileSec,
       position: { x: spawn.x, y: spawn.y },
       headingAngle: this.#randomHeading(),
-      speedFactor: rand(0.42, 0.68)
+      speedFactor: rand(0.42, 0.68),
+      traits: traits ?? undefined
     });
 
     if (sex === 'female' || sex === 'male') {
@@ -210,12 +283,12 @@ export class World {
 
     // Start-population constraints:
     // - balanced sex distribution (female majority by 1 when odd)
-    // - random initial ages only in 0%-80% lifespan (no old-start fish)
-    // - all fish begin hungry and at least one adult female is guaranteed
+    // - random initial ages sampled in [0, INITIAL_MAX_AGE_SEC]
+    // - all fish begin hungry and attempts are made to include a mature female
     for (let i = 0; i < femaleCount; i += 1) {
       fishPool.push(this.#createFish({
         sex: 'female',
-        initialAgeRatio: rand(0, 0.8),
+        initialAgeSec: rand(0, INITIAL_MAX_AGE_SEC),
         hungryStart: true
       }));
     }
@@ -223,16 +296,26 @@ export class World {
     for (let i = 0; i < maleCount; i += 1) {
       fishPool.push(this.#createFish({
         sex: 'male',
-        initialAgeRatio: rand(0, 0.8),
+        initialAgeSec: rand(0, INITIAL_MAX_AGE_SEC),
         hungryStart: true
       }));
     }
 
-    const hasAdultFemale = fishPool.some((fish) => fish.sex === 'female' && (fish.ageSeconds(this.simTimeSec) / fish.lifespanSec) >= 0.6);
+    const hasAdultFemale = fishPool.some((fish) => fish.sex === 'female' && (fish.lifeStage === 'ADULT' || fish.lifeStage === 'OLD'));
     if (!hasAdultFemale) {
       const promotableFemale = fishPool.find((fish) => fish.sex === 'female');
       if (promotableFemale) {
-        promotableFemale.spawnTimeSec = this.simTimeSec - promotableFemale.lifespanSec * 0.65;
+        const baseBabyEnd = AGE_CONFIG.stageBaseSec.babyEndSec;
+        const baseJuvenileEnd = AGE_CONFIG.stageBaseSec.juvenileEndSec;
+        const babyEnd = Math.max(30, baseBabyEnd + promotableFemale.stageShiftBabySec);
+        const juvenileEnd = Math.max(babyEnd + 60, baseJuvenileEnd + promotableFemale.stageShiftJuvenileSec);
+        const adultStartAgeSec = juvenileEnd / Math.max(0.001, promotableFemale.growthRate);
+
+        const promotedInitialAgeSec = adultStartAgeSec < INITIAL_MAX_AGE_SEC
+          ? rand(adultStartAgeSec, INITIAL_MAX_AGE_SEC)
+          : rand(0, INITIAL_MAX_AGE_SEC);
+
+        promotableFemale.spawnTimeSec = this.simTimeSec - promotedInitialAgeSec;
         promotableFemale.updateLifeCycle(this.simTimeSec);
       }
     }
@@ -304,6 +387,11 @@ export class World {
     return consumed;
   }
 
+  // Future hook: edible target discovery.
+  // For now, fish can only eat food. Later we may include eggs for certain species/traits.
+  getEdibleTargetsForFish(fish) {
+    return this.food;
+  }
 
   selectFish(fishId) {
     const found = this.fish.find((f) => f.id === fishId);
@@ -400,6 +488,7 @@ export class World {
 
     this.#updateFishLifeState();
     this.#updateFood(delta);
+    this.#updateEggs(delta);
     this.#updateWaterHygiene(delta);
     this.#updateBubbles(delta);
   }
@@ -745,6 +834,49 @@ export class World {
         this.expiredFoodSinceLastWaterUpdate += 1;
         this.emit('foodExpired', { foodId: item.id });
       }
+    }
+  }
+
+
+  #updateEggs(dt) {
+    if (!Number.isFinite(dt) || dt <= 0) return;
+
+    const nowSec = this.simTimeSec;
+    const hygiene01 = clamp01(this.water?.hygiene01 ?? 1);
+
+    for (let i = this.eggs.length - 1; i >= 0; i -= 1) {
+      const egg = this.eggs[i];
+      if (!egg || nowSec < (egg.hatchAtSec ?? Infinity)) continue;
+
+      let hatchChance = 0;
+      if (hygiene01 >= MATE_MIN_HYGIENE) {
+        const t = clamp01((hygiene01 - 0.60) / 0.40);
+        hatchChance = 0.20 + 0.80 * (t * t);
+      }
+
+      const success = Math.random() < hatchChance;
+      if (success) {
+        const spawnX = clamp(Number.isFinite(egg.x) ? egg.x : this.bounds.width * 0.5, 0, this.bounds.width);
+        const spawnY = clamp(Number.isFinite(egg.y) ? egg.y : this.#swimHeight() * 0.5, 0, this.#swimHeight());
+
+        const babyTraits = inheritTraits(
+          egg.motherTraits,
+          egg.fatherTraits,
+          REPRO_CONFIG
+        );
+
+        const baby = this.#createFish({
+          initialAgeSec: 0,
+          position: { x: spawnX, y: spawnY },
+          traits: babyTraits
+        });
+        this.fish.push(baby);
+        egg.state = 'HATCHED';
+      } else {
+        egg.state = 'FAILED';
+      }
+
+      this.eggs.splice(i, 1);
     }
   }
 

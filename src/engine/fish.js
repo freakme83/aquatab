@@ -78,14 +78,25 @@ export class Fish {
     const sizeRange = GROWTH_CONFIG.sizeFactorRange;
     const growthRange = GROWTH_CONFIG.growthRateRange;
 
-    this.sizeFactor = options.sizeFactor ?? rand(sizeRange.min, sizeRange.max);
-    this.adultRadius = GROWTH_CONFIG.adultRadius * this.sizeFactor;
-
-    this.growthRate = options.growthRate ?? rand(growthRange.min, growthRange.max);
+    const baseTraits = {
+      colorHue: options.colorHue ?? rand(8, 42),
+      sizeFactor: options.sizeFactor ?? rand(sizeRange.min, sizeRange.max),
+      growthRate: options.growthRate ?? rand(growthRange.min, growthRange.max),
+      lifespanSec: null,
+      speedFactor: options.speedFactor ?? rand(0.42, 0.68)
+    };
 
     const lifeMean = AGE_CONFIG.lifespanMeanSec;
     const lifeJitter = AGE_CONFIG.lifespanJitterSec;
-    this.lifespanSec = options.lifespanSec ?? rand(lifeMean - lifeJitter, lifeMean + lifeJitter);
+    baseTraits.lifespanSec = options.lifespanSec ?? rand(lifeMean - lifeJitter, lifeMean + lifeJitter);
+    this.traits = {
+      ...baseTraits,
+      ...(options.traits ?? {})
+    };
+    // Backward compatibility for existing usage paths while traits are adopted.
+    Object.assign(this, this.traits);
+
+    this.adultRadius = GROWTH_CONFIG.adultRadius * this.traits.sizeFactor;
 
     const stageJitter = AGE_CONFIG.stageJitterSec;
     this.stageShiftBabySec = options.stageShiftBabySec ?? rand(-stageJitter, stageJitter);
@@ -97,9 +108,6 @@ export class Fish {
     this.lifeStage = 'BABY';
     this.growth01 = 0;
     this.ageSecCached = 0;
-    this.colorHue = options.colorHue ?? rand(8, 42);
-    this.speedFactor = options.speedFactor ?? rand(0.42, 0.68);
-
     this.position = options.position
       ? { x: options.position.x, y: options.position.y }
       : { x: bounds.width * 0.5, y: bounds.height * 0.5 };
@@ -140,6 +148,13 @@ export class Fish {
       role: 'NONE',
       startedNearAlgae: false,
       cooldownUntilSec: 0
+    };
+
+    this.repro = {
+      state: 'READY',
+      dueAtSec: null,
+      cooldownUntilSec: 0,
+      fatherId: null
     };
 
     // Cached reference for pursuit updates (set during decideBehavior).
