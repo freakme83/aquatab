@@ -290,6 +290,7 @@ function startSimulation() {
     onFishSelect: (fishId) => world.toggleFishSelection(fishId),
     onFishRename: (fishId, name) => world.renameFish(fishId, name),
     onFishDiscard: (fishId) => world.discardFish(fishId),
+    onGetFishById: (fishId) => world.getFishById?.(fishId),
     onFilterInstall: () => world.installWaterFilter?.(),
     onFilterMaintain: () => world.maintainWaterFilter?.(),
     onFilterTogglePower: () => world.toggleWaterFilterEnabled?.(),
