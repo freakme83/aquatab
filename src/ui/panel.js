@@ -14,6 +14,7 @@ export class Panel {
     this.tabButtons = [...this.root.querySelectorAll('.tab-button')];
     this.tabContents = [...this.root.querySelectorAll('.tab-content')];
 
+    this.simTimeStat = this.root.querySelector('[data-stat="simTime"]');
     this.fishCountStat = this.root.querySelector('[data-stat="fishCount"]');
     this.cleanlinessStat = this.root.querySelector('[data-stat="cleanliness"]');
 
@@ -165,7 +166,7 @@ export class Panel {
       const input = event.target.closest('[data-fish-name-input]');
       if (!input || this.currentInspectorSelectedFishId == null) return;
       this.handlers.onFishRename?.(this.currentInspectorSelectedFishId, input.value);
-      this.nameDraftByFishId.set(this.currentInspectorSelectedFishId, input.value.trim());
+      this.nameDraftByFishId.delete(this.currentInspectorSelectedFishId);
     }, true);
 
     this.fishInspector.addEventListener('click', (event) => {
@@ -185,6 +186,7 @@ export class Panel {
   }
 
   updateStats({
+    simTimeSec,
     fishCount,
     cleanliness01,
     filterUnlocked,
@@ -198,6 +200,14 @@ export class Panel {
     maintenanceCooldownSec,
     filterDepletedThreshold01
   }) {
+    if (this.simTimeStat) {
+      const totalSec = Math.max(0, Math.floor(simTimeSec ?? 0));
+      const hh = String(Math.floor(totalSec / 3600)).padStart(2, '0');
+      const mm = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0');
+      const ss = String(totalSec % 60).padStart(2, '0');
+      this.simTimeStat.textContent = `${hh}:${mm}:${ss}`;
+    }
+
     this.fishCountStat.textContent = String(fishCount);
 
     if (this.cleanlinessStat) {
@@ -307,10 +317,10 @@ export class Panel {
       .map((fish) => {
         const selectedClass = fish.id === selectedFishId ? ' selected' : '';
         const stageLabel = typeof fish.lifeStageLabel === 'function' ? fish.lifeStageLabel() : (fish.lifeStage ?? '');
-        const state = `${fish.lifeState} · ${stageLabel} · ${fish.hungerState}`;
+        const state = `${stageLabel} · ${fish.hungerState}`;
         const liveName = fish.name?.trim() || '';
         const draftName = this.nameDraftByFishId.get(fish.id) ?? liveName;
-        const rawLabel = draftName ? `${draftName} (#${fish.id})` : `#${fish.id}`;
+        const rawLabel = draftName || 'Unnamed';
         const label = this.#escapeHtml(rawLabel);
         return `<button type="button" class="fish-row${selectedClass}" data-fish-id="${fish.id}">${label} · ${fish.sex} · ${state}</button>`;
       })
@@ -351,10 +361,8 @@ export class Panel {
     const draftName = this.nameDraftByFishId.get(fish.id) ?? liveName;
 
     return `
-      <div class="stat-row"><span>ID</span><strong>#${fish.id}</strong></div>
       <label class="control-group fish-name-group"><span>Name</span><input type="text" maxlength="24" value="${this.#escapeAttribute(draftName)}" data-fish-name-input placeholder="Fish name" /></label>
       <div class="stat-row"><span>Sex</span><strong>${fish.sex}</strong></div>
-      <div class="stat-row"><span>Life</span><strong>${fish.lifeState}</strong></div>
       <div class="stat-row"><span>Life Stage</span><strong>${typeof fish.lifeStageLabel === 'function' ? fish.lifeStageLabel() : (fish.lifeStage ?? '')}</strong></div>
       <div class="stat-row"><span>Hunger</span><strong>${fish.hungerState} (${Math.round(fish.hunger01 * 100)}%)</strong></div>
       <div class="stat-row"><span>Wellbeing</span><strong>${Math.round(fish.wellbeing01 * 100)}%</strong></div>

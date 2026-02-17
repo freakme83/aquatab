@@ -71,7 +71,7 @@ export class Fish {
     this.bounds = bounds;
 
     this.id = options.id ?? 0;
-    this.name = options.name ?? '';
+    this.name = '';
     this.spawnTimeSec = options.spawnTimeSec ?? 0;
 
     // --- Life-cycle randoms (set once at birth) ---
