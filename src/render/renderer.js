@@ -102,6 +102,7 @@ export class Renderer {
     this.#drawBubbles(ctx);
     this.#drawFilterModule(ctx, time);
     this.#drawFood(ctx);
+    this.#drawEggs(ctx);
     this.#drawFishSchool(ctx, time);
     this.#drawCachedVignette(ctx);
     ctx.restore();
@@ -403,6 +404,28 @@ export class Renderer {
     }
   }
 
+
+  #drawEggs(ctx) {
+    const sx = this.tankRect.width / this.world.bounds.width;
+    const sy = this.tankRect.height / this.world.bounds.height;
+
+    for (const egg of this.world.eggs ?? []) {
+      const x = this.tankRect.x + egg.x * sx;
+      const y = this.tankRect.y + egg.y * sy;
+      const r = 2.2;
+
+      ctx.beginPath();
+      ctx.fillStyle = 'rgba(245, 243, 233, 0.95)';
+      ctx.ellipse(x, y, r, r * 0.82, 0, 0, TAU);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.58)';
+      ctx.arc(x - r * 0.3, y - r * 0.2, r * 0.28, 0, TAU);
+      ctx.fill();
+    }
+  }
+
   #drawFishSchool(ctx, time) {
     const sx = this.tankRect.width / this.world.bounds.width;
     const sy = this.tankRect.height / this.world.bounds.height;
@@ -422,8 +445,9 @@ export class Renderer {
       ? fish.getRenderParams()
       : { radius: fish.size, bodyLength: fish.size * 1.32, bodyHeight: fish.size * 0.73, tailWagAmp: fish.size * 0.13, eyeScale: 1, saturationMult: 1, lightnessMult: 1 };
 
-    const bodyLength = rp.bodyLength;
-    const bodyHeight = rp.bodyHeight;
+    const pregnancySwell = fish.pregnancySwell01?.(this.world.simTimeSec) ?? 0;
+    const bodyLength = rp.bodyLength * (1 + pregnancySwell * 0.35);
+    const bodyHeight = rp.bodyHeight * (1 + pregnancySwell);
     const isDead = fish.lifeState === 'DEAD';
     const isSkeleton = fish.lifeState === 'SKELETON';
     const tailWag = isDead || isSkeleton ? 0 : Math.sin(time * 0.004 + position.x * 0.008) * rp.tailWagAmp;

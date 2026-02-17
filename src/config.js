@@ -19,7 +19,7 @@ export const CONFIG = Object.freeze({
     MATE_MIN_HYGIENE: 0.60,
 
     // Gestation + eggs
-    GESTATION_SEC: [360, 600],
+    GESTATION_SEC: [300, 360],
     EGG_INCUBATION_SEC: [120, 300],
     MOTHER_COOLDOWN_SEC: [600, 1080],
     CLUTCH_SIZE: [1, 2],

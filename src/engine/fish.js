@@ -154,7 +154,11 @@ export class Fish {
       state: 'READY',
       dueAtSec: null,
       cooldownUntilSec: 0,
-      fatherId: null
+      fatherId: null,
+      layTargetX: null,
+      layTargetY: null,
+      pregnancyStartSec: null,
+      layingStartedAtSec: null
     };
 
     // Cached reference for pursuit updates (set during decideBehavior).
@@ -300,6 +304,16 @@ export class Fish {
       return;
     }
 
+    if (this.repro?.state === 'LAYING' && Number.isFinite(this.repro.layTargetX) && Number.isFinite(this.repro.layTargetY)) {
+      this.behavior = {
+        mode: 'seekLayTarget',
+        targetFoodId: null,
+        speedBoost: 1
+      };
+      this.target = { x: this.repro.layTargetX, y: this.repro.layTargetY };
+      return;
+    }
+
     if (this.isPlaying(world?.simTimeSec ?? 0)) {
       const isRunner = this.playState.role === 'RUNNER';
       this.behavior = {
@@ -389,7 +403,7 @@ export class Fish {
 
     this.cruisePhase = normalizeAngle(this.cruisePhase + dt * this.cruiseRate);
     const cruiseFactor = 1 + Math.sin(this.cruisePhase) * 0.18;
-    const speedBoost = (this.behavior.mode === 'seekFood' || this.behavior.mode === 'playChase' || this.behavior.mode === 'playEvade') ? this.behavior.speedBoost : 1;
+    const speedBoost = (this.behavior.mode === 'seekFood' || this.behavior.mode === 'playChase' || this.behavior.mode === 'playEvade' || this.behavior.mode === 'seekLayTarget') ? this.behavior.speedBoost : 1;
     const desiredSpeed = this.#baseSpeed() * cruiseFactor * speedBoost;
     this.currentSpeed += (desiredSpeed - this.currentSpeed) * Math.min(1, dt * 0.8);
 
@@ -505,6 +519,15 @@ export class Fish {
     };
   }
 
+
+  pregnancySwell01(simTimeSec) {
+    if (this.repro?.state !== 'GRAVID' && this.repro?.state !== 'LAYING') return 0;
+    const start = this.repro?.pregnancyStartSec;
+    const due = this.repro?.dueAtSec;
+    if (!Number.isFinite(start) || !Number.isFinite(due) || due <= start) return 0;
+    const p = clamp01((simTimeSec - start) / (due - start));
+    return 0.10 * Math.sin(p * Math.PI);
+  }
 
   ageSeconds(simTimeSec) {
     return Math.max(0, simTimeSec - this.spawnTimeSec);

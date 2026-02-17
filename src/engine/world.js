@@ -20,7 +20,17 @@ const INITIAL_MAX_AGE_SEC = Math.max(0, AGE_CONFIG.INITIAL_MAX_AGE_SEC ?? 1200);
 const GROWTH_CONFIG = CONFIG.fish.growth;
 const WATER_CONFIG = CONFIG.world.water;
 const REPRO_CONFIG = CONFIG.reproduction ?? {};
+const REPRO_ENABLED = REPRO_CONFIG.REPRO_ENABLED !== false;
+const MATE_ENCOUNTER_RADIUS_PX = Math.max(0, REPRO_CONFIG.MATE_ENCOUNTER_RADIUS_PX ?? 70);
+const MATE_PAIR_RETRY_MIN_SEC = Math.max(0, REPRO_CONFIG.MATE_PAIR_RETRY_MIN_SEC ?? 25);
+const MATE_BASE_CHANCE = Math.max(0, REPRO_CONFIG.MATE_BASE_CHANCE ?? 0.08);
+const MATE_FATHER_COOLDOWN_SEC = REPRO_CONFIG.MATE_FATHER_COOLDOWN_SEC ?? [120, 240];
+const MATE_MIN_WELLBEING = clamp01(REPRO_CONFIG.MATE_MIN_WELLBEING ?? 0.8);
 const MATE_MIN_HYGIENE = clamp01(REPRO_CONFIG.MATE_MIN_HYGIENE ?? 0.6);
+const GESTATION_SEC = REPRO_CONFIG.GESTATION_SEC ?? [300, 360];
+const EGG_INCUBATION_SEC = REPRO_CONFIG.EGG_INCUBATION_SEC ?? [120, 300];
+const MOTHER_COOLDOWN_SEC = REPRO_CONFIG.MOTHER_COOLDOWN_SEC ?? [600, 1080];
+const CLUTCH_SIZE = REPRO_CONFIG.CLUTCH_SIZE ?? [1, 2];
 const WATER_INITIAL_HYGIENE01 = 1;
 const WATER_INITIAL_DIRT01 = 0;
 const WATER_REFERENCE_FISH_COUNT = Math.max(1, WATER_CONFIG.referenceFishCount ?? 20);
@@ -87,6 +97,22 @@ function inheritTraits(motherTraits, fatherTraits, config = {}) {
   return child;
 }
 
+function randRange(range, fallbackMin = 0, fallbackMax = 0) {
+  const min = Number.isFinite(range?.[0]) ? range[0] : fallbackMin;
+  const max = Number.isFinite(range?.[1]) ? range[1] : fallbackMax;
+  const low = Math.min(min, max);
+  const high = Math.max(min, max);
+  return rand(low, high);
+}
+
+function randIntInclusive(range, fallbackMin = 0, fallbackMax = 0) {
+  const min = Math.round(Number.isFinite(range?.[0]) ? range[0] : fallbackMin);
+  const max = Math.round(Number.isFinite(range?.[1]) ? range[1] : fallbackMax);
+  const low = Math.min(min, max);
+  const high = Math.max(min, max);
+  return Math.floor(rand(low, high + 1));
+}
+
 function makeBubble(bounds) {
   return {
     x: rand(0, bounds.width),
@@ -127,6 +153,7 @@ export class World {
     this.nextFoodId = 1;
     this.nextFishId = 1;
     this.nextPlaySessionId = 1;
+    this.nextEggId = 1;
     this.simTimeSec = 0;
     this.selectedFishId = null;
 
@@ -140,6 +167,7 @@ export class World {
     // Use `world.flushEvents()` from main loop if/when needed.
     this.events = [];
     this.playSessions = [];
+    this.matePairNextTryAt = new Map();
     this.groundAlgae = [];
 
     // Global environment state (will grow over time).
@@ -481,6 +509,7 @@ export class World {
     this.#updatePlaySessions();
     this.#tryExpandPlaySessions();
     this.#tryStartPlaySessions();
+    this.#updateReproduction(delta);
     for (const fish of this.fish) fish.updateMetabolism(delta, this);
     for (const fish of this.fish) fish.decideBehavior(this, delta);
     for (const fish of this.fish) fish.applySteering(delta);
@@ -803,6 +832,129 @@ export class World {
     }
   }
 
+
+  #isMateEligible(fish, nowSec) {
+    if (!fish || fish.lifeState !== 'ALIVE') return false;
+    if (fish.lifeStage !== 'ADULT') return false;
+    if (fish.hungerState !== 'FED') return false;
+    if ((fish.wellbeing01 ?? 0) < MATE_MIN_WELLBEING) return false;
+    if ((this.water?.hygiene01 ?? 0) < MATE_MIN_HYGIENE) return false;
+    if (!fish.repro) return false;
+    if (fish.repro.state !== 'READY') return false;
+    if (nowSec < (fish.repro.cooldownUntilSec ?? 0)) return false;
+    return true;
+  }
+
+  #tryMatePair(a, b, nowSec) {
+    if (a.sex === b.sex) return;
+    if (!this.#isMateEligible(a, nowSec) || !this.#isMateEligible(b, nowSec)) return;
+
+    const key = a.id < b.id ? `${a.id}|${b.id}` : `${b.id}|${a.id}`;
+    const nextTryAt = this.matePairNextTryAt.get(key) ?? 0;
+    if (nowSec < nextTryAt) return;
+    this.matePairNextTryAt.set(key, nowSec + MATE_PAIR_RETRY_MIN_SEC);
+
+    const hygiene = clamp01(this.water?.hygiene01 ?? 1);
+    const t = clamp01((hygiene - 0.60) / 0.40);
+    const hygieneFactor = 0.5 + 0.5 * t;
+    const w = Math.min(a.wellbeing01 ?? 0, b.wellbeing01 ?? 0);
+    const u = clamp01((w - 0.80) / 0.20);
+    const wellbeingFactor = 0.6 + 0.4 * u;
+    const pMate = MATE_BASE_CHANCE * hygieneFactor * wellbeingFactor;
+
+    if (Math.random() >= pMate) return;
+
+    const female = a.sex === 'female' ? a : b;
+    const male = a.sex === 'male' ? a : b;
+
+    female.repro.state = 'GRAVID';
+    female.repro.fatherId = male.id;
+    female.repro.pregnancyStartSec = nowSec;
+    female.repro.dueAtSec = nowSec + randRange(GESTATION_SEC, 300, 360);
+    female.repro.layingStartedAtSec = null;
+    female.repro.layTargetX = null;
+    female.repro.layTargetY = null;
+
+    male.repro.cooldownUntilSec = nowSec + randRange(MATE_FATHER_COOLDOWN_SEC, 120, 240);
+  }
+
+  #layEggClutch(female, nowSec) {
+    const father = this.fish.find((f) => f.id === female.repro.fatherId) ?? null;
+    const motherTraits = { ...(female.traits ?? {}) };
+    const fatherTraits = father?.traits ? { ...father.traits } : { ...motherTraits };
+    const clutchCount = Math.max(1, randIntInclusive(CLUTCH_SIZE, 1, 2));
+
+    for (let i = 0; i < clutchCount; i += 1) {
+      const x = clamp(female.position.x + rand(-6, 6), 0, this.bounds.width);
+      const y = clamp(female.position.y + rand(-4, 4), 0, this.#swimHeight());
+      this.eggs.push({
+        id: this.nextEggId++,
+        x,
+        y,
+        laidAtSec: nowSec,
+        hatchAtSec: nowSec + randRange(EGG_INCUBATION_SEC, 120, 300),
+        motherId: female.id,
+        fatherId: female.repro.fatherId,
+        motherTraits,
+        fatherTraits,
+        state: 'INCUBATING',
+        canBeEaten: true,
+        nutrition: 0.25
+      });
+    }
+
+    female.repro.state = 'COOLDOWN';
+    female.repro.cooldownUntilSec = nowSec + randRange(MOTHER_COOLDOWN_SEC, 600, 1080);
+    female.repro.dueAtSec = null;
+    female.repro.fatherId = null;
+    female.repro.layTargetX = null;
+    female.repro.layTargetY = null;
+    female.repro.pregnancyStartSec = null;
+    female.repro.layingStartedAtSec = null;
+  }
+
+  #updateReproduction(dt) {
+    if (!REPRO_ENABLED || !Number.isFinite(dt) || dt <= 0) return;
+    const nowSec = this.simTimeSec;
+
+    for (let i = 0; i < this.fish.length; i += 1) {
+      const a = this.fish[i];
+      if (a.lifeState !== 'ALIVE') continue;
+      for (let j = i + 1; j < this.fish.length; j += 1) {
+        const b = this.fish[j];
+        if (b.lifeState !== 'ALIVE') continue;
+        const dist = Math.hypot(a.position.x - b.position.x, a.position.y - b.position.y);
+        if (dist > MATE_ENCOUNTER_RADIUS_PX) continue;
+        this.#tryMatePair(a, b, nowSec);
+      }
+    }
+
+    const layTargetY = Math.max(0, this.#swimHeight() - 14);
+
+    for (const fish of this.fish) {
+      if (!fish.repro || fish.lifeState !== 'ALIVE' || fish.sex !== 'female') continue;
+
+      if (fish.repro.state === 'GRAVID' && nowSec >= (fish.repro.dueAtSec ?? Infinity)) {
+        fish.repro.state = 'LAYING';
+        fish.repro.layTargetX = clamp(fish.position.x + rand(-20, 20), 0, this.bounds.width);
+        fish.repro.layTargetY = layTargetY;
+        fish.repro.layingStartedAtSec = nowSec;
+      }
+
+      if (fish.repro.state === 'LAYING') {
+        const tx = Number.isFinite(fish.repro.layTargetX) ? fish.repro.layTargetX : fish.position.x;
+        const ty = Number.isFinite(fish.repro.layTargetY) ? fish.repro.layTargetY : layTargetY;
+        const d = Math.hypot(fish.position.x - tx, fish.position.y - ty);
+        if (d <= 10) this.#layEggClutch(fish, nowSec);
+      }
+
+      if (fish.repro.state === 'COOLDOWN' && nowSec >= (fish.repro.cooldownUntilSec ?? 0)) {
+        fish.repro.state = 'READY';
+      }
+    }
+  }
+
+
   #updateFishLifeState() {
     for (let i = this.fish.length - 1; i >= 0; i -= 1) {
       const fish = this.fish[i];
@@ -870,6 +1022,8 @@ export class World {
           position: { x: spawnX, y: spawnY },
           traits: babyTraits
         });
+        baby.spawnTimeSec = this.simTimeSec;
+        baby.ageSecCached = 0;
         this.fish.push(baby);
         egg.state = 'HATCHED';
       } else {
