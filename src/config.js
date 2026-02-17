@@ -115,7 +115,10 @@ export const CONFIG = Object.freeze({
       stageJitterSec: 3 * 60,
 
       // Old stage starts at this fraction of lifespan.
-      oldStartRatio: 0.85
+      oldStartRatio: 0.85,
+
+      // Cap for randomized initial spawn age at game start (20 minutes).
+      INITIAL_MAX_AGE_SEC: 1200
     },
 
     growth: {

@@ -15,6 +15,7 @@ const FOOD_FALL_ACCEL = CONFIG.world.food.fallAccel;
 const FOOD_FALL_DAMPING = CONFIG.world.food.fallDamping;
 const FOOD_MAX_FALL_SPEED = CONFIG.world.food.maxFallSpeed;
 const AGE_CONFIG = CONFIG.fish.age;
+const INITIAL_MAX_AGE_SEC = Math.max(0, AGE_CONFIG.INITIAL_MAX_AGE_SEC ?? 1200);
 const GROWTH_CONFIG = CONFIG.fish.growth;
 const WATER_CONFIG = CONFIG.world.water;
 const WATER_INITIAL_HYGIENE01 = 1;
@@ -180,9 +181,14 @@ export class World {
       spawn = this.#randomSpawn(birthRadius);
     }
 
+    const initialAgeSec = Math.min(
+      Math.max(0, Math.min(0.8, initialAgeRatio)) * lifespanSec,
+      INITIAL_MAX_AGE_SEC
+    );
+
     const fish = new Fish(this.bounds, {
       id: this.nextFishId++,
-      spawnTimeSec: this.simTimeSec - Math.max(0, Math.min(0.8, initialAgeRatio)) * lifespanSec,
+      spawnTimeSec: this.simTimeSec - initialAgeSec,
       sizeFactor,
       growthRate: rand(growthRange.min, growthRange.max),
       lifespanSec,
@@ -223,8 +229,8 @@ export class World {
 
     // Start-population constraints:
     // - balanced sex distribution (female majority by 1 when odd)
-    // - random initial ages only in 0%-80% lifespan (no old-start fish)
-    // - all fish begin hungry and at least one adult female is guaranteed
+    // - random initial ages only in 0%-80% lifespan and capped to INITIAL_MAX_AGE_SEC
+    // - all fish begin hungry and attempts are made to include a mature female
     for (let i = 0; i < femaleCount; i += 1) {
       fishPool.push(this.#createFish({
         sex: 'female',
@@ -245,7 +251,8 @@ export class World {
     if (!hasAdultFemale) {
       const promotableFemale = fishPool.find((fish) => fish.sex === 'female');
       if (promotableFemale) {
-        promotableFemale.spawnTimeSec = this.simTimeSec - promotableFemale.lifespanSec * 0.65;
+        const promotedInitialAgeSec = Math.min(promotableFemale.lifespanSec * 0.65, INITIAL_MAX_AGE_SEC);
+        promotableFemale.spawnTimeSec = this.simTimeSec - promotedInitialAgeSec;
         promotableFemale.updateLifeCycle(this.simTimeSec);
       }
     }
