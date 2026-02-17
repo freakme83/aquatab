@@ -52,8 +52,8 @@ function makeBubble(bounds) {
 }
 
 export class World {
-  constructor(width, height, initialFishCount = 20) {
-    const normalizedInitialFishCount = Math.max(1, Math.min(50, Math.round(initialFishCount)));
+  constructor(width, height, initialFishCount = 4) {
+    const normalizedInitialFishCount = Math.max(1, Math.min(6, Math.round(initialFishCount)));
 
     this.bounds = { width, height, sandHeight: this.#computeSandHeight(height) };
     this.fish = [];
@@ -87,7 +87,7 @@ export class World {
     this.paused = false;
     this.speedMultiplier = 1;
 
-    this.setFishCount(this.initialFishCount);
+    this.#generateInitialPopulation(this.initialFishCount);
     this.#seedBubbles();
     this.#seedGroundAlgae();
   }
@@ -144,7 +144,7 @@ export class World {
     return true;
   }
 
-  #createFish() {
+  #createFish({ sex, initialAgeRatio = 0, hungryStart = false } = {}) {
     const sizeRange = GROWTH_CONFIG.sizeFactorRange;
     const growthRange = GROWTH_CONFIG.growthRateRange;
 
@@ -167,9 +167,9 @@ export class World {
       spawn = this.#randomSpawn(birthRadius);
     }
 
-    return new Fish(this.bounds, {
+    const fish = new Fish(this.bounds, {
       id: this.nextFishId++,
-      spawnTimeSec: this.simTimeSec,
+      spawnTimeSec: this.simTimeSec - Math.max(0, Math.min(0.8, initialAgeRatio)) * lifespanSec,
       sizeFactor,
       growthRate: rand(growthRange.min, growthRange.max),
       lifespanSec,
@@ -179,6 +179,70 @@ export class World {
       headingAngle: this.#randomHeading(),
       speedFactor: rand(0.42, 0.68)
     });
+
+    if (sex === 'female' || sex === 'male') {
+      fish.sex = sex;
+    }
+
+    if (hungryStart) {
+      const hungryBaseline = 0.5;
+      fish.hunger01 = hungryBaseline;
+      fish.energy01 = 1 - hungryBaseline;
+      fish.hungerState = 'HUNGRY';
+    }
+
+    fish.updateLifeCycle(this.simTimeSec);
+    return fish;
+  }
+
+  #shuffleArray(items) {
+    for (let i = items.length - 1; i > 0; i -= 1) {
+      const swapIndex = Math.floor(Math.random() * (i + 1));
+      [items[i], items[swapIndex]] = [items[swapIndex], items[i]];
+    }
+  }
+
+  #generateInitialPopulation(totalFishCount) {
+    const clampedCount = Math.max(1, Math.min(6, Math.round(totalFishCount)));
+    const femaleCount = Math.ceil(clampedCount / 2);
+    const maleCount = Math.floor(clampedCount / 2);
+    const fishPool = [];
+
+    // Start-population constraints:
+    // - balanced sex distribution (female majority by 1 when odd)
+    // - random initial ages only in 0%-80% lifespan (no old-start fish)
+    // - all fish begin hungry and at least one adult female is guaranteed
+    for (let i = 0; i < femaleCount; i += 1) {
+      fishPool.push(this.#createFish({
+        sex: 'female',
+        initialAgeRatio: rand(0, 0.8),
+        hungryStart: true
+      }));
+    }
+
+    for (let i = 0; i < maleCount; i += 1) {
+      fishPool.push(this.#createFish({
+        sex: 'male',
+        initialAgeRatio: rand(0, 0.8),
+        hungryStart: true
+      }));
+    }
+
+    const hasAdultFemale = fishPool.some((fish) => fish.sex === 'female' && (fish.ageSeconds(this.simTimeSec) / fish.lifespanSec) >= 0.6);
+    if (!hasAdultFemale) {
+      const promotableFemale = fishPool.find((fish) => fish.sex === 'female');
+      if (promotableFemale) {
+        promotableFemale.spawnTimeSec = this.simTimeSec - promotableFemale.lifespanSec * 0.65;
+        promotableFemale.updateLifeCycle(this.simTimeSec);
+      }
+    }
+
+    this.#shuffleArray(fishPool);
+    this.fish = fishPool;
+
+    if (!this.fish.some((f) => f.id === this.selectedFishId)) {
+      this.selectedFishId = this.fish[0]?.id ?? null;
+    }
   }
 
   resize(width, height) {

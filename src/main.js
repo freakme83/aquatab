@@ -7,7 +7,7 @@ import { World } from './engine/world.js';
 import { Renderer } from './render/renderer.js';
 import { Panel } from './ui/panel.js';
 
-const INITIAL_FISH_COUNT = 20;
+const DEFAULT_INITIAL_FISH_COUNT = 4;
 
 const canvas = document.getElementById('aquariumCanvas');
 const panelRoot = document.getElementById('panelRoot');
@@ -24,7 +24,10 @@ function measureCanvasSize() {
 }
 
 const initialSize = measureCanvasSize();
-const world = new World(initialSize.width, initialSize.height, INITIAL_FISH_COUNT);
+const initialFishCountSlider = document.querySelector('[data-control="fishCount"]');
+const initialFishCount = Number.parseInt(initialFishCountSlider?.value ?? String(DEFAULT_INITIAL_FISH_COUNT), 10);
+
+const world = new World(initialSize.width, initialSize.height, initialFishCount);
 const renderer = new Renderer(canvas, world);
 const debugBounds = new URLSearchParams(window.location.search).get('debugBounds') === '1';
 renderer.setDebugBounds(debugBounds);
