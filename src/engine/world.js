@@ -31,6 +31,9 @@ const GESTATION_SEC = REPRO_CONFIG.GESTATION_SEC ?? [300, 360];
 const EGG_INCUBATION_SEC = REPRO_CONFIG.EGG_INCUBATION_SEC ?? [120, 300];
 const MOTHER_COOLDOWN_SEC = REPRO_CONFIG.MOTHER_COOLDOWN_SEC ?? [600, 1080];
 const CLUTCH_SIZE = REPRO_CONFIG.CLUTCH_SIZE ?? [1, 2];
+
+const FEMALE_NAME_POOL = Array.isArray(CONFIG.FEMALE_NAME_POOL) ? CONFIG.FEMALE_NAME_POOL : [];
+const MALE_NAME_POOL = Array.isArray(CONFIG.MALE_NAME_POOL) ? CONFIG.MALE_NAME_POOL : [];
 const WATER_INITIAL_HYGIENE01 = 1;
 const WATER_INITIAL_DIRT01 = 0;
 const WATER_REFERENCE_FISH_COUNT = Math.max(1, WATER_CONFIG.referenceFishCount ?? 20);
@@ -156,6 +159,7 @@ export class World {
     this.nextEggId = 1;
     this.simTimeSec = 0;
     this.selectedFishId = null;
+    this.nameCounts = new Map();
 
     this.initialFishCount = normalizedInitialFishCount;
     this.foodsConsumedCount = 0;
@@ -235,7 +239,64 @@ export class World {
     return true;
   }
 
-  #createFish({ sex, initialAgeSec = 0, hungryStart = false, position = null, traits = null } = {}) {
+
+  #usedNames(excludeFishId = null) {
+    const names = new Set();
+    for (const fish of this.fish) {
+      if (excludeFishId != null && fish.id === excludeFishId) continue;
+      const currentName = String(fish.name ?? '').trim();
+      if (!currentName) continue;
+      names.add(currentName);
+    }
+    return names;
+  }
+
+  #registerName(baseName, usedNames) {
+    const current = this.nameCounts.get(baseName) ?? 0;
+    const next = Math.max(1, current + 1);
+    const uniqueName = next === 1 ? baseName : `${baseName} (${next})`;
+    this.nameCounts.set(baseName, next);
+    usedNames.add(uniqueName);
+    return uniqueName;
+  }
+
+  assignDefaultNameForSex(sex) {
+    const sourcePool = sex === 'female' ? FEMALE_NAME_POOL : MALE_NAME_POOL;
+    const pool = sourcePool.filter((name) => typeof name === 'string' && name.trim().length > 0);
+    if (pool.length === 0) return this.makeUniqueName('Fish') ?? 'Fish';
+
+    const usedNames = this.#usedNames();
+    const unusedBaseNames = pool.filter((name) => !this.nameCounts.has(name) && !usedNames.has(name));
+
+    const pickFrom = unusedBaseNames.length > 0 ? unusedBaseNames : pool;
+    const chosenBase = pickFrom[Math.floor(Math.random() * pickFrom.length)];
+    return this.#registerName(chosenBase, usedNames);
+  }
+
+  makeUniqueName(desiredName, { excludeFishId = null } = {}) {
+    const normalized = String(desiredName ?? '').trim().slice(0, 24);
+    if (!normalized) return null;
+
+    const usedNames = this.#usedNames(excludeFishId);
+    if (!usedNames.has(normalized)) {
+      this.nameCounts.set(normalized, Math.max(1, this.nameCounts.get(normalized) ?? 0));
+      usedNames.add(normalized);
+      return normalized;
+    }
+
+    let suffix = Math.max(2, (this.nameCounts.get(normalized) ?? 1) + 1);
+    let candidate = `${normalized} (${suffix})`;
+    while (usedNames.has(candidate)) {
+      suffix += 1;
+      candidate = `${normalized} (${suffix})`;
+    }
+
+    this.nameCounts.set(normalized, suffix);
+    usedNames.add(candidate);
+    return candidate;
+  }
+
+  #createFish({ sex, initialAgeSec = 0, hungryStart = false, position = null, traits = null, name = null } = {}) {
     const sizeRange = GROWTH_CONFIG.sizeFactorRange;
     const growthRange = GROWTH_CONFIG.growthRateRange;
 
@@ -285,6 +346,9 @@ export class World {
     if (sex === 'female' || sex === 'male') {
       fish.sex = sex;
     }
+
+    const desiredName = this.makeUniqueName(name);
+    fish.name = desiredName ?? this.assignDefaultNameForSex(fish.sex);
 
     if (hungryStart) {
       const hungryBaseline = 0.5;
@@ -454,7 +518,9 @@ export class World {
   renameFish(fishId, name) {
     const fish = this.fish.find((entry) => entry.id === fishId);
     if (!fish) return false;
-    fish.name = String(name ?? '').trim().slice(0, 24);
+
+    const uniqueName = this.makeUniqueName(name, { excludeFishId: fishId });
+    fish.name = uniqueName ?? this.assignDefaultNameForSex(fish.sex);
     return true;
   }
 
