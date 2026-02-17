@@ -21,6 +21,10 @@ export class Panel {
     this.toggleButton = this.root.querySelector('[data-control="togglePause"]');
     this.installFilterButton = this.root.querySelector('[data-control="installFilter"]');
     this.maintainFilterButton = this.root.querySelector('[data-control="maintainFilter"]');
+    this.restartButton = this.root.querySelector('[data-control="restartSim"]');
+    this.restartConfirm = this.root.querySelector('[data-restart-confirm]');
+    this.restartConfirmYes = this.root.querySelector('[data-control="restartConfirmYes"]');
+    this.restartConfirmNo = this.root.querySelector('[data-control="restartConfirmNo"]');
 
     this.filterAccordion = this.root.querySelector('[data-filter-accordion]');
     this.filterAccordionToggle = this.root.querySelector('[data-control="toggleFilterAccordion"]');
@@ -41,6 +45,10 @@ export class Panel {
 
     this.installFilterButton = this.root.querySelector('[data-control="installFilter"]');
     this.maintainFilterButton = this.root.querySelector('[data-control="maintainFilter"]');
+    this.restartButton = this.root.querySelector('[data-control="restartSim"]');
+    this.restartConfirm = this.root.querySelector('[data-restart-confirm]');
+    this.restartConfirmYes = this.root.querySelector('[data-control="restartConfirmYes"]');
+    this.restartConfirmNo = this.root.querySelector('[data-control="restartConfirmNo"]');
     this.toggleFilterPowerButton = this.root.querySelector('[data-control="toggleFilterPower"]');
 
     this.speedValue = this.root.querySelector('[data-value="simSpeed"]');
@@ -84,6 +92,19 @@ export class Panel {
     this.toggleButton.addEventListener('click', () => {
       const isPaused = this.handlers.onPauseToggle();
       this.toggleButton.textContent = isPaused ? 'Resume' : 'Pause';
+    });
+
+    this.restartButton?.addEventListener('click', () => {
+      if (this.restartConfirm) this.restartConfirm.hidden = false;
+    });
+
+    this.restartConfirmYes?.addEventListener('click', () => {
+      if (this.restartConfirm) this.restartConfirm.hidden = true;
+      this.handlers.onRestartConfirm?.();
+    });
+
+    this.restartConfirmNo?.addEventListener('click', () => {
+      if (this.restartConfirm) this.restartConfirm.hidden = true;
     });
 
     this.filterAccordionToggle?.addEventListener('click', () => {
@@ -160,6 +181,7 @@ export class Panel {
     this.speedSlider.value = String(speedMultiplier);
     this.speedValue.textContent = `${speedMultiplier.toFixed(1)}x`;
     this.toggleButton.textContent = paused ? 'Resume' : 'Pause';
+    if (this.restartConfirm) this.restartConfirm.hidden = true;
   }
 
   updateStats({

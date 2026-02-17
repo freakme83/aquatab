@@ -23,6 +23,7 @@ let world = null;
 let renderer = null;
 let panel = null;
 let started = false;
+let canvasClickHandler = null;
 
 function measureCanvasSize() {
   const rect = canvas.getBoundingClientRect();
@@ -248,6 +249,27 @@ function syncDriversToVisibility() {
 
 document.addEventListener('visibilitychange', syncDriversToVisibility);
 
+
+function restartToStartScreen() {
+  if (!started) return;
+
+  stopRaf();
+  stopBackgroundSim();
+  hideCorpseAction();
+
+  started = false;
+  world = null;
+  renderer = null;
+
+  if (canvasClickHandler) {
+    canvas.removeEventListener('click', canvasClickHandler);
+    canvasClickHandler = null;
+  }
+
+  appRoot.hidden = true;
+  startScreen.hidden = false;
+}
+
 function startSimulation() {
   if (started) return;
 
@@ -269,11 +291,20 @@ function startSimulation() {
     onFishDiscard: (fishId) => world.discardFish(fishId),
     onFilterInstall: () => world.installWaterFilter?.(),
     onFilterMaintain: () => world.maintainWaterFilter?.(),
-    onFilterTogglePower: () => world.toggleWaterFilterEnabled?.()
+    onFilterTogglePower: () => world.toggleWaterFilterEnabled?.(),
+    onRestartConfirm: () => restartToStartScreen()
   };
-  panel = new Panel(panelRoot, panelHandlers);
+  if (!panel) {
+    panel = new Panel(panelRoot, panelHandlers);
+  } else {
+    panel.handlers = panelHandlers;
+  }
 
-  canvas.addEventListener('click', (event) => {
+  if (canvasClickHandler) {
+    canvas.removeEventListener('click', canvasClickHandler);
+  }
+
+  canvasClickHandler = (event) => {
     if (!world || !renderer) return;
 
     if (renderer.isFilterModuleHit?.(event.clientX, event.clientY) && world.water.filterInstalled) {
@@ -294,7 +325,8 @@ function startSimulation() {
 
     hideCorpseAction();
     world.spawnFood(worldPoint.x, worldPoint.y);
-  });
+  };
+  canvas.addEventListener('click', canvasClickHandler);
 
   panel.sync({
     speedMultiplier: world.speedMultiplier,

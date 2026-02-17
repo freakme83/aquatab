@@ -84,6 +84,17 @@
               <div class="button-row"><button type="button" data-control="maintainFilter" hidden>Maintain filter</button></div>
             </div>
           </section>
+
+          <div class="button-row">
+            <button type="button" data-control="restartSim">Restart</button>
+          </div>
+          <div class="restart-confirm" data-restart-confirm hidden>
+            <p>All progress will be lost. Are you sure?</p>
+            <div class="button-row split">
+              <button type="button" data-control="restartConfirmYes">Yes</button>
+              <button type="button" data-control="restartConfirmNo">No</button>
+            </div>
+          </div>
         </section>
 
         <section class="tab-content" data-content="fish" role="tabpanel">
