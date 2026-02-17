@@ -350,6 +350,7 @@ export class World {
       maintenanceProgress01: 0,
       maintenanceCooldownSec: 0,
       filterUnlocked: this.filterUnlocked,
+      filterEnabled: true,
       effectiveFilter01: 0
     };
   }
@@ -359,6 +360,14 @@ export class World {
     if (!water?.filterUnlocked || water.filterInstalled || water.installProgress01 > 0) return false;
     water.installProgress01 = 0.000001;
     return true;
+  }
+
+
+  toggleWaterFilterEnabled() {
+    const water = this.water;
+    if (!water?.filterInstalled || water.installProgress01 > 0 || water.maintenanceProgress01 > 0) return water?.filterEnabled ?? false;
+    water.filterEnabled = !water.filterEnabled;
+    return water.filterEnabled;
   }
 
   maintainWaterFilter() {
@@ -413,6 +422,7 @@ export class World {
       water.installProgress01 = clamp(water.installProgress01 + dtSec / FILTER_INSTALL_DURATION_SEC, 0, 1);
       if (water.installProgress01 >= 1) {
         water.filterInstalled = true;
+        water.filterEnabled = true;
         water.filter01 = 1;
         water.installProgress01 = 0;
       }
@@ -432,7 +442,10 @@ export class World {
     }
 
     const isMaintaining = water.maintenanceProgress01 > 0;
-    const hasWorkingFilter = water.filterInstalled && !isMaintaining && water.filter01 > FILTER_DEPLETED_THRESHOLD_01;
+    const hasWorkingFilter = water.filterInstalled
+      && water.filterEnabled
+      && !isMaintaining
+      && water.filter01 > FILTER_DEPLETED_THRESHOLD_01;
     const effectiveFilter01 = hasWorkingFilter ? water.filter01 : 0;
     water.effectiveFilter01 = effectiveFilter01;
 

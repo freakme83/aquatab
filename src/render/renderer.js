@@ -69,6 +69,20 @@ export class Renderer {
     };
   }
 
+  isFilterModuleHit(clientX, clientY) {
+    const rect = this.canvas.getBoundingClientRect();
+    const localX = clientX - rect.left;
+    const localY = clientY - rect.top;
+    const moduleRect = this.#filterModuleRectPx();
+    if (!moduleRect) return false;
+
+    return localX >= moduleRect.x
+      && localX <= moduleRect.x + moduleRect.width
+      && localY >= moduleRect.y
+      && localY <= moduleRect.y + moduleRect.height;
+  }
+
+
   render(time, delta) {
     const ctx = this.ctx;
     const w = this.canvas.width / this.dpr;
@@ -305,16 +319,29 @@ export class Renderer {
   }
 
 
-  #drawFilterModule(ctx, time) {
+  #filterModuleRectPx() {
     const water = this.world.water;
-    if (!water?.filterInstalled) return;
+    if (!water?.filterInstalled) return null;
 
     const sx = this.tankRect.width / this.world.bounds.width;
     const sy = this.tankRect.height / this.world.bounds.height;
-    const moduleW = Math.max(16, 28 * sx);
-    const moduleH = Math.max(26, 52 * sy);
-    const x = this.tankRect.x + this.tankRect.width - moduleW - 10;
-    const y = this.tankRect.y + this.tankRect.height - moduleH - 10;
+    const width = Math.max(16, 28 * sx);
+    const height = Math.max(26, 52 * sy);
+
+    return {
+      x: this.tankRect.x + this.tankRect.width - width - 10,
+      y: this.tankRect.y + this.tankRect.height - height - 10,
+      width,
+      height
+    };
+  }
+
+  #drawFilterModule(ctx, time) {
+    const water = this.world.water;
+    const rect = this.#filterModuleRectPx();
+    if (!water?.filterInstalled || !rect) return;
+
+    const { x, y, width: moduleW, height: moduleH } = rect;
 
     ctx.save();
     ctx.fillStyle = 'rgba(25, 34, 43, 0.92)';
@@ -326,7 +353,9 @@ export class Renderer {
     ctx.stroke();
 
     const health = water.filter01 ?? 0;
-    const led = health > 0.6 ? 'rgba(96, 255, 140, 0.95)' : (health >= 0.2 ? 'rgba(255, 224, 99, 0.95)' : 'rgba(255, 82, 82, 0.95)');
+    const led = water.filterEnabled
+      ? (health > 0.6 ? 'rgba(96, 255, 140, 0.95)' : (health >= 0.2 ? 'rgba(255, 224, 99, 0.95)' : 'rgba(255, 82, 82, 0.95)'))
+      : 'rgba(170, 180, 188, 0.45)';
     ctx.fillStyle = led;
     ctx.beginPath();
     ctx.arc(x + moduleW * 0.5, y + 8, 3.2, 0, TAU);

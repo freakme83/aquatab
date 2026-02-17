@@ -44,12 +44,19 @@ const panel = new Panel(panelRoot, {
   onFishRename: (fishId, name) => world.renameFish(fishId, name),
   onFishDiscard: (fishId) => world.discardFish(fishId),
   onFilterInstall: () => world.installWaterFilter?.(),
-  onFilterMaintain: () => world.maintainWaterFilter?.()
+  onFilterMaintain: () => world.maintainWaterFilter?.(),
+  onFilterTogglePower: () => world.toggleWaterFilterEnabled?.()
 });
 
 renderer.setQuality(quality);
 
 canvas.addEventListener('click', (event) => {
+  if (renderer.isFilterModuleHit?.(event.clientX, event.clientY) && world.water.filterInstalled) {
+    const enabled = world.toggleWaterFilterEnabled?.();
+    showFilterToast(enabled ? 'Filter ON' : 'Filter OFF');
+    return;
+  }
+
   const worldPoint = renderer.toWorldPoint(event.clientX, event.clientY);
   if (!worldPoint) return;
 
@@ -85,6 +92,33 @@ corpseActionButton.style.color = '#eaf7ff';
 corpseActionButton.style.fontSize = '12px';
 corpseActionButton.style.cursor = 'pointer';
 document.body.appendChild(corpseActionButton);
+
+const filterToast = document.createElement('div');
+filterToast.hidden = true;
+filterToast.style.position = 'fixed';
+filterToast.style.left = '50%';
+filterToast.style.bottom = '22px';
+filterToast.style.transform = 'translateX(-50%)';
+filterToast.style.padding = '6px 10px';
+filterToast.style.borderRadius = '999px';
+filterToast.style.border = '1px solid rgba(255,255,255,0.34)';
+filterToast.style.background = 'rgba(18, 30, 41, 0.88)';
+filterToast.style.color = '#e8f4ff';
+filterToast.style.fontSize = '12px';
+filterToast.style.zIndex = '30';
+filterToast.style.pointerEvents = 'none';
+document.body.appendChild(filterToast);
+
+let filterToastTimeoutId = null;
+function showFilterToast(textValue) {
+  filterToast.textContent = textValue;
+  filterToast.hidden = false;
+  if (filterToastTimeoutId) clearTimeout(filterToastTimeoutId);
+  filterToastTimeoutId = setTimeout(() => {
+    filterToast.hidden = true;
+    filterToastTimeoutId = null;
+  }, 1000);
+}
 
 function worldToClientPoint(worldX, worldY) {
   const canvasRect = canvas.getBoundingClientRect();
@@ -195,6 +229,7 @@ function tick(now) {
     foodsConsumedCount: world.foodsConsumedCount,
     filterUnlockThreshold: world.filterUnlockThreshold,
     filterInstalled: world.water.filterInstalled,
+    filterEnabled: world.water.filterEnabled,
     filter01: world.water.filter01,
     installProgress01: world.water.installProgress01,
     maintenanceProgress01: world.water.maintenanceProgress01,
