@@ -7,7 +7,25 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <main class="page-layout">
+    <section class="start-screen" id="startScreen" aria-label="Start screen">
+      <div class="start-card">
+        <h1>Aquchi Aquarium Simulation</h1>
+
+        <label class="control-group start-control-group">
+          <span>Initial Fish Count: <strong data-start-value="initialFishCount">4</strong></span>
+          <input type="range" min="1" max="6" value="4" step="1" data-start-control="initialFishCount" />
+        </label>
+
+        <button type="button" class="start-btn" id="startSimButton">Start Sim</button>
+
+        <section class="about-placeholder" aria-label="About placeholder">
+          <h2>About</h2>
+          <p>Coming soon: game information and simulation tips will appear here.</p>
+        </section>
+      </div>
+    </section>
+
+    <main class="page-layout" id="appRoot" hidden>
       <section class="tank-stage" aria-label="Aquarium stage">
         <div class="tank-shell">
           <canvas id="aquariumCanvas" aria-label="Aquchi"></canvas>
@@ -32,28 +50,20 @@
 
         <section class="tab-content active" data-content="stats" role="tabpanel">
           <h2>Stats</h2>
-          <div class="stat-row"><span>FPS</span><strong data-stat="fps">0</strong></div>
           <div class="stat-row"><span>Fish</span><strong data-stat="fishCount">0</strong></div>
-          <div class="stat-row"><span>Quality</span><strong data-stat="quality">High</strong></div>
-          <div class="stat-row"><span>Temizlik</span><strong data-stat="cleanliness">100%</strong></div>
+          <div class="stat-row"><span>Cleanliness</span><strong data-stat="cleanliness">100%</strong></div>
         </section>
 
         <section class="tab-content" data-content="controls" role="tabpanel">
           <h2>Controls</h2>
 
           <label class="control-group">
-            <span>Fish Count: <strong data-value="fishCount">20</strong></span>
-            <input type="range" min="1" max="50" value="20" step="1" data-control="fishCount" />
-          </label>
-
-          <label class="control-group">
-            <span>Sim Speed: <strong data-value="simSpeed">1.0x</strong></span>
+            <span>Simulation Speed: <strong data-value="simSpeed">1.0x</strong></span>
             <input type="range" min="0.5" max="3" value="1" step="0.1" data-control="simSpeed" />
           </label>
 
           <div class="button-row split">
             <button type="button" data-control="togglePause">Pause</button>
-            <button type="button" data-control="toggleQuality">Quality: High</button>
           </div>
 
           <section class="filter-accordion is-dim" data-filter-accordion data-open="false">
