@@ -6,6 +6,28 @@
  */
 
 export const CONFIG = Object.freeze({
+  reproduction: {
+    REPRO_ENABLED: true,
+
+    // Encounter + mating
+    MATE_ENCOUNTER_RADIUS_PX: 70,
+    MATE_PAIR_RETRY_MIN_SEC: 25,
+    MATE_BASE_CHANCE: 0.08,
+    MATE_FATHER_COOLDOWN_SEC: [120, 240],
+
+    MATE_MIN_WELLBEING: 0.80,
+    MATE_MIN_HYGIENE: 0.60,
+
+    // Gestation + eggs
+    GESTATION_SEC: [360, 600],
+    EGG_INCUBATION_SEC: [120, 300],
+    MOTHER_COOLDOWN_SEC: [600, 1080],
+    CLUTCH_SIZE: [1, 2],
+
+    // Genetics
+    TRAIT_MUTATION_PCT: 0.05
+  },
+
   world: {
     maxTiltRad: Math.PI / 3,
     food: {
@@ -93,7 +115,10 @@ export const CONFIG = Object.freeze({
       stageJitterSec: 3 * 60,
 
       // Old stage starts at this fraction of lifespan.
-      oldStartRatio: 0.85
+      oldStartRatio: 0.85,
+
+      // Cap for randomized initial spawn age at game start (20 minutes).
+      INITIAL_MAX_AGE_SEC: 1200
     },
 
     growth: {
