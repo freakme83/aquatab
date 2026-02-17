@@ -165,7 +165,7 @@ export class Panel {
       const input = event.target.closest('[data-fish-name-input]');
       if (!input || this.currentInspectorSelectedFishId == null) return;
       this.handlers.onFishRename?.(this.currentInspectorSelectedFishId, input.value);
-      this.nameDraftByFishId.set(this.currentInspectorSelectedFishId, input.value.trim());
+      this.nameDraftByFishId.delete(this.currentInspectorSelectedFishId);
     }, true);
 
     this.fishInspector.addEventListener('click', (event) => {
