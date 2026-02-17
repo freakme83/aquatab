@@ -6,6 +6,62 @@
  */
 
 export const CONFIG = Object.freeze({
+  FEMALE_NAME_POOL: [
+    'Alice', 'Amelia', 'Aria', 'Ava', 'Bella', 'Chloe', 'Clara', 'Daisy', 'Eleanor', 'Ella',
+    'Emily', 'Emma', 'Eva', 'Grace', 'Hannah', 'Harper', 'Hazel', 'Ivy', 'Isla', 'Lily',
+    'Lucy', 'Maya', 'Mia', 'Nora', 'Olivia', 'Ruby', 'Scarlett', 'Sofia', 'Sophia', 'Zoe',
+
+    'Camila', 'Isabella', 'Valentina', 'Lucia', 'Gabriela', 'Mariana', 'Daniela', 'Ana', 'Bianca', 'Renata',
+    'Elena', 'Chiara', 'Giulia', 'Francesca', 'Ines', 'Amina', 'Layla', 'Yara', 'Leila', 'Zara',
+
+    'Freya', 'Astrid', 'Ingrid', 'Sigrid', 'Anouk', 'Maelle', 'Noemi', 'Klara', 'Petra', 'Anastasia',
+    'Mila', 'Nina', 'Katarina', 'Alina', 'Ivana', 'Daria', 'Anya', 'Sakura', 'Yuki', 'Mei',
+
+    'Aisha', 'Fatima', 'Samira', 'Imani', 'Zainab', 'Nadia', 'Soraya', 'Naomi', 'Talia', 'Mira',
+    'Amara', 'Esme', 'Elisa', 'Luna', 'Aurora', 'Selena', 'Rhea', 'Tessa', 'Vera', 'Iris',
+
+    'Kira', 'Lena', 'Mara', 'Helena', 'Alba', 'Celine', 'Rosa', 'Mina', 'Jasmine', 'Allegra'
+  ],
+
+  MALE_NAME_POOL: [
+    'Liam', 'Noah', 'Oliver', 'Elijah', 'James', 'William', 'Benjamin', 'Lucas', 'Henry', 'Alexander',
+    'Jack', 'Leo', 'Theodore', 'Sebastian', 'Daniel', 'Matthew', 'Joseph', 'David', 'Samuel', 'Owen',
+    'Julian', 'Isaac', 'Ethan', 'Caleb', 'Nathan', 'Aaron', 'Miles', 'Wyatt', 'Hudson', 'Ezra',
+
+    'Mateo', 'Diego', 'Santiago', 'Carlos', 'Andres', 'Miguel', 'Gabriel', 'Rafael', 'Javier', 'Emilio',
+    'Marco', 'Luca', 'Giovanni', 'Enzo', 'Alessandro', 'Antonio', 'Stefan', 'Milan', 'Nikola', 'Tomas',
+
+    'Omar', 'Yusuf', 'Hassan', 'Karim', 'Malik', 'Amir', 'Zayd', 'Rami', 'Tariq', 'Samir',
+    'Ibrahim', 'Idris', 'Khalil', 'Zane', 'Kenji', 'Haruto', 'Riku', 'Minho', 'Jin', 'Hiro',
+
+    'Bjorn', 'Erik', 'Magnus', 'Soren', 'Lars', 'Aron', 'Kai', 'Noel', 'Dominik', 'Adrian',
+    'Roman', 'Felix', 'Victor', 'Jonas', 'Hugo', 'Levi', 'Silas', 'Orion', 'Atlas', 'Rowan',
+
+    'Kofi', 'Kwame', 'Zubair', 'Tenzin', 'Arjun', 'Dev', 'Rohan', 'Sahil', 'Iker', 'Thiago'
+  ],
+
+  reproduction: {
+    REPRO_ENABLED: true,
+
+    // Encounter + mating
+    MATE_ENCOUNTER_RADIUS_PX: 70,
+    MATE_PAIR_RETRY_MIN_SEC: 25,
+    MATE_BASE_CHANCE: 0.08,
+    MATE_FATHER_COOLDOWN_SEC: [120, 240],
+
+    MATE_MIN_WELLBEING: 0.80,
+    MATE_MIN_HYGIENE: 0.60,
+
+    // Gestation + eggs
+    GESTATION_SEC: [300, 360],
+    EGG_INCUBATION_SEC: [120, 300],
+    MOTHER_COOLDOWN_SEC: [600, 1080],
+    CLUTCH_SIZE: [1, 2],
+
+    // Genetics
+    TRAIT_MUTATION_PCT: 0.05
+  },
+
   world: {
     maxTiltRad: Math.PI / 3,
     food: {
@@ -24,7 +80,23 @@ export const CONFIG = Object.freeze({
     },
     // Placeholder for future global systems.
     water: {
-      hygiene01: 1
+      hygiene01: 1,
+      dirt01: 0,
+      referenceFishCount: 20,
+      baselineDecayPerSec: 0.0002,
+      bioloadDirtPerSec: 0.00035,
+      dirtPerExpiredFood: 0.015,
+      dirtToDecayMultiplier: 3,
+      filterDirtRemovePerSec: 0.0006,
+      wearBasePerSec: 0.00005,
+      wearBioloadFactor: 1.0,
+      wearDirtFactor: 2.5,
+      bioloadMitigationFactor: 0.6,
+      filterDepletedThreshold01: 0.1,
+      installDurationSec: 12,
+      maintenanceDurationSec: 12,
+      maintenanceCooldownSec: 25,
+      maintenanceRestoreTo01: 1.0
     }
   },
 
@@ -77,7 +149,10 @@ export const CONFIG = Object.freeze({
       stageJitterSec: 3 * 60,
 
       // Old stage starts at this fraction of lifespan.
-      oldStartRatio: 0.85
+      oldStartRatio: 0.85,
+
+      // Cap for randomized initial spawn age at game start (20 minutes).
+      INITIAL_MAX_AGE_SEC: 1200
     },
 
     growth: {
@@ -106,7 +181,15 @@ export const CONFIG = Object.freeze({
       JUVENILE: 1.04,
       ADULT: 1.0,
       OLD: 0.88
-    }
+    },
+
+    waterWellbeing: {
+      stressStartHygiene01: 0.7,
+      stressCurvePower: 1.35,
+      stressPerSec: 0.0012,
+      ageSensitivityMin: 1,
+      ageSensitivityEdgeBoost: 0.6
+    },
 
   }
 });

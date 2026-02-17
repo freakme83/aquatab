@@ -22,10 +22,12 @@ const AGE_CONFIG = CONFIG.fish.age;
 const GROWTH_CONFIG = CONFIG.fish.growth;
 const MORPH = CONFIG.fish.morph;
 const STAGE_SPEED = CONFIG.fish.stageSpeed;
-const FISH_BUILD_STAMP = new Date().toISOString();
-
-console.log(`[aquatab] Fish module loaded: ${import.meta.url} | BUILD: ${FISH_BUILD_STAMP}`);
-
+const WATER_WELLBEING = CONFIG.fish.waterWellbeing ?? {};
+const WATER_STRESS_START_HYGIENE01 = Math.max(0.05, Math.min(1, WATER_WELLBEING.stressStartHygiene01 ?? 0.7));
+const WATER_STRESS_CURVE_POWER = Math.max(1, WATER_WELLBEING.stressCurvePower ?? 1.35);
+const WATER_STRESS_PER_SEC = Math.max(0, WATER_WELLBEING.stressPerSec ?? 0.006);
+const WATER_AGE_SENSITIVITY_MIN = Math.max(0, WATER_WELLBEING.ageSensitivityMin ?? 1);
+const WATER_AGE_SENSITIVITY_EDGE_BOOST = Math.max(0, WATER_WELLBEING.ageSensitivityEdgeBoost ?? 0.6);
 const rand = (min, max) => min + Math.random() * (max - min);
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
@@ -69,21 +71,32 @@ export class Fish {
     this.bounds = bounds;
 
     this.id = options.id ?? 0;
-    this.name = options.name ?? '';
+    this.name = '';
     this.spawnTimeSec = options.spawnTimeSec ?? 0;
 
     // --- Life-cycle randoms (set once at birth) ---
     const sizeRange = GROWTH_CONFIG.sizeFactorRange;
     const growthRange = GROWTH_CONFIG.growthRateRange;
 
-    this.sizeFactor = options.sizeFactor ?? rand(sizeRange.min, sizeRange.max);
-    this.adultRadius = GROWTH_CONFIG.adultRadius * this.sizeFactor;
-
-    this.growthRate = options.growthRate ?? rand(growthRange.min, growthRange.max);
+    const baseTraits = {
+      colorHue: options.colorHue ?? rand(8, 42),
+      sizeFactor: options.sizeFactor ?? rand(sizeRange.min, sizeRange.max),
+      growthRate: options.growthRate ?? rand(growthRange.min, growthRange.max),
+      lifespanSec: null,
+      speedFactor: options.speedFactor ?? rand(0.42, 0.68)
+    };
 
     const lifeMean = AGE_CONFIG.lifespanMeanSec;
     const lifeJitter = AGE_CONFIG.lifespanJitterSec;
-    this.lifespanSec = options.lifespanSec ?? rand(lifeMean - lifeJitter, lifeMean + lifeJitter);
+    baseTraits.lifespanSec = options.lifespanSec ?? rand(lifeMean - lifeJitter, lifeMean + lifeJitter);
+    this.traits = {
+      ...baseTraits,
+      ...(options.traits ?? {})
+    };
+    // Backward compatibility for existing usage paths while traits are adopted.
+    Object.assign(this, this.traits);
+
+    this.adultRadius = GROWTH_CONFIG.adultRadius * this.traits.sizeFactor;
 
     const stageJitter = AGE_CONFIG.stageJitterSec;
     this.stageShiftBabySec = options.stageShiftBabySec ?? rand(-stageJitter, stageJitter);
@@ -95,9 +108,6 @@ export class Fish {
     this.lifeStage = 'BABY';
     this.growth01 = 0;
     this.ageSecCached = 0;
-    this.colorHue = options.colorHue ?? rand(8, 42);
-    this.speedFactor = options.speedFactor ?? rand(0.42, 0.68);
-
     this.position = options.position
       ? { x: options.position.x, y: options.position.y }
       : { x: bounds.width * 0.5, y: bounds.height * 0.5 };
@@ -120,10 +130,14 @@ export class Fish {
     this.energy01 = 1;
     this.hunger01 = 0;
     this.wellbeing01 = 1;
+    this.waterPenalty01 = 0;
     this.hungerState = 'FED';
     this.lifeState = 'ALIVE';
+    this.deathReason = null;
     this.deadAtSec = null;
     this.skeletonAtSec = null;
+    this.corpseRemoved = false;
+    this.corpseDirtApplied01 = 0;
     this.behavior = { mode: 'wander', targetFoodId: null, speedBoost: 1 };
     this.eatAnimTimer = 0;
     this.eatAnimDuration = 0.22;
@@ -135,6 +149,30 @@ export class Fish {
       role: 'NONE',
       startedNearAlgae: false,
       cooldownUntilSec: 0
+    };
+
+    this.repro = {
+      state: 'READY',
+      dueAtSec: null,
+      cooldownUntilSec: 0,
+      fatherId: null,
+      layTargetX: null,
+      layTargetY: null,
+      pregnancyStartSec: null,
+      layingStartedAtSec: null
+    };
+
+    this.matingAnim = null;
+
+    this.history = {
+      motherId: options.history?.motherId ?? null,
+      fatherId: options.history?.fatherId ?? null,
+      childrenIds: Array.isArray(options.history?.childrenIds) ? [...options.history.childrenIds] : [],
+      bornInAquarium: Boolean(options.history?.bornInAquarium ?? false),
+      birthSimTimeSec: Number.isFinite(options.history?.birthSimTimeSec) ? options.history.birthSimTimeSec : 0,
+      deathSimTimeSec: Number.isFinite(options.history?.deathSimTimeSec) ? options.history.deathSimTimeSec : null,
+      mealsEaten: Math.max(0, Math.floor(options.history?.mealsEaten ?? 0)),
+      mateCount: Math.max(0, Math.floor(options.history?.mateCount ?? 0))
     };
 
     // Cached reference for pursuit updates (set during decideBehavior).
@@ -159,7 +197,7 @@ export class Fish {
     return { tilt: localTilt, facing: stableFacing };
   }
 
-  updateMetabolism(dt) {
+  updateMetabolism(dt, world) {
     if (!Number.isFinite(dt) || dt <= 0) return;
 
     this.eatAnimTimer = Math.max(0, this.eatAnimTimer - dt);
@@ -168,24 +206,50 @@ export class Fish {
       this.energy01 = 0;
       this.hunger01 = 1;
       this.wellbeing01 = 0;
-      this.hungerState = 'STARVING';
+      this.hungerState = 'DEAD';
+      this.matingAnim = null;
       return;
     }
 
     const energyDelta = this.lastDistanceMoved * METABOLISM_COST_PER_PIXEL;
     this.energy01 = clamp(this.energy01 - energyDelta, 0, 1);
     this.hunger01 = 1 - this.energy01;
-    this.wellbeing01 = clamp(1 - this.hunger01 ** 1.3, 0, 1);
+    const baseWellbeingFromHunger = clamp(1 - this.hunger01 ** 1.3, 0, 1);
+
+    const waterHygiene01 = clamp01(world?.water?.hygiene01 ?? 1);
+    const waterStress = this.#waterStressFromHygiene(waterHygiene01);
+    if (waterStress > 0) {
+      const ageSensitivity = this.#waterAgeSensitivity();
+      const waterPenaltyDelta = WATER_STRESS_PER_SEC * waterStress * ageSensitivity * dt;
+      this.waterPenalty01 = clamp(this.waterPenalty01 + waterPenaltyDelta, 0, 1);
+    }
+
+    this.wellbeing01 = clamp(baseWellbeingFromHunger - this.waterPenalty01, 0, 1);
 
     if (this.hunger01 >= STARVING_THRESHOLD) this.hungerState = 'STARVING';
     else if (this.hunger01 >= HUNGRY_THRESHOLD) this.hungerState = 'HUNGRY';
     else this.hungerState = 'FED';
 
-    if (this.energy01 <= 0) {
+    if (this.energy01 <= 0 && this.lifeState === 'ALIVE') {
       this.lifeState = 'DEAD';
+      this.deathReason = 'STARVATION';
+      this.hungerState = 'DEAD';
       this.currentSpeed = 0;
       this.behavior = { mode: 'deadSink', targetFoodId: null, speedBoost: 1 };
     }
+  }
+
+  #waterStressFromHygiene(hygiene01) {
+    if (hygiene01 >= WATER_STRESS_START_HYGIENE01) return 0;
+    const rawStress = (WATER_STRESS_START_HYGIENE01 - hygiene01) / WATER_STRESS_START_HYGIENE01;
+    return clamp01(rawStress ** WATER_STRESS_CURVE_POWER);
+  }
+
+  #waterAgeSensitivity() {
+    const ageRatio = clamp01(this.ageSecCached / Math.max(1, this.lifespanSec));
+    const distanceFromMidlife = Math.abs(ageRatio - 0.5) * 2;
+    const uCurve = distanceFromMidlife ** 2;
+    return WATER_AGE_SENSITIVITY_MIN + WATER_AGE_SENSITIVITY_EDGE_BOOST * uCurve;
   }
 
   updatePlayState(simTimeSec) {
@@ -254,6 +318,16 @@ export class Fish {
 
     if (this.lifeState !== 'ALIVE') {
       this.behavior = { mode: 'deadSink', targetFoodId: null, speedBoost: 1 };
+      return;
+    }
+
+    if (this.repro?.state === 'LAYING' && Number.isFinite(this.repro.layTargetX) && Number.isFinite(this.repro.layTargetY)) {
+      this.behavior = {
+        mode: 'seekLayTarget',
+        targetFoodId: null,
+        speedBoost: 1
+      };
+      this.target = { x: this.repro.layTargetX, y: this.repro.layTargetY };
       return;
     }
 
@@ -334,8 +408,46 @@ export class Fish {
       seek.y *= SEEK_FORCE_MULTIPLIER;
     }
     const avoidance = this.#wallAvoidanceVector();
-    const desiredX = seek.x + avoidance.x;
-    const desiredY = seek.y + avoidance.y;
+    let desiredX = seek.x + avoidance.x;
+    let desiredY = seek.y + avoidance.y;
+
+    const nowSec = this._worldRef?.simTimeSec ?? 0;
+    if (this.matingAnim && this.lifeState === 'ALIVE') {
+      const progress = clamp01((nowSec - this.matingAnim.startSec) / Math.max(0.001, this.matingAnim.durationSec ?? 1.1));
+      if (progress >= 1) {
+        this.matingAnim = null;
+      } else {
+        const partner = this._worldRef?.fish?.find((f) => f.id === this.matingAnim.partnerId && f.lifeState === 'ALIVE');
+        if (!partner) {
+          this.matingAnim = null;
+        } else {
+          const dx = partner.position.x - this.position.x;
+          const dy = partner.position.y - this.position.y;
+          const mag = Math.hypot(dx, dy);
+          if (mag > 0.0001) {
+            const toPartner = { x: dx / mag, y: dy / mag };
+            const tangent = { x: -toPartner.y, y: toPartner.x };
+            const ampPx = 5 * Math.sin(progress * Math.PI);
+            let extraX = tangent.x * (ampPx * 0.8);
+            let extraY = tangent.y * (ampPx * 0.8);
+            const extraMag = Math.hypot(extraX, extraY);
+            const maxExtra = Math.max(0.0001, this.#baseSpeed() * 0.15);
+            if (extraMag > maxExtra) {
+              const scale = maxExtra / extraMag;
+              extraX *= scale;
+              extraY *= scale;
+            }
+            desiredX += extraX;
+            desiredY += extraY;
+          }
+
+          if (!this.matingAnim.bubbleBurstDone && progress >= 0.35) {
+            this._worldRef?.spawnMatingBubbleBurst?.(this.position.x, this.position.y);
+            this.matingAnim.bubbleBurstDone = true;
+          }
+        }
+      }
+    }
 
     const rawDesiredAngle = Math.atan2(desiredY, desiredX);
     this.facing = resolveFacingByCos(rawDesiredAngle, this.facing);
@@ -346,7 +458,7 @@ export class Fish {
 
     this.cruisePhase = normalizeAngle(this.cruisePhase + dt * this.cruiseRate);
     const cruiseFactor = 1 + Math.sin(this.cruisePhase) * 0.18;
-    const speedBoost = (this.behavior.mode === 'seekFood' || this.behavior.mode === 'playChase' || this.behavior.mode === 'playEvade') ? this.behavior.speedBoost : 1;
+    const speedBoost = (this.behavior.mode === 'seekFood' || this.behavior.mode === 'playChase' || this.behavior.mode === 'playEvade' || this.behavior.mode === 'seekLayTarget') ? this.behavior.speedBoost : 1;
     const desiredSpeed = this.#baseSpeed() * cruiseFactor * speedBoost;
     this.currentSpeed += (desiredSpeed - this.currentSpeed) * Math.min(1, dt * 0.8);
 
@@ -385,6 +497,7 @@ export class Fish {
     if (consumed <= 0) return;
     this.eatAnimTimer = this.eatAnimDuration;
     this.eat(consumed);
+    this.history.mealsEaten += 1;
   }
 
 
@@ -426,6 +539,8 @@ export class Fish {
     // Natural death by lifespan (simple baseline; later we can switch to probabilistic old-age death).
     if (this.lifeState === 'ALIVE' && ageSec >= this.lifespanSec) {
       this.lifeState = 'DEAD';
+      this.deathReason = 'OLD_AGE';
+      this.hungerState = 'DEAD';
       this.currentSpeed = 0;
       this.behavior = { mode: 'deadSink', targetFoodId: null, speedBoost: 1 };
     }
@@ -433,10 +548,10 @@ export class Fish {
 
   lifeStageLabel() {
     switch (this.lifeStage) {
-      case 'BABY': return 'Yavru';
-      case 'JUVENILE': return 'Genç';
-      case 'ADULT': return 'Yetişkin';
-      case 'OLD': return 'Yaşlı';
+      case 'BABY': return 'Baby';
+      case 'JUVENILE': return 'Juvenile';
+      case 'ADULT': return 'Adult';
+      case 'OLD': return 'Old';
       default: return String(this.lifeStage ?? '');
     }
   }
@@ -463,8 +578,24 @@ export class Fish {
   }
 
 
+  pregnancySwell01(simTimeSec) {
+    if (this.repro?.state !== 'GRAVID' && this.repro?.state !== 'LAYING') return 0;
+    const start = this.repro?.pregnancyStartSec;
+    const due = this.repro?.dueAtSec;
+    if (!Number.isFinite(start) || !Number.isFinite(due) || due <= start) return 0;
+    const p = clamp01((simTimeSec - start) / (due - start));
+    return 0.10 * Math.sin(p * Math.PI);
+  }
+
   ageSeconds(simTimeSec) {
     return Math.max(0, simTimeSec - this.spawnTimeSec);
+  }
+
+  getLifeTimeSec(nowSec) {
+    const birth = Number.isFinite(this.history?.birthSimTimeSec) ? this.history.birthSimTimeSec : 0;
+    const death = this.history?.deathSimTimeSec;
+    if (Number.isFinite(death)) return Math.max(0, death - birth);
+    return Math.max(0, nowSec - birth);
   }
 
   mouthOpen01() {

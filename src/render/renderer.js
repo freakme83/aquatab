@@ -5,7 +5,6 @@
 
 const TAU = Math.PI * 2;
 const rand = (min, max) => min + Math.random() * (max - min);
-const BUILD_STAMP = new Date().toISOString();
 
 export class Renderer {
   constructor(canvas, world) {
@@ -69,6 +68,20 @@ export class Renderer {
     };
   }
 
+  isFilterModuleHit(clientX, clientY) {
+    const rect = this.canvas.getBoundingClientRect();
+    const localX = clientX - rect.left;
+    const localY = clientY - rect.top;
+    const moduleRect = this.#filterModuleRectPx();
+    if (!moduleRect) return false;
+
+    return localX >= moduleRect.x
+      && localX <= moduleRect.x + moduleRect.width
+      && localY >= moduleRect.y
+      && localY <= moduleRect.y + moduleRect.height;
+  }
+
+
   render(time, delta) {
     const ctx = this.ctx;
     const w = this.canvas.width / this.dpr;
@@ -87,10 +100,12 @@ export class Renderer {
     this.#drawPlayEffects(ctx, time);
     this.#drawWaterParticles(ctx, delta);
     this.#drawBubbles(ctx);
+    this.#drawFilterModule(ctx, time);
     this.#drawFood(ctx);
+    this.#drawEggs(ctx);
+    this.#drawFxParticles(ctx);
     this.#drawFishSchool(ctx, time);
     this.#drawCachedVignette(ctx);
-    this.#drawRuntimeStamp(ctx);
     ctx.restore();
 
     this.#drawTankFrame(ctx);
@@ -303,6 +318,72 @@ export class Renderer {
     }
   }
 
+
+  #filterModuleRectPx() {
+    const water = this.world.water;
+    if (!water?.filterInstalled) return null;
+
+    const sx = this.tankRect.width / this.world.bounds.width;
+    const sy = this.tankRect.height / this.world.bounds.height;
+    const width = Math.max(16, 28 * sx);
+    const height = Math.max(26, 52 * sy);
+
+    return {
+      x: this.tankRect.x + this.tankRect.width - width - 10,
+      y: this.tankRect.y + this.tankRect.height - height - 10,
+      width,
+      height
+    };
+  }
+
+  #drawFilterModule(ctx, time) {
+    const water = this.world.water;
+    const rect = this.#filterModuleRectPx();
+    if (!water?.filterInstalled || !rect) return;
+
+    const { x, y, width: moduleW, height: moduleH } = rect;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(25, 34, 43, 0.92)';
+    ctx.strokeStyle = 'rgba(180, 220, 240, 0.35)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(x, y, moduleW, moduleH, 5);
+    ctx.fill();
+    ctx.stroke();
+
+    const health = water.filter01 ?? 0;
+    const led = water.filterEnabled
+      ? (health > 0.6 ? 'rgba(96, 255, 140, 0.95)' : (health >= 0.2 ? 'rgba(255, 224, 99, 0.95)' : 'rgba(255, 82, 82, 0.95)'))
+      : 'rgba(170, 180, 188, 0.45)';
+    ctx.fillStyle = led;
+    ctx.beginPath();
+    ctx.arc(x + moduleW * 0.5, y + 8, 3.2, 0, TAU);
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(145, 205, 236, 0.32)';
+    ctx.beginPath();
+    ctx.moveTo(x + moduleW * 0.28, y + moduleH * 0.28);
+    ctx.lineTo(x + moduleW * 0.28, y + moduleH * 0.84);
+    ctx.moveTo(x + moduleW * 0.72, y + moduleH * 0.28);
+    ctx.lineTo(x + moduleW * 0.72, y + moduleH * 0.84);
+    ctx.stroke();
+
+    if ((water.effectiveFilter01 ?? 0) > 0) {
+      const bubbleCount = this.quality === 'high' ? 4 : 2;
+      for (let i = 0; i < bubbleCount; i += 1) {
+        const bubbleY = y + moduleH * 0.88 - ((time * 0.05 + i * 8) % (moduleH * 0.75));
+        const bubbleX = x - 4 - Math.sin(time * 0.004 + i * 1.3) * 2;
+        ctx.beginPath();
+        ctx.fillStyle = 'rgba(188, 234, 255, 0.33)';
+        ctx.arc(bubbleX, bubbleY, 1.4 + (i % 2) * 0.4, 0, TAU);
+        ctx.fill();
+      }
+    }
+
+    ctx.restore();
+  }
+
   #drawFood(ctx) {
     const sx = this.tankRect.width / this.world.bounds.width;
     const sy = this.tankRect.height / this.world.bounds.height;
@@ -320,6 +401,46 @@ export class Renderer {
       ctx.beginPath();
       ctx.fillStyle = 'rgba(221, 255, 226, 0.52)';
       ctx.arc(x - radius * 0.2, y - radius * 0.2, radius * 0.45, 0, TAU);
+      ctx.fill();
+    }
+  }
+
+
+  #drawEggs(ctx) {
+    const sx = this.tankRect.width / this.world.bounds.width;
+    const sy = this.tankRect.height / this.world.bounds.height;
+
+    for (const egg of this.world.eggs ?? []) {
+      const x = this.tankRect.x + egg.x * sx;
+      const y = this.tankRect.y + egg.y * sy;
+      const r = 2.2;
+
+      ctx.beginPath();
+      ctx.fillStyle = 'rgba(245, 243, 233, 0.95)';
+      ctx.ellipse(x, y, r, r * 0.82, 0, 0, TAU);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.58)';
+      ctx.arc(x - r * 0.3, y - r * 0.2, r * 0.28, 0, TAU);
+      ctx.fill();
+    }
+  }
+
+  #drawFxParticles(ctx) {
+    const sx = this.tankRect.width / this.world.bounds.width;
+    const sy = this.tankRect.height / this.world.bounds.height;
+
+    for (const p of this.world.fxParticles ?? []) {
+      if (p.kind !== 'MATING_BUBBLE') continue;
+      const life01 = Math.max(0, Math.min(1, p.ttlSec / Math.max(0.001, p.lifeSec ?? 0.8)));
+      const alpha = 0.65 * life01;
+      const x = this.tankRect.x + p.x * sx;
+      const y = this.tankRect.y + p.y * sy;
+
+      ctx.beginPath();
+      ctx.fillStyle = `rgba(221, 246, 255, ${alpha})`;
+      ctx.arc(x, y, p.radius, 0, TAU);
       ctx.fill();
     }
   }
@@ -343,8 +464,9 @@ export class Renderer {
       ? fish.getRenderParams()
       : { radius: fish.size, bodyLength: fish.size * 1.32, bodyHeight: fish.size * 0.73, tailWagAmp: fish.size * 0.13, eyeScale: 1, saturationMult: 1, lightnessMult: 1 };
 
-    const bodyLength = rp.bodyLength;
-    const bodyHeight = rp.bodyHeight;
+    const pregnancySwell = fish.pregnancySwell01?.(this.world.simTimeSec) ?? 0;
+    const bodyLength = rp.bodyLength * (1 + pregnancySwell * 0.35);
+    const bodyHeight = rp.bodyHeight * (1 + pregnancySwell);
     const isDead = fish.lifeState === 'DEAD';
     const isSkeleton = fish.lifeState === 'SKELETON';
     const tailWag = isDead || isSkeleton ? 0 : Math.sin(time * 0.004 + position.x * 0.008) * rp.tailWagAmp;
@@ -366,6 +488,18 @@ export class Renderer {
 
     ctx.fillStyle = isSkeleton ? 'hsl(36deg 8% 72%)' : (isDead ? 'hsl(0deg 0% 56%)' : `hsl(${fish.colorHue + tint}deg ${sat}% ${light}%)`);
     ctx.fill(bodyPath);
+
+    const matingAnim = fish.matingAnim;
+    if (matingAnim && fish.lifeState === 'ALIVE') {
+      const progress = Math.max(0, Math.min(1, (this.world.simTimeSec - matingAnim.startSec) / Math.max(0.001, matingAnim.durationSec ?? 1.1)));
+      const glowAlpha = 0.18 * Math.sin(progress * Math.PI);
+      if (glowAlpha > 0.001) {
+        ctx.beginPath();
+        ctx.fillStyle = `rgba(214, 241, 255, ${glowAlpha})`;
+        ctx.ellipse(0, 0, bodyLength * 0.62, bodyHeight * 0.62, 0, 0, TAU);
+        ctx.fill();
+      }
+    }
 
     if (fish.id === this.world.selectedFishId) {
       ctx.strokeStyle = 'rgba(152, 230, 255, 0.8)';
@@ -443,13 +577,6 @@ export class Renderer {
     ctx.drawImage(this.vignetteCanvas, x, y);
   }
 
-  #drawRuntimeStamp(ctx) {
-    const { x, y } = this.tankRect;
-    ctx.font = '600 11px Inter, Segoe UI, sans-serif';
-    ctx.fillStyle = 'rgba(230, 245, 255, 0.76)';
-    ctx.fillText('RENDERER: CLEAN_BASE v1', x + 10, y + 18);
-    ctx.fillText(`BUILD: ${BUILD_STAMP}`, x + 10, y + 34);
-  }
 
   #drawDebugBounds(ctx) {
     const { x, y, width, height } = this.tankRect;
