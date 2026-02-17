@@ -133,6 +133,7 @@ export class Fish {
     this.waterPenalty01 = 0;
     this.hungerState = 'FED';
     this.lifeState = 'ALIVE';
+    this.deathReason = null;
     this.deadAtSec = null;
     this.skeletonAtSec = null;
     this.corpseRemoved = false;
@@ -205,7 +206,7 @@ export class Fish {
       this.energy01 = 0;
       this.hunger01 = 1;
       this.wellbeing01 = 0;
-      this.hungerState = 'STARVING';
+      this.hungerState = 'DEAD';
       this.matingAnim = null;
       return;
     }
@@ -229,8 +230,10 @@ export class Fish {
     else if (this.hunger01 >= HUNGRY_THRESHOLD) this.hungerState = 'HUNGRY';
     else this.hungerState = 'FED';
 
-    if (this.energy01 <= 0) {
+    if (this.energy01 <= 0 && this.lifeState === 'ALIVE') {
       this.lifeState = 'DEAD';
+      this.deathReason = 'STARVATION';
+      this.hungerState = 'DEAD';
       this.currentSpeed = 0;
       this.behavior = { mode: 'deadSink', targetFoodId: null, speedBoost: 1 };
     }
@@ -536,6 +539,8 @@ export class Fish {
     // Natural death by lifespan (simple baseline; later we can switch to probabilistic old-age death).
     if (this.lifeState === 'ALIVE' && ageSec >= this.lifespanSec) {
       this.lifeState = 'DEAD';
+      this.deathReason = 'OLD_AGE';
+      this.hungerState = 'DEAD';
       this.currentSpeed = 0;
       this.behavior = { mode: 'deadSink', targetFoodId: null, speedBoost: 1 };
     }

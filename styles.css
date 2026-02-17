@@ -342,6 +342,11 @@ input[type='range'] {
   font-size: 0.78rem;
 }
 
+
+.fish-row.fishRow--dead {
+  opacity: 0.45;
+}
+
 .fish-row.selected {
   border-color: rgba(140, 220, 255, 0.82);
   background: rgba(56, 117, 167, 0.35);

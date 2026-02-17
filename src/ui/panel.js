@@ -301,7 +301,12 @@ export class Panel {
     const previousList = this.fishInspector.querySelector('.fish-list');
     const previousScrollTop = previousList?.scrollTop ?? 0;
 
-    const sorted = [...fishList].sort((a, b) => a.id - b.id);
+    const sorted = [...fishList].sort((a, b) => {
+      const aDead = a.lifeState !== 'ALIVE' ? 1 : 0;
+      const bDead = b.lifeState !== 'ALIVE' ? 1 : 0;
+      if (aDead !== bDead) return aDead - bDead;
+      return a.id - b.id;
+    });
 
     const selectedFish = sorted.find((fish) => fish.id === selectedFishId) ?? null;
     if ((selectedFish?.id ?? null) !== this.currentInspectorSelectedFishId) {
@@ -313,7 +318,7 @@ export class Panel {
     const selectedWellbeingPct = selectedFish ? Math.round((selectedFish.wellbeing01 ?? 0) * 100) : -1;
     const selectedGrowthPct = selectedFish ? Math.round((selectedFish.growth01 ?? 0) * 100) : -1;
     const selectedHistorySnapshot = selectedFish
-      ? `${selectedFish.history?.mealsEaten ?? 0}|${selectedFish.history?.mateCount ?? 0}|${selectedFish.history?.childrenIds?.length ?? 0}|${selectedFish.history?.deathSimTimeSec ?? ''}|${selectedFish.repro?.state ?? ''}`
+      ? `${selectedFish.history?.mealsEaten ?? 0}|${selectedFish.history?.mateCount ?? 0}|${selectedFish.history?.childrenIds?.length ?? 0}|${selectedFish.history?.deathSimTimeSec ?? ''}|${selectedFish.repro?.state ?? ''}|${selectedFish.deathReason ?? ''}`
       : 'none';
 
     const signature = sorted
@@ -333,13 +338,14 @@ export class Panel {
     const listHtml = sorted
       .map((fish) => {
         const selectedClass = fish.id === selectedFishId ? ' selected' : '';
+        const deadClass = fish.lifeState !== 'ALIVE' ? ' fishRow--dead' : '';
         const stageLabel = typeof fish.lifeStageLabel === 'function' ? fish.lifeStageLabel() : (fish.lifeStage ?? '');
         const state = `${stageLabel} · ${fish.hungerState}`;
         const liveName = fish.name?.trim() || '';
         const draftName = this.nameDraftByFishId.get(fish.id) ?? liveName;
         const rawLabel = draftName || 'Unnamed';
         const label = this.#escapeHtml(rawLabel);
-        return `<button type="button" class="fish-row${selectedClass}" data-fish-id="${fish.id}">${label} · ${fish.sex} · ${state}</button>`;
+        return `<button type="button" class="fish-row${selectedClass}${deadClass}" data-fish-id="${fish.id}">${label} · ${fish.sex} · ${state}</button>`;
       })
       .join('');
 
@@ -408,6 +414,7 @@ export class Panel {
       <div class="stat-row"><span>Father</span><strong>${this.#escapeHtml(fatherValue)}</strong></div>
       <div class="stat-row"><span>Born in aquarium</span><strong>${history.bornInAquarium ? 'Yes' : 'No'}</strong></div>
       <div class="stat-row"><span>Life duration</span><strong>${lifetimeValue}</strong></div>
+      <div class="stat-row"><span>Died</span><strong>${this.#deathReasonLabel(fish)}</strong></div>
       <div class="stat-row"><span>Meals eaten</span><strong>${Math.max(0, Math.floor(history.mealsEaten ?? 0))}</strong></div>
       <div class="stat-row"><span>Times mated</span><strong>${Math.max(0, Math.floor(history.mateCount ?? 0))}</strong></div>
       <div class="stat-row"><span>Children</span><strong>${this.#escapeHtml(childrenSummary)}</strong></div>
@@ -435,6 +442,14 @@ export class Panel {
     const fish = numericFish ?? null;
     const resolvedName = fish?.name?.trim();
     return resolvedName || String(id);
+  }
+
+
+  #deathReasonLabel(fish) {
+    if (!fish || fish.lifeState !== 'DEAD') return '—';
+    if (fish.deathReason === 'OLD_AGE') return 'Old age';
+    if (fish.deathReason === 'STARVATION') return 'Starvation';
+    return '—';
   }
 
   #formatMMSS(seconds) {
