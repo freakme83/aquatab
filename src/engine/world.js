@@ -169,6 +169,7 @@ export class World {
     this.playSessions = [];
     this.matePairNextTryAt = new Map();
     this.groundAlgae = [];
+    this.fxParticles = [];
 
     // Global environment state (will grow over time).
     this.water = this.#createInitialWaterState();
@@ -421,6 +422,21 @@ export class World {
     return this.food;
   }
 
+  spawnMatingBubbleBurst(x, y) {
+    for (let i = 0; i < 2; i += 1) {
+      this.fxParticles.push({
+        kind: 'MATING_BUBBLE',
+        x: clamp(x + rand(-4, 4), 0, this.bounds.width),
+        y: clamp(y + rand(-4, 4), 0, this.#swimHeight()),
+        vx: rand(-2.2, 2.2),
+        vy: rand(-12, -8),
+        radius: rand(1.2, 2.0),
+        lifeSec: 0.8,
+        ttlSec: 0.8
+      });
+    }
+  }
+
   selectFish(fishId) {
     const found = this.fish.find((f) => f.id === fishId);
     this.selectedFishId = found ? found.id : null;
@@ -519,6 +535,7 @@ export class World {
     this.#updateFood(delta);
     this.#updateEggs(delta);
     this.#updateWaterHygiene(delta);
+    this.#updateFxParticles(delta);
     this.#updateBubbles(delta);
   }
 
@@ -876,6 +893,19 @@ export class World {
     female.repro.layTargetY = null;
 
     male.repro.cooldownUntilSec = nowSec + randRange(MATE_FATHER_COOLDOWN_SEC, 120, 240);
+
+    female.matingAnim = {
+      startSec: nowSec,
+      durationSec: 1.1,
+      partnerId: male.id,
+      bubbleBurstDone: false
+    };
+    male.matingAnim = {
+      startSec: nowSec,
+      durationSec: 1.1,
+      partnerId: female.id,
+      bubbleBurstDone: false
+    };
   }
 
   #layEggClutch(female, nowSec) {
@@ -989,6 +1019,18 @@ export class World {
     }
   }
 
+
+  #updateFxParticles(dt) {
+    if (!Number.isFinite(dt) || dt <= 0) return;
+
+    for (let i = this.fxParticles.length - 1; i >= 0; i -= 1) {
+      const p = this.fxParticles[i];
+      p.ttlSec -= dt;
+      p.x = clamp(p.x + p.vx * dt, 0, this.bounds.width);
+      p.y = clamp(p.y + p.vy * dt, 0, this.#swimHeight());
+      if (p.ttlSec <= 0) this.fxParticles.splice(i, 1);
+    }
+  }
 
   #updateEggs(dt) {
     if (!Number.isFinite(dt) || dt <= 0) return;

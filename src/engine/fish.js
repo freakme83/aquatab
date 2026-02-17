@@ -161,6 +161,8 @@ export class Fish {
       layingStartedAtSec: null
     };
 
+    this.matingAnim = null;
+
     // Cached reference for pursuit updates (set during decideBehavior).
     this._worldRef = null;
   }
@@ -193,6 +195,7 @@ export class Fish {
       this.hunger01 = 1;
       this.wellbeing01 = 0;
       this.hungerState = 'STARVING';
+      this.matingAnim = null;
       return;
     }
 
@@ -391,8 +394,46 @@ export class Fish {
       seek.y *= SEEK_FORCE_MULTIPLIER;
     }
     const avoidance = this.#wallAvoidanceVector();
-    const desiredX = seek.x + avoidance.x;
-    const desiredY = seek.y + avoidance.y;
+    let desiredX = seek.x + avoidance.x;
+    let desiredY = seek.y + avoidance.y;
+
+    const nowSec = this._worldRef?.simTimeSec ?? 0;
+    if (this.matingAnim && this.lifeState === 'ALIVE') {
+      const progress = clamp01((nowSec - this.matingAnim.startSec) / Math.max(0.001, this.matingAnim.durationSec ?? 1.1));
+      if (progress >= 1) {
+        this.matingAnim = null;
+      } else {
+        const partner = this._worldRef?.fish?.find((f) => f.id === this.matingAnim.partnerId && f.lifeState === 'ALIVE');
+        if (!partner) {
+          this.matingAnim = null;
+        } else {
+          const dx = partner.position.x - this.position.x;
+          const dy = partner.position.y - this.position.y;
+          const mag = Math.hypot(dx, dy);
+          if (mag > 0.0001) {
+            const toPartner = { x: dx / mag, y: dy / mag };
+            const tangent = { x: -toPartner.y, y: toPartner.x };
+            const ampPx = 5 * Math.sin(progress * Math.PI);
+            let extraX = tangent.x * (ampPx * 0.8);
+            let extraY = tangent.y * (ampPx * 0.8);
+            const extraMag = Math.hypot(extraX, extraY);
+            const maxExtra = Math.max(0.0001, this.#baseSpeed() * 0.15);
+            if (extraMag > maxExtra) {
+              const scale = maxExtra / extraMag;
+              extraX *= scale;
+              extraY *= scale;
+            }
+            desiredX += extraX;
+            desiredY += extraY;
+          }
+
+          if (!this.matingAnim.bubbleBurstDone && progress >= 0.35) {
+            this._worldRef?.spawnMatingBubbleBurst?.(this.position.x, this.position.y);
+            this.matingAnim.bubbleBurstDone = true;
+          }
+        }
+      }
+    }
 
     const rawDesiredAngle = Math.atan2(desiredY, desiredX);
     this.facing = resolveFacingByCos(rawDesiredAngle, this.facing);

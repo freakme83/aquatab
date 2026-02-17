@@ -103,6 +103,7 @@ export class Renderer {
     this.#drawFilterModule(ctx, time);
     this.#drawFood(ctx);
     this.#drawEggs(ctx);
+    this.#drawFxParticles(ctx);
     this.#drawFishSchool(ctx, time);
     this.#drawCachedVignette(ctx);
     ctx.restore();
@@ -426,6 +427,24 @@ export class Renderer {
     }
   }
 
+  #drawFxParticles(ctx) {
+    const sx = this.tankRect.width / this.world.bounds.width;
+    const sy = this.tankRect.height / this.world.bounds.height;
+
+    for (const p of this.world.fxParticles ?? []) {
+      if (p.kind !== 'MATING_BUBBLE') continue;
+      const life01 = Math.max(0, Math.min(1, p.ttlSec / Math.max(0.001, p.lifeSec ?? 0.8)));
+      const alpha = 0.65 * life01;
+      const x = this.tankRect.x + p.x * sx;
+      const y = this.tankRect.y + p.y * sy;
+
+      ctx.beginPath();
+      ctx.fillStyle = `rgba(221, 246, 255, ${alpha})`;
+      ctx.arc(x, y, p.radius, 0, TAU);
+      ctx.fill();
+    }
+  }
+
   #drawFishSchool(ctx, time) {
     const sx = this.tankRect.width / this.world.bounds.width;
     const sy = this.tankRect.height / this.world.bounds.height;
@@ -469,6 +488,18 @@ export class Renderer {
 
     ctx.fillStyle = isSkeleton ? 'hsl(36deg 8% 72%)' : (isDead ? 'hsl(0deg 0% 56%)' : `hsl(${fish.colorHue + tint}deg ${sat}% ${light}%)`);
     ctx.fill(bodyPath);
+
+    const matingAnim = fish.matingAnim;
+    if (matingAnim && fish.lifeState === 'ALIVE') {
+      const progress = Math.max(0, Math.min(1, (this.world.simTimeSec - matingAnim.startSec) / Math.max(0.001, matingAnim.durationSec ?? 1.1)));
+      const glowAlpha = 0.18 * Math.sin(progress * Math.PI);
+      if (glowAlpha > 0.001) {
+        ctx.beginPath();
+        ctx.fillStyle = `rgba(214, 241, 255, ${glowAlpha})`;
+        ctx.ellipse(0, 0, bodyLength * 0.62, bodyHeight * 0.62, 0, 0, TAU);
+        ctx.fill();
+      }
+    }
 
     if (fish.id === this.world.selectedFishId) {
       ctx.strokeStyle = 'rgba(152, 230, 255, 0.8)';
