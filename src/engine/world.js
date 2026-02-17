@@ -60,6 +60,19 @@ export class World {
     this.food = [];
     // Forward-compatible containers for new systems.
     this.poop = [];
+    // egg structure:
+    // {
+    //   id,
+    //   x,
+    //   y,
+    //   laidAtSec,
+    //   hatchAtSec,
+    //   motherId,
+    //   fatherId,
+    //   motherTraits,
+    //   fatherTraits,
+    //   state // INCUBATING | HATCHED | FAILED
+    // }
     this.eggs = [];
     this.bubbles = [];
     this.nextFoodId = 1;
