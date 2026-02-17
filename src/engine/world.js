@@ -9,6 +9,7 @@ import { CONFIG } from '../config.js';
 const MAX_TILT = CONFIG.world.maxTiltRad;
 const rand = (min, max) => min + Math.random() * (max - min);
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+const clamp01 = (v) => clamp(v, 0, 1);
 const FOOD_DEFAULT_AMOUNT = CONFIG.world.food.defaultAmount;
 const FOOD_DEFAULT_TTL = CONFIG.world.food.defaultTtlSec;
 const FOOD_FALL_ACCEL = CONFIG.world.food.fallAccel;
@@ -18,6 +19,8 @@ const AGE_CONFIG = CONFIG.fish.age;
 const INITIAL_MAX_AGE_SEC = Math.max(0, AGE_CONFIG.INITIAL_MAX_AGE_SEC ?? 1200);
 const GROWTH_CONFIG = CONFIG.fish.growth;
 const WATER_CONFIG = CONFIG.world.water;
+const REPRO_CONFIG = CONFIG.reproduction ?? {};
+const MATE_MIN_HYGIENE = clamp01(REPRO_CONFIG.MATE_MIN_HYGIENE ?? 0.6);
 const WATER_INITIAL_HYGIENE01 = 1;
 const WATER_INITIAL_DIRT01 = 0;
 const WATER_REFERENCE_FISH_COUNT = Math.max(1, WATER_CONFIG.referenceFishCount ?? 20);
@@ -72,7 +75,9 @@ export class World {
     //   fatherId,
     //   motherTraits,
     //   fatherTraits,
-    //   state // INCUBATING | HATCHED | FAILED
+    //   state,         // INCUBATING | HATCHED | FAILED
+    //   canBeEaten,    // boolean (FUTURE HOOK: some species may eat eggs)
+    //   nutrition      // number  (FUTURE HOOK: hunger/wellbeing effects)
     // }
     this.eggs = [];
     this.bubbles = [];
@@ -158,7 +163,7 @@ export class World {
     return true;
   }
 
-  #createFish({ sex, initialAgeSec = 0, hungryStart = false } = {}) {
+  #createFish({ sex, initialAgeSec = 0, hungryStart = false, position = null, traits = null } = {}) {
     const sizeRange = GROWTH_CONFIG.sizeFactorRange;
     const growthRange = GROWTH_CONFIG.growthRateRange;
 
@@ -174,12 +179,20 @@ export class World {
     const stageShiftBabySec = rand(-stageJitter, stageJitter);
     const stageShiftJuvenileSec = rand(-stageJitter, stageJitter);
 
-    let spawn = this.#randomSpawn(birthRadius);
+    const explicitPosition = position && Number.isFinite(position.x) && Number.isFinite(position.y);
+    let spawn = explicitPosition
+      ? { x: position.x, y: position.y, size: birthRadius }
+      : this.#randomSpawn(birthRadius);
 
-    for (let i = 0; i < 20; i += 1) {
-      if (this.#isSpawnClear(spawn, birthRadius)) break;
-      spawn = this.#randomSpawn(birthRadius);
+    if (!explicitPosition) {
+      for (let i = 0; i < 20; i += 1) {
+        if (this.#isSpawnClear(spawn, birthRadius)) break;
+        spawn = this.#randomSpawn(birthRadius);
+      }
     }
+
+    spawn.x = clamp(spawn.x, 0, this.bounds.width);
+    spawn.y = clamp(spawn.y, 0, this.#swimHeight());
 
     const normalizedInitialAgeSec = Math.min(Math.max(0, initialAgeSec), INITIAL_MAX_AGE_SEC);
 
@@ -193,7 +206,8 @@ export class World {
       stageShiftJuvenileSec,
       position: { x: spawn.x, y: spawn.y },
       headingAngle: this.#randomHeading(),
-      speedFactor: rand(0.42, 0.68)
+      speedFactor: rand(0.42, 0.68),
+      traits: traits ?? undefined
     });
 
     if (sex === 'female' || sex === 'male') {
@@ -330,6 +344,11 @@ export class World {
     return consumed;
   }
 
+  // Future hook: edible target discovery.
+  // For now, fish can only eat food. Later we may include eggs for certain species/traits.
+  getEdibleTargetsForFish(fish) {
+    return this.food;
+  }
 
   selectFish(fishId) {
     const found = this.fish.find((f) => f.id === fishId);
@@ -426,6 +445,7 @@ export class World {
 
     this.#updateFishLifeState();
     this.#updateFood(delta);
+    this.#updateEggs(delta);
     this.#updateWaterHygiene(delta);
     this.#updateBubbles(delta);
   }
@@ -771,6 +791,44 @@ export class World {
         this.expiredFoodSinceLastWaterUpdate += 1;
         this.emit('foodExpired', { foodId: item.id });
       }
+    }
+  }
+
+
+  #updateEggs(dt) {
+    if (!Number.isFinite(dt) || dt <= 0) return;
+
+    const nowSec = this.simTimeSec;
+    const hygiene01 = clamp01(this.water?.hygiene01 ?? 1);
+
+    for (let i = this.eggs.length - 1; i >= 0; i -= 1) {
+      const egg = this.eggs[i];
+      if (!egg || nowSec < (egg.hatchAtSec ?? Infinity)) continue;
+
+      let hatchChance = 0;
+      if (hygiene01 >= MATE_MIN_HYGIENE) {
+        const t = clamp01((hygiene01 - 0.60) / 0.40);
+        hatchChance = 0.20 + 0.80 * (t * t);
+      }
+
+      const success = Math.random() < hatchChance;
+      if (success) {
+        const spawnX = clamp(Number.isFinite(egg.x) ? egg.x : this.bounds.width * 0.5, 0, this.bounds.width);
+        const spawnY = clamp(Number.isFinite(egg.y) ? egg.y : this.#swimHeight() * 0.5, 0, this.#swimHeight());
+
+        const baby = this.#createFish({
+          initialAgeSec: 0,
+          position: { x: spawnX, y: spawnY },
+          // TODO: replace placeholder with inheritTraits(motherTraits, fatherTraits) in the next step.
+          traits: egg.motherTraits ?? null
+        });
+        this.fish.push(baby);
+        egg.state = 'HATCHED';
+      } else {
+        egg.state = 'FAILED';
+      }
+
+      this.eggs.splice(i, 1);
     }
   }
 
