@@ -158,7 +158,7 @@ export class World {
     return true;
   }
 
-  #createFish({ sex, initialAgeRatio = 0, hungryStart = false } = {}) {
+  #createFish({ sex, initialAgeSec = 0, hungryStart = false } = {}) {
     const sizeRange = GROWTH_CONFIG.sizeFactorRange;
     const growthRange = GROWTH_CONFIG.growthRateRange;
 
@@ -181,14 +181,11 @@ export class World {
       spawn = this.#randomSpawn(birthRadius);
     }
 
-    const initialAgeSec = Math.min(
-      Math.max(0, Math.min(0.8, initialAgeRatio)) * lifespanSec,
-      INITIAL_MAX_AGE_SEC
-    );
+    const normalizedInitialAgeSec = Math.min(Math.max(0, initialAgeSec), INITIAL_MAX_AGE_SEC);
 
     const fish = new Fish(this.bounds, {
       id: this.nextFishId++,
-      spawnTimeSec: this.simTimeSec - initialAgeSec,
+      spawnTimeSec: this.simTimeSec - normalizedInitialAgeSec,
       sizeFactor,
       growthRate: rand(growthRange.min, growthRange.max),
       lifespanSec,
@@ -229,12 +226,12 @@ export class World {
 
     // Start-population constraints:
     // - balanced sex distribution (female majority by 1 when odd)
-    // - random initial ages only in 0%-80% lifespan and capped to INITIAL_MAX_AGE_SEC
+    // - random initial ages sampled in [0, INITIAL_MAX_AGE_SEC]
     // - all fish begin hungry and attempts are made to include a mature female
     for (let i = 0; i < femaleCount; i += 1) {
       fishPool.push(this.#createFish({
         sex: 'female',
-        initialAgeRatio: rand(0, 0.8),
+        initialAgeSec: rand(0, INITIAL_MAX_AGE_SEC),
         hungryStart: true
       }));
     }
@@ -242,16 +239,25 @@ export class World {
     for (let i = 0; i < maleCount; i += 1) {
       fishPool.push(this.#createFish({
         sex: 'male',
-        initialAgeRatio: rand(0, 0.8),
+        initialAgeSec: rand(0, INITIAL_MAX_AGE_SEC),
         hungryStart: true
       }));
     }
 
-    const hasAdultFemale = fishPool.some((fish) => fish.sex === 'female' && (fish.ageSeconds(this.simTimeSec) / fish.lifespanSec) >= 0.6);
+    const hasAdultFemale = fishPool.some((fish) => fish.sex === 'female' && (fish.lifeStage === 'ADULT' || fish.lifeStage === 'OLD'));
     if (!hasAdultFemale) {
       const promotableFemale = fishPool.find((fish) => fish.sex === 'female');
       if (promotableFemale) {
-        const promotedInitialAgeSec = Math.min(promotableFemale.lifespanSec * 0.65, INITIAL_MAX_AGE_SEC);
+        const baseBabyEnd = AGE_CONFIG.stageBaseSec.babyEndSec;
+        const baseJuvenileEnd = AGE_CONFIG.stageBaseSec.juvenileEndSec;
+        const babyEnd = Math.max(30, baseBabyEnd + promotableFemale.stageShiftBabySec);
+        const juvenileEnd = Math.max(babyEnd + 60, baseJuvenileEnd + promotableFemale.stageShiftJuvenileSec);
+        const adultStartAgeSec = juvenileEnd / Math.max(0.001, promotableFemale.growthRate);
+
+        const promotedInitialAgeSec = adultStartAgeSec < INITIAL_MAX_AGE_SEC
+          ? rand(adultStartAgeSec, INITIAL_MAX_AGE_SEC)
+          : rand(0, INITIAL_MAX_AGE_SEC);
+
         promotableFemale.spawnTimeSec = this.simTimeSec - promotedInitialAgeSec;
         promotableFemale.updateLifeCycle(this.simTimeSec);
       }
