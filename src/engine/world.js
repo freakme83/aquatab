@@ -157,6 +157,8 @@ export class World {
     this.nextEggId = 1;
     this.simTimeSec = 0;
     this.selectedFishId = null;
+    this.nameCounts = new Map();
+    this.fishById = new Map();
 
     this.initialFishCount = normalizedInitialFishCount;
     this.foodsConsumedCount = 0;
@@ -287,6 +289,9 @@ export class World {
       fish.sex = sex;
     }
 
+    const desiredName = this.makeUniqueName(name);
+    fish.name = desiredName ?? this.assignDefaultNameForSex(fish.sex);
+
     if (hungryStart) {
       const hungryBaseline = 0.5;
       fish.hunger01 = hungryBaseline;
@@ -295,6 +300,7 @@ export class World {
     }
 
     fish.updateLifeCycle(this.simTimeSec);
+    this.#registerFish(fish);
     return fish;
   }
 
@@ -358,10 +364,79 @@ export class World {
 
     this.#shuffleArray(fishPool);
     this.fish = fishPool;
+    this.#rebuildFishById();
 
     if (!this.fish.some((f) => f.id === this.selectedFishId)) {
       this.selectedFishId = this.fish[0]?.id ?? null;
     }
+  }
+
+
+  toJSON() {
+    return {
+      saveVersion: WORLD_SAVE_VERSION,
+      simTimeSec: Number.isFinite(this.simTimeSec) ? this.simTimeSec : 0,
+      water: serializeWater(this.water),
+      fish: this.fish.map((entry) => entry.toJSON()),
+      eggs: this.eggs.map((entry) => serializeEgg(entry)),
+      food: this.food.map((entry) => serializeFood(entry))
+    };
+  }
+
+  loadFromJSON(data) {
+    const source = normalizeWorldSaveSource(data) ?? {};
+    if (source.saveVersion !== WORLD_SAVE_VERSION) return false;
+
+    const swimHeight = this.#swimHeight();
+    this.simTimeSec = Math.max(0, Number.isFinite(source.simTimeSec) ? source.simTimeSec : 0);
+    this.fish = Array.isArray(source.fish)
+      ? source.fish.map((entry) => Fish.fromJSON(entry, this.bounds))
+      : [];
+
+    for (const fish of this.fish) {
+      fish.position = clampPosition(fish.position, this.bounds, swimHeight);
+      fish.updateLifeCycle(this.simTimeSec);
+    }
+
+    this.eggs = Array.isArray(source.eggs)
+      ? source.eggs.map((entry) => deserializeEgg(entry, this.bounds, swimHeight))
+      : [];
+
+    this.food = Array.isArray(source.food)
+      ? source.food.map((entry) => deserializeFood(entry, this.bounds, swimHeight))
+      : [];
+
+    this.water = deserializeWater(source.water, this.#createInitialWaterState());
+
+    this.nextFishId = Math.max(1, ...this.fish.map((entry) => Math.floor(entry.id || 0) + 1));
+    this.nextFoodId = Math.max(1, ...this.food.map((entry) => Math.floor(entry.id || 0) + 1));
+    this.nextEggId = Math.max(1, ...this.eggs.map((entry) => Math.floor(entry.id || 0) + 1));
+
+    this.#rebuildFishById();
+    if (!this.fish.some((entry) => entry.id === this.selectedFishId)) {
+      this.selectedFishId = this.fish[0]?.id ?? null;
+    }
+
+    this.nameCounts = new Map();
+    for (const fish of this.fish) {
+      const currentName = String(fish.name ?? '').trim();
+      if (currentName) this.nameCounts.set(currentName, Math.max(1, this.nameCounts.get(currentName) ?? 0));
+    }
+
+    this.events = [];
+    this.playSessions = [];
+    this.matePairNextTryAt = new Map();
+    this.expiredFoodSinceLastWaterUpdate = 0;
+    this.filterUnlocked = Boolean(this.water.filterUnlocked || this.filterUnlocked);
+    this.filterUnlockThreshold = Math.max(1, this.initialFishCount * 4);
+
+    return true;
+  }
+
+  static fromJSON(data, { width, height, initialFishCount = 4 } = {}) {
+    const world = new World(width, height, initialFishCount);
+    world.loadFromJSON(data);
+    return world;
   }
 
   resize(width, height) {
@@ -461,7 +536,9 @@ export class World {
   renameFish(fishId, name) {
     const fish = this.fish.find((entry) => entry.id === fishId);
     if (!fish) return false;
-    fish.name = String(name ?? '').trim().slice(0, 24);
+
+    const uniqueName = this.makeUniqueName(name, { excludeFishId: fishId });
+    fish.name = uniqueName ?? this.assignDefaultNameForSex(fish.sex);
     return true;
   }
 
@@ -469,6 +546,7 @@ export class World {
     const index = this.fish.findIndex((entry) => entry.id === fishId && entry.lifeState !== 'ALIVE');
     if (index < 0) return false;
     this.fish.splice(index, 1);
+    this.#unregisterFishById(fishId);
     if (this.selectedFishId === fishId) this.selectedFishId = null;
     return true;
   }
@@ -480,6 +558,7 @@ export class World {
     const fish = this.fish[index];
     fish.corpseRemoved = true;
     this.fish.splice(index, 1);
+    this.#unregisterFishById(fishId);
     if (this.selectedFishId === fishId) this.selectedFishId = null;
     return true;
   }
@@ -504,7 +583,8 @@ export class World {
       this.#registerFish(this.#createFish());
     }
     while (this.fish.length > clamped) {
-      this.fish.pop();
+      const removed = this.fish.pop();
+      if (removed) this.#unregisterFishById(removed.id);
     }
 
     if (!this.fish.some((f) => f.id === this.selectedFishId)) {
@@ -997,6 +1077,7 @@ export class World {
       const fish = this.fish[i];
       if (fish.lifeState === 'DEAD') {
         if (fish.deadAtSec == null) fish.deadAtSec = this.simTimeSec;
+        if (fish.history && fish.history.deathSimTimeSec == null) fish.history.deathSimTimeSec = this.simTimeSec;
       }
     }
   }
