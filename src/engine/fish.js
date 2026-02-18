@@ -722,6 +722,10 @@ export class Fish {
     return Math.sin(progress * Math.PI);
   }
 
+  isHovering(nowSec) {
+    return this.#isHoverActive(nowSec);
+  }
+
   headPoint() {
     const bodyLength = this.size * 1.32;
     const headOffset = bodyLength * 0.22;
