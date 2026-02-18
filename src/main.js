@@ -8,6 +8,9 @@ import { Renderer } from './render/renderer.js';
 import { Panel } from './ui/panel.js';
 
 const DEFAULT_INITIAL_FISH_COUNT = 4;
+const SAVE_STORAGE_KEY = 'aquatab_save_v1';
+const SAVE_VERSION = 1;
+const AUTOSAVE_INTERVAL_MS = 10_000;
 
 const startScreen = document.getElementById('startScreen');
 const appRoot = document.getElementById('appRoot');
@@ -24,6 +27,51 @@ let renderer = null;
 let panel = null;
 let started = false;
 let canvasClickHandler = null;
+
+let autosaveIntervalId = null;
+
+function loadSavedWorldSnapshot() {
+  try {
+    const raw = localStorage.getItem(SAVE_STORAGE_KEY);
+    if (!raw) return null;
+    const payload = JSON.parse(raw);
+    if (payload?.saveVersion !== SAVE_VERSION) return null;
+    if (!payload.worldState || payload.worldState.saveVersion !== SAVE_VERSION) return null;
+    return payload.worldState;
+  } catch {
+    return null;
+  }
+}
+
+function saveWorldSnapshot() {
+  if (!started || !world) return false;
+
+  try {
+    const payload = {
+      saveVersion: SAVE_VERSION,
+      savedAtEpochMs: Date.now(),
+      worldState: world.toJSON()
+    };
+    localStorage.setItem(SAVE_STORAGE_KEY, JSON.stringify(payload));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function startAutosave() {
+  if (autosaveIntervalId != null) return;
+  autosaveIntervalId = setInterval(() => {
+    saveWorldSnapshot();
+  }, AUTOSAVE_INTERVAL_MS);
+}
+
+function stopAutosave() {
+  if (autosaveIntervalId == null) return;
+  clearInterval(autosaveIntervalId);
+  autosaveIntervalId = null;
+}
+
 
 function measureCanvasSize() {
   const rect = canvas.getBoundingClientRect();
@@ -237,6 +285,7 @@ function stopBackgroundSim() {
 function syncDriversToVisibility() {
   if (!started) return;
   if (document.visibilityState === 'hidden') {
+    saveWorldSnapshot();
     stopRaf();
     hideCorpseAction();
     stopBackgroundSim();
@@ -249,13 +298,18 @@ function syncDriversToVisibility() {
 }
 
 document.addEventListener('visibilitychange', syncDriversToVisibility);
+window.addEventListener('beforeunload', () => {
+  saveWorldSnapshot();
+});
 
 
 function restartToStartScreen() {
   if (!started) return;
 
+  saveWorldSnapshot();
   stopRaf();
   stopBackgroundSim();
+  stopAutosave();
   hideCorpseAction();
 
   started = false;
@@ -281,7 +335,16 @@ function startSimulation() {
   startScreen.hidden = true;
 
   const initialSize = measureCanvasSize();
-  world = new World(initialSize.width, initialSize.height, initialFishCount);
+  const savedWorldState = loadSavedWorldSnapshot();
+  if (savedWorldState?.saveVersion === SAVE_VERSION) {
+    world = World.fromJSON(savedWorldState, {
+      width: initialSize.width,
+      height: initialSize.height,
+      initialFishCount
+    });
+  } else {
+    world = new World(initialSize.width, initialSize.height, initialFishCount);
+  }
   renderer = new Renderer(canvas, world);
 
   const panelHandlers = {
@@ -339,6 +402,7 @@ function startSimulation() {
   requestAnimationFrame(resize);
 
   started = true;
+  startAutosave();
   syncDriversToVisibility();
 }
 
