@@ -141,7 +141,7 @@ export const CONFIG = Object.freeze({
       wallMarginPx: 20,
       driftAmpPx: 2.5,
       driftRate: 1.2,
-      speedFactor: 0.15
+      speedFactor: 0.08
     },
 
     // Life cycle & growth (age-driven growth + small per-fish randomness).

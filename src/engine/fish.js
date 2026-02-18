@@ -578,7 +578,14 @@ export class Fish {
     const speedBoost = (this.behavior.mode === 'seekFood' || this.behavior.mode === 'playChase' || this.behavior.mode === 'playEvade' || this.behavior.mode === 'seekLayTarget') ? this.behavior.speedBoost : 1;
     const normalDesiredSpeed = this.#baseSpeed() * cruiseFactor * speedBoost;
     const desiredSpeed = isHovering ? normalDesiredSpeed * HOVER_SPEED_FACTOR : normalDesiredSpeed;
-    this.currentSpeed += (desiredSpeed - this.currentSpeed) * Math.min(1, dt * 0.8);
+    const speedResponse = isHovering ? Math.min(1, dt * 5.2) : Math.min(1, dt * 0.8);
+    this.currentSpeed += (desiredSpeed - this.currentSpeed) * speedResponse;
+
+    if (isHovering) {
+      // Keep hover visually close to "asılı" by hard-capping per-tick speed.
+      const hoverSpeedCap = this.#baseSpeed() * HOVER_SPEED_FACTOR;
+      this.currentSpeed = Math.min(this.currentSpeed, hoverSpeedCap);
+    }
 
     const prevX = this.position.x;
     const prevY = this.position.y;
