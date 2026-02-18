@@ -219,22 +219,6 @@ export class Fish {
 
     this.matingAnim = null;
 
-    this.hoverUntilSec = 0;
-    this.nextHoverCheckAtSec = 0;
-    this.hoverAnchor = null;
-    this.hoverPhase = rand(0, TAU);
-
-    this.history = {
-      motherId: options.history?.motherId ?? null,
-      fatherId: options.history?.fatherId ?? null,
-      childrenIds: Array.isArray(options.history?.childrenIds) ? [...options.history.childrenIds] : [],
-      bornInAquarium: Boolean(options.history?.bornInAquarium ?? false),
-      birthSimTimeSec: Number.isFinite(options.history?.birthSimTimeSec) ? options.history.birthSimTimeSec : 0,
-      deathSimTimeSec: Number.isFinite(options.history?.deathSimTimeSec) ? options.history.deathSimTimeSec : null,
-      mealsEaten: Math.max(0, Math.floor(options.history?.mealsEaten ?? 0)),
-      mateCount: Math.max(0, Math.floor(options.history?.mateCount ?? 0))
-    };
-
     // Cached reference for pursuit updates (set during decideBehavior).
     this._worldRef = null;
   }
@@ -310,7 +294,7 @@ export class Fish {
       this.energy01 = 0;
       this.hunger01 = 1;
       this.wellbeing01 = 0;
-      this.hungerState = 'DEAD';
+      this.hungerState = 'STARVING';
       this.matingAnim = null;
       return;
     }
@@ -437,6 +421,16 @@ export class Fish {
       return;
     }
 
+    if (this.repro?.state === 'LAYING' && Number.isFinite(this.repro.layTargetX) && Number.isFinite(this.repro.layTargetY)) {
+      this.behavior = {
+        mode: 'seekLayTarget',
+        targetFoodId: null,
+        speedBoost: 1
+      };
+      this.target = { x: this.repro.layTargetX, y: this.repro.layTargetY };
+      return;
+    }
+
     if (this.isPlaying(world?.simTimeSec ?? 0)) {
       const isRunner = this.playState.role === 'RUNNER';
       this.behavior = {
@@ -529,6 +523,7 @@ export class Fish {
     let desiredX = seek.x + avoidance.x;
     let desiredY = seek.y + avoidance.y;
 
+    const nowSec = this._worldRef?.simTimeSec ?? 0;
     if (this.matingAnim && this.lifeState === 'ALIVE') {
       const progress = clamp01((nowSec - this.matingAnim.startSec) / Math.max(0.001, this.matingAnim.durationSec ?? 1.1));
       if (progress >= 1) {
@@ -576,16 +571,8 @@ export class Fish {
     this.cruisePhase = normalizeAngle(this.cruisePhase + dt * this.cruiseRate);
     const cruiseFactor = 1 + Math.sin(this.cruisePhase) * 0.18;
     const speedBoost = (this.behavior.mode === 'seekFood' || this.behavior.mode === 'playChase' || this.behavior.mode === 'playEvade' || this.behavior.mode === 'seekLayTarget') ? this.behavior.speedBoost : 1;
-    const normalDesiredSpeed = this.#baseSpeed() * cruiseFactor * speedBoost;
-    const desiredSpeed = isHovering ? normalDesiredSpeed * HOVER_SPEED_FACTOR : normalDesiredSpeed;
-    const speedResponse = isHovering ? Math.min(1, dt * 5.2) : Math.min(1, dt * 0.8);
-    this.currentSpeed += (desiredSpeed - this.currentSpeed) * speedResponse;
-
-    if (isHovering) {
-      // Keep hover visually close to "asılı" by hard-capping per-tick speed.
-      const hoverSpeedCap = this.#baseSpeed() * HOVER_SPEED_FACTOR;
-      this.currentSpeed = Math.min(this.currentSpeed, hoverSpeedCap);
-    }
+    const desiredSpeed = this.#baseSpeed() * cruiseFactor * speedBoost;
+    this.currentSpeed += (desiredSpeed - this.currentSpeed) * Math.min(1, dt * 0.8);
 
     const prevX = this.position.x;
     const prevY = this.position.y;

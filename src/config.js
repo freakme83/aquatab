@@ -6,40 +6,6 @@
  */
 
 export const CONFIG = Object.freeze({
-  FEMALE_NAME_POOL: [
-    'Alice', 'Amelia', 'Aria', 'Ava', 'Bella', 'Chloe', 'Clara', 'Daisy', 'Eleanor', 'Ella',
-    'Emily', 'Emma', 'Eva', 'Grace', 'Hannah', 'Harper', 'Hazel', 'Ivy', 'Isla', 'Lily',
-    'Lucy', 'Maya', 'Mia', 'Nora', 'Olivia', 'Ruby', 'Scarlett', 'Sofia', 'Sophia', 'Zoe',
-
-    'Camila', 'Isabella', 'Valentina', 'Lucia', 'Gabriela', 'Mariana', 'Daniela', 'Ana', 'Bianca', 'Renata',
-    'Elena', 'Chiara', 'Giulia', 'Francesca', 'Ines', 'Amina', 'Layla', 'Yara', 'Leila', 'Zara',
-
-    'Freya', 'Astrid', 'Ingrid', 'Sigrid', 'Anouk', 'Maelle', 'Noemi', 'Klara', 'Petra', 'Anastasia',
-    'Mila', 'Nina', 'Katarina', 'Alina', 'Ivana', 'Daria', 'Anya', 'Sakura', 'Yuki', 'Mei',
-
-    'Aisha', 'Fatima', 'Samira', 'Imani', 'Zainab', 'Nadia', 'Soraya', 'Naomi', 'Talia', 'Mira',
-    'Amara', 'Esme', 'Elisa', 'Luna', 'Aurora', 'Selena', 'Rhea', 'Tessa', 'Vera', 'Iris',
-
-    'Kira', 'Lena', 'Mara', 'Helena', 'Alba', 'Celine', 'Rosa', 'Mina', 'Jasmine', 'Allegra'
-  ],
-
-  MALE_NAME_POOL: [
-    'Liam', 'Noah', 'Oliver', 'Elijah', 'James', 'William', 'Benjamin', 'Lucas', 'Henry', 'Alexander',
-    'Jack', 'Leo', 'Theodore', 'Sebastian', 'Daniel', 'Matthew', 'Joseph', 'David', 'Samuel', 'Owen',
-    'Julian', 'Isaac', 'Ethan', 'Caleb', 'Nathan', 'Aaron', 'Miles', 'Wyatt', 'Hudson', 'Ezra',
-
-    'Mateo', 'Diego', 'Santiago', 'Carlos', 'Andres', 'Miguel', 'Gabriel', 'Rafael', 'Javier', 'Emilio',
-    'Marco', 'Luca', 'Giovanni', 'Enzo', 'Alessandro', 'Antonio', 'Stefan', 'Milan', 'Nikola', 'Tomas',
-
-    'Omar', 'Yusuf', 'Hassan', 'Karim', 'Malik', 'Amir', 'Zayd', 'Rami', 'Tariq', 'Samir',
-    'Ibrahim', 'Idris', 'Khalil', 'Zane', 'Kenji', 'Haruto', 'Riku', 'Minho', 'Jin', 'Hiro',
-
-    'Bjorn', 'Erik', 'Magnus', 'Soren', 'Lars', 'Aron', 'Kai', 'Noel', 'Dominik', 'Adrian',
-    'Roman', 'Felix', 'Victor', 'Jonas', 'Hugo', 'Levi', 'Silas', 'Orion', 'Atlas', 'Rowan',
-
-    'Kofi', 'Kwame', 'Zubair', 'Tenzin', 'Arjun', 'Dev', 'Rohan', 'Sahil', 'Iker', 'Thiago'
-  ],
-
   reproduction: {
     REPRO_ENABLED: true,
 
@@ -56,7 +22,7 @@ export const CONFIG = Object.freeze({
     GESTATION_SEC: [300, 360],
     EGG_INCUBATION_SEC: [120, 300],
     MOTHER_COOLDOWN_SEC: [600, 1080],
-    CLUTCH_SIZE: [1, 2],
+    CLUTCH_SIZE: [2, 4],
 
     // Genetics
     TRAIT_MUTATION_PCT: 0.05

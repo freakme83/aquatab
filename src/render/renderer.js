@@ -413,16 +413,22 @@ export class Renderer {
     for (const egg of this.world.eggs ?? []) {
       const x = this.tankRect.x + egg.x * sx;
       const y = this.tankRect.y + egg.y * sy;
-      const r = 2.2;
+      const r = 2.3;
 
       ctx.beginPath();
-      ctx.fillStyle = 'rgba(245, 243, 233, 0.95)';
-      ctx.ellipse(x, y, r, r * 0.82, 0, 0, TAU);
+      ctx.fillStyle = 'rgba(218, 203, 255, 0.92)';
+      ctx.ellipse(x, y, r * 1.08, r * 0.76, 0, 0, TAU);
       ctx.fill();
 
       ctx.beginPath();
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.58)';
-      ctx.arc(x - r * 0.3, y - r * 0.2, r * 0.28, 0, TAU);
+      ctx.strokeStyle = 'rgba(238, 228, 255, 0.9)';
+      ctx.lineWidth = 0.8;
+      ctx.ellipse(x, y, r * 1.08, r * 0.76, 0, 0, TAU);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.62)';
+      ctx.arc(x - r * 0.34, y - r * 0.18, r * 0.24, 0, TAU);
       ctx.fill();
     }
   }
@@ -501,14 +507,6 @@ export class Renderer {
         ctx.ellipse(0, 0, bodyLength * 0.62, bodyHeight * 0.62, 0, 0, TAU);
         ctx.fill();
       }
-    }
-
-    if (isHovering && fish.lifeState === 'ALIVE') {
-      const hoverPulse = 0.09 + (Math.sin(time * 0.006 + fish.id) * 0.5 + 0.5) * 0.08;
-      ctx.beginPath();
-      ctx.fillStyle = `rgba(206, 238, 255, ${hoverPulse})`;
-      ctx.ellipse(0, 0, bodyLength * 0.58, bodyHeight * 0.58, 0, 0, TAU);
-      ctx.fill();
     }
 
     if (fish.id === this.world.selectedFishId) {
