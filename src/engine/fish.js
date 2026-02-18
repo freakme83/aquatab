@@ -30,9 +30,64 @@ const WATER_AGE_SENSITIVITY_MIN = Math.max(0, WATER_WELLBEING.ageSensitivityMin 
 const WATER_AGE_SENSITIVITY_EDGE_BOOST = Math.max(0, WATER_WELLBEING.ageSensitivityEdgeBoost ?? 0.6);
 const rand = (min, max) => min + Math.random() * (max - min);
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+const HOVER_CONFIG = CONFIG.fish.hover ?? {};
+const HOVER_MIN_SEC = Math.max(0, HOVER_CONFIG.minSec ?? 0.6);
+const HOVER_MAX_SEC = Math.max(HOVER_MIN_SEC, HOVER_CONFIG.maxSec ?? 2.0);
+const HOVER_COOLDOWN_MIN_SEC = Math.max(0, HOVER_CONFIG.cooldownMinSec ?? 6.0);
+const HOVER_COOLDOWN_MAX_SEC = Math.max(HOVER_COOLDOWN_MIN_SEC, HOVER_CONFIG.cooldownMaxSec ?? 14.0);
+const HOVER_CHANCE_PER_CHECK = clamp(HOVER_CONFIG.chancePerCheck ?? 0.25, 0, 1);
+const HOVER_WALL_MARGIN_PX = Math.max(0, HOVER_CONFIG.wallMarginPx ?? 20);
+const HOVER_DRIFT_AMP_PX = Math.max(0, HOVER_CONFIG.driftAmpPx ?? 2.5);
+const HOVER_DRIFT_RATE = Math.max(0, HOVER_CONFIG.driftRate ?? 1.2);
+const HOVER_SPEED_FACTOR = clamp(HOVER_CONFIG.speedFactor ?? 0.15, 0.01, 1);
 
 const clamp01 = (v) => clamp(v, 0, 1);
 const lerp = (a, b, t) => a + (b - a) * t;
+const deepCopyPlain = (value) => {
+  if (Array.isArray(value)) return value.map((entry) => deepCopyPlain(entry));
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const [key, entry] of Object.entries(value)) out[key] = deepCopyPlain(entry);
+    return out;
+  }
+  return value;
+};
+
+export const FISH_SAVE_KEYS = [
+  'id',
+  'name',
+  'spawnTimeSec',
+  'stageShiftBabySec',
+  'stageShiftJuvenileSec',
+  'traits',
+  'position',
+  'facing',
+  'headingAngle',
+  'desiredAngle',
+  'currentSpeed',
+  'cruisePhase',
+  'cruiseRate',
+  'target',
+  'sex',
+  'energy01',
+  'hunger01',
+  'wellbeing01',
+  'waterPenalty01',
+  'hungerState',
+  'lifeState',
+  'deathReason',
+  'deadAtSec',
+  'skeletonAtSec',
+  'corpseRemoved',
+  'corpseDirtApplied01',
+  'behavior',
+  'eatAnimTimer',
+  'eatAnimDuration',
+  'playState',
+  'repro',
+  'matingAnim',
+  'history'
+];
 // Smooth-ish ease for growth transitions.
 const easeInOut = (t) => t * t * (3 - 2 * t);
 
@@ -71,7 +126,7 @@ export class Fish {
     this.bounds = bounds;
 
     this.id = options.id ?? 0;
-    this.name = options.name ?? '';
+    this.name = '';
     this.spawnTimeSec = options.spawnTimeSec ?? 0;
 
     // --- Life-cycle randoms (set once at birth) ---
@@ -133,6 +188,7 @@ export class Fish {
     this.waterPenalty01 = 0;
     this.hungerState = 'FED';
     this.lifeState = 'ALIVE';
+    this.deathReason = null;
     this.deadAtSec = null;
     this.skeletonAtSec = null;
     this.corpseRemoved = false;
@@ -165,6 +221,50 @@ export class Fish {
 
     // Cached reference for pursuit updates (set during decideBehavior).
     this._worldRef = null;
+  }
+
+  toJSON() {
+    const out = {};
+    for (const key of FISH_SAVE_KEYS) out[key] = deepCopyPlain(this[key]);
+    return out;
+  }
+
+  static fromJSON(data, bounds) {
+    const source = data && typeof data === 'object' ? data : {};
+    const traits = source.traits && typeof source.traits === 'object' ? deepCopyPlain(source.traits) : {};
+    const history = source.history && typeof source.history === 'object' ? deepCopyPlain(source.history) : {};
+    const fish = new Fish(bounds, {
+      id: Number.isFinite(source.id) ? source.id : 0,
+      spawnTimeSec: Number.isFinite(source.spawnTimeSec) ? source.spawnTimeSec : 0,
+      stageShiftBabySec: Number.isFinite(source.stageShiftBabySec) ? source.stageShiftBabySec : undefined,
+      stageShiftJuvenileSec: Number.isFinite(source.stageShiftJuvenileSec) ? source.stageShiftJuvenileSec : undefined,
+      position: source.position && Number.isFinite(source.position.x) && Number.isFinite(source.position.y)
+        ? { x: source.position.x, y: source.position.y }
+        : undefined,
+      headingAngle: Number.isFinite(source.headingAngle) ? source.headingAngle : undefined,
+      traits,
+      history
+    });
+
+    for (const key of FISH_SAVE_KEYS) {
+      if (source[key] === undefined) continue;
+      fish[key] = deepCopyPlain(source[key]);
+    }
+
+    fish.name = typeof fish.name === 'string' ? fish.name : '';
+    fish.sex = fish.sex === 'female' || fish.sex === 'male' ? fish.sex : 'female';
+    fish.energy01 = clamp01(Number.isFinite(fish.energy01) ? fish.energy01 : 1);
+    fish.hunger01 = clamp01(Number.isFinite(fish.hunger01) ? fish.hunger01 : 0);
+    fish.wellbeing01 = clamp01(Number.isFinite(fish.wellbeing01) ? fish.wellbeing01 : 1);
+    fish.waterPenalty01 = clamp01(Number.isFinite(fish.waterPenalty01) ? fish.waterPenalty01 : 0);
+
+    if (!fish.position || !Number.isFinite(fish.position.x) || !Number.isFinite(fish.position.y)) {
+      fish.position = { x: bounds.width * 0.5, y: bounds.height * 0.5 };
+    }
+    fish.setBounds(bounds);
+    fish.updateLifeCycle(Math.max(0, Number.isFinite(source.spawnTimeSec) ? source.spawnTimeSec : 0));
+
+    return fish;
   }
 
   setBounds(bounds) {
@@ -218,8 +318,10 @@ export class Fish {
     else if (this.hunger01 >= HUNGRY_THRESHOLD) this.hungerState = 'HUNGRY';
     else this.hungerState = 'FED';
 
-    if (this.energy01 <= 0) {
+    if (this.energy01 <= 0 && this.lifeState === 'ALIVE') {
       this.lifeState = 'DEAD';
+      this.deathReason = 'STARVATION';
+      this.hungerState = 'DEAD';
       this.currentSpeed = 0;
       this.behavior = { mode: 'deadSink', targetFoodId: null, speedBoost: 1 };
     }
@@ -304,6 +406,18 @@ export class Fish {
 
     if (this.lifeState !== 'ALIVE') {
       this.behavior = { mode: 'deadSink', targetFoodId: null, speedBoost: 1 };
+      this.#updateHoverAfterBehavior(world?.simTimeSec ?? 0);
+      return;
+    }
+
+    if (this.repro?.state === 'LAYING' && Number.isFinite(this.repro.layTargetX) && Number.isFinite(this.repro.layTargetY)) {
+      this.behavior = {
+        mode: 'seekLayTarget',
+        targetFoodId: null,
+        speedBoost: 1
+      };
+      this.target = { x: this.repro.layTargetX, y: this.repro.layTargetY };
+      this.#updateHoverAfterBehavior(world?.simTimeSec ?? 0);
       return;
     }
 
@@ -325,17 +439,20 @@ export class Fish {
         speedBoost: isRunner ? PLAY_RUNNER_SPEED_BOOST : PLAY_SPEED_BOOST,
         targetFishId: this.playState.targetFishId
       };
+      this.#updateHoverAfterBehavior(world?.simTimeSec ?? 0);
       return;
     }
 
     if (this.hungerState === 'FED') {
       this.behavior = { mode: 'wander', targetFoodId: null, speedBoost: 1 };
+      this.#updateHoverAfterBehavior(world?.simTimeSec ?? 0);
       return;
     }
 
     const visibleFood = this.#findNearestFood(world?.food ?? []);
     if (!visibleFood) {
       this.behavior = { mode: 'wander', targetFoodId: null, speedBoost: 1 };
+      this.#updateHoverAfterBehavior(world?.simTimeSec ?? 0);
       return;
     }
 
@@ -345,6 +462,7 @@ export class Fish {
       speedBoost: FOOD_SPEED_BOOST[this.hungerState] ?? 1
     };
     this.target = { x: visibleFood.x, y: visibleFood.y };
+    this.#updateHoverAfterBehavior(world?.simTimeSec ?? 0);
   }
 
   applySteering(dt) {
@@ -385,7 +503,15 @@ export class Fish {
       }
     }
 
-    if (this.behavior.mode === 'wander' && this.#shouldRetarget()) this.target = this.#pickTarget();
+    const nowSec = this._worldRef?.simTimeSec ?? 0;
+    if (this.#shouldCancelHoverForUrgentGoal(nowSec)) this.cancelHover();
+
+    const isHovering = this.#isHoverActive(nowSec);
+    if (isHovering) {
+      this.target = this.#hoverDesiredPos(nowSec);
+    } else if (this.behavior.mode === 'wander' && this.#shouldRetarget()) {
+      this.target = this.#pickTarget();
+    }
 
     const seek = this.#seekVector();
     if (this.behavior.mode === 'seekFood') {
@@ -483,6 +609,7 @@ export class Fish {
     if (consumed <= 0) return;
     this.eatAnimTimer = this.eatAnimDuration;
     this.eat(consumed);
+    this.history.mealsEaten += 1;
   }
 
 
@@ -524,6 +651,8 @@ export class Fish {
     // Natural death by lifespan (simple baseline; later we can switch to probabilistic old-age death).
     if (this.lifeState === 'ALIVE' && ageSec >= this.lifespanSec) {
       this.lifeState = 'DEAD';
+      this.deathReason = 'OLD_AGE';
+      this.hungerState = 'DEAD';
       this.currentSpeed = 0;
       this.behavior = { mode: 'deadSink', targetFoodId: null, speedBoost: 1 };
     }
@@ -574,10 +703,21 @@ export class Fish {
     return Math.max(0, simTimeSec - this.spawnTimeSec);
   }
 
+  getLifeTimeSec(nowSec) {
+    const birth = Number.isFinite(this.history?.birthSimTimeSec) ? this.history.birthSimTimeSec : 0;
+    const death = this.history?.deathSimTimeSec;
+    if (Number.isFinite(death)) return Math.max(0, death - birth);
+    return Math.max(0, nowSec - birth);
+  }
+
   mouthOpen01() {
     if (this.eatAnimTimer <= 0) return 0;
     const progress = 1 - this.eatAnimTimer / this.eatAnimDuration;
     return Math.sin(progress * Math.PI);
+  }
+
+  isHovering(nowSec) {
+    return this.#isHoverActive(nowSec);
   }
 
   headPoint() {
@@ -642,6 +782,96 @@ export class Fish {
       minY: margin,
       maxY
     };
+  }
+
+  #hoverSafeBounds() {
+    const movement = this.#movementBounds();
+    const minX = movement.minX + HOVER_WALL_MARGIN_PX;
+    const maxX = movement.maxX - HOVER_WALL_MARGIN_PX;
+    const minY = movement.minY + HOVER_WALL_MARGIN_PX;
+    const maxY = movement.maxY - HOVER_WALL_MARGIN_PX;
+
+    return {
+      minX: minX <= maxX ? minX : movement.minX,
+      maxX: minX <= maxX ? maxX : movement.maxX,
+      minY: minY <= maxY ? minY : movement.minY,
+      maxY: minY <= maxY ? maxY : movement.maxY
+    };
+  }
+
+  #isAwayFromHoverWalls() {
+    const safe = this.#hoverSafeBounds();
+    return this.position.x >= safe.minX
+      && this.position.x <= safe.maxX
+      && this.position.y >= safe.minY
+      && this.position.y <= safe.maxY;
+  }
+
+  #isHoverEligible() {
+    if (this.lifeState !== 'ALIVE') return false;
+    if ((this.eatAnimTimer ?? 0) > 0) return false;
+    if (this.behavior?.mode !== 'wander') return false;
+    if (this.behavior?.targetFoodId) return false;
+    if (this.isPlaying(this._worldRef?.simTimeSec ?? 0)) return false;
+    if (this.repro?.state === 'LAYING' || this.repro?.state === 'GRAVID') return false;
+    if (this.matingAnim) return false;
+    if (!this.#isAwayFromHoverWalls()) return false;
+    return true;
+  }
+
+  #isHoverActive(nowSec) {
+    if (!Number.isFinite(nowSec)) return false;
+    if (!this.hoverAnchor || nowSec >= this.hoverUntilSec) {
+      this.cancelHover();
+      return false;
+    }
+    return true;
+  }
+
+  #shouldCancelHoverForUrgentGoal(nowSec) {
+    if (!this.#isHoverActive(nowSec)) return false;
+    if (this.lifeState !== 'ALIVE') return true;
+    if ((this.eatAnimTimer ?? 0) > 0) return true;
+    if (this.behavior?.mode === 'seekFood' || this.behavior?.targetFoodId) return true;
+    if (this.behavior?.mode === 'playChase' || this.behavior?.mode === 'playEvade') return true;
+    if (this.isPlaying(nowSec)) return true;
+    if (this.repro?.state === 'LAYING') return true;
+    if (this.matingAnim) return true;
+    return false;
+  }
+
+  #hoverDesiredPos(nowSec) {
+    const anchor = this.hoverAnchor ?? this.position;
+    const p = (nowSec * HOVER_DRIFT_RATE) + this.hoverPhase;
+    const dx = Math.sin(p) * HOVER_DRIFT_AMP_PX;
+    const dy = Math.cos(p * 0.8) * HOVER_DRIFT_AMP_PX * 0.7;
+    const safe = this.#hoverSafeBounds();
+    return {
+      x: clamp(anchor.x + dx, safe.minX, safe.maxX),
+      y: clamp(anchor.y + dy, safe.minY, safe.maxY)
+    };
+  }
+
+  #updateHoverSchedule(nowSec) {
+    if (!Number.isFinite(nowSec) || nowSec < this.nextHoverCheckAtSec) return;
+
+    this.nextHoverCheckAtSec = nowSec + rand(HOVER_COOLDOWN_MIN_SEC, HOVER_COOLDOWN_MAX_SEC);
+    if (!this.#isHoverEligible()) return;
+    if (Math.random() >= HOVER_CHANCE_PER_CHECK) return;
+
+    this.hoverUntilSec = nowSec + rand(HOVER_MIN_SEC, HOVER_MAX_SEC);
+    this.hoverAnchor = { x: this.position.x, y: this.position.y };
+    this.hoverPhase = rand(0, TAU);
+  }
+
+  #updateHoverAfterBehavior(nowSec) {
+    if (this.#shouldCancelHoverForUrgentGoal(nowSec)) this.cancelHover();
+    this.#updateHoverSchedule(nowSec);
+  }
+
+  cancelHover() {
+    this.hoverUntilSec = 0;
+    this.hoverAnchor = null;
   }
 
   #pickTarget() {
