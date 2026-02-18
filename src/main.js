@@ -368,6 +368,7 @@ function restartToStartScreen() {
   hideCorpseAction();
 
   started = false;
+  pendingSavePayload = null;
   world = null;
   renderer = null;
 
