@@ -131,6 +131,7 @@ export class World {
 
     this.bounds = { width, height, sandHeight: this.#computeSandHeight(height) };
     this.fish = [];
+    this.fishById = new Map();
     this.food = [];
     // Forward-compatible containers for new systems.
     this.poop = [];
@@ -308,6 +309,18 @@ export class World {
     if (!fish) return null;
     this.fish.push(fish);
     return fish;
+  }
+
+  #registerFish(fish) {
+    if (!fish) return null;
+    this.fish.push(fish);
+    this.fishById.set(fish.id, fish);
+    return fish;
+  }
+
+  #rebuildFishById() {
+    this.fishById.clear();
+    for (const fish of this.fish) this.fishById.set(fish.id, fish);
   }
 
   #shuffleArray(items) {
@@ -546,7 +559,7 @@ export class World {
     const index = this.fish.findIndex((entry) => entry.id === fishId && entry.lifeState !== 'ALIVE');
     if (index < 0) return false;
     this.fish.splice(index, 1);
-    this.#unregisterFishById(fishId);
+    this.fishById.delete(fishId);
     if (this.selectedFishId === fishId) this.selectedFishId = null;
     return true;
   }
@@ -558,7 +571,7 @@ export class World {
     const fish = this.fish[index];
     fish.corpseRemoved = true;
     this.fish.splice(index, 1);
-    this.#unregisterFishById(fishId);
+    this.fishById.delete(fishId);
     if (this.selectedFishId === fishId) this.selectedFishId = null;
     return true;
   }
@@ -584,7 +597,7 @@ export class World {
     }
     while (this.fish.length > clamped) {
       const removed = this.fish.pop();
-      if (removed) this.#unregisterFishById(removed.id);
+      if (removed) this.fishById.delete(removed.id);
     }
 
     if (!this.fish.some((f) => f.id === this.selectedFishId)) {
@@ -694,6 +707,7 @@ export class World {
       if (fish.corpseDirtApplied01 >= CORPSE_DIRT_MAX01) {
         fish.corpseRemoved = true;
         this.fish.splice(i, 1);
+        this.fishById.delete(fish.id);
         if (this.selectedFishId === fish.id) this.selectedFishId = null;
       }
     }
