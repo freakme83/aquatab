@@ -176,7 +176,7 @@ export class World {
     this.fxParticles = [];
 
     // Global environment state (will grow over time).
-    this.water = this.#createInitialWaterState();
+    this.water = this.createInitialWaterState();
     this.expiredFoodSinceLastWaterUpdate = 0;
 
     this.paused = false;
@@ -308,6 +308,13 @@ export class World {
   #registerFish(fish) {
     if (!fish) return null;
     this.fish.push(fish);
+    return fish;
+  }
+
+  #registerFish(fish) {
+    if (!fish) return null;
+    this.fish.push(fish);
+    this.fishById.set(fish.id, fish);
     return fish;
   }
 
@@ -639,7 +646,7 @@ export class World {
     this.#updateBubbles(delta);
   }
 
-  #createInitialWaterState() {
+  createInitialWaterState() {
     return {
       hygiene01: WATER_INITIAL_HYGIENE01,
       dirt01: WATER_INITIAL_DIRT01,
