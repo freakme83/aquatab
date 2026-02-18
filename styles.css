@@ -105,6 +105,56 @@ body::before {
   font-size: 0.86rem;
 }
 
+.resume-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  background: rgba(4, 11, 20, 0.72);
+  backdrop-filter: blur(4px);
+}
+
+.resume-modal {
+  width: min(420px, calc(100vw - 34px));
+  border: 1px solid rgba(168, 223, 255, 0.32);
+  border-radius: 14px;
+  padding: 18px 16px;
+  background: rgba(7, 26, 48, 0.86);
+  box-shadow: 0 14px 42px rgba(0, 0, 0, 0.45);
+}
+
+.resume-modal h2 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.resume-modal-meta {
+  margin: 0 0 12px;
+  color: var(--text-soft);
+  font-size: 0.84rem;
+}
+
+.resume-modal-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.resume-modal-btn {
+  border: 1px solid var(--deck-border);
+  border-radius: 9px;
+  padding: 8px 10px;
+  background: rgba(27, 91, 142, 0.52);
+  color: var(--text-main);
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+
+.resume-modal-btn.is-secondary {
+  background: rgba(18, 46, 72, 0.58);
+}
+
 
 .restart-confirm {
   margin-top: 10px;

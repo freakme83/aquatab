@@ -172,6 +172,15 @@ function deserializeWater(data, defaults) {
   return out;
 }
 
+function normalizeWorldSaveSource(data) {
+  const source = data && typeof data === 'object' ? data : null;
+  if (!source) return null;
+  if (source.saveVersion === WORLD_SAVE_VERSION && source.worldState && typeof source.worldState === 'object') {
+    return source.worldState;
+  }
+  return source;
+}
+
 function inheritTraits(motherTraits, fatherTraits, config = {}) {
   const mother = motherTraits ?? {};
   const father = fatherTraits ?? mother;
@@ -580,7 +589,7 @@ export class World {
   }
 
   loadFromJSON(data) {
-    const source = data && typeof data === 'object' ? data : {};
+    const source = normalizeWorldSaveSource(data) ?? {};
     if (source.saveVersion !== WORLD_SAVE_VERSION) return false;
 
     const swimHeight = this.#swimHeight();
