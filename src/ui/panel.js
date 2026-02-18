@@ -32,6 +32,7 @@ export class Panel {
     this.filterAccordionToggle = this.root.querySelector('[data-control="toggleFilterAccordion"]');
     this.filterContent = this.root.querySelector('[data-filter-content]');
     this.filterMessage = this.root.querySelector('[data-filter-message]');
+    this.filterFeedRow = this.root.querySelector('[data-filter-feed-row]');
     this.filterFeedProgress = this.root.querySelector('[data-filter-feed-progress]');
     this.filterInstallProgressRow = this.root.querySelector('[data-filter-install-progress-row]');
     this.filterInstallProgress = this.root.querySelector('[data-filter-install-progress]');
@@ -41,8 +42,6 @@ export class Panel {
     this.filterStatus = this.root.querySelector('[data-filter-status]');
     this.filterHealthRow = this.root.querySelector('[data-filter-health-row]');
     this.filterHealth = this.root.querySelector('[data-filter-health]');
-    this.filterActionRow = this.root.querySelector('[data-filter-action-row]');
-    this.filterAction = this.root.querySelector('[data-filter-action]');
     this.filterToggleRow = this.root.querySelector('[data-filter-toggle-row]');
 
     this.installFilterButton = this.root.querySelector('[data-control="installFilter"]');
@@ -227,12 +226,12 @@ export class Panel {
     const target = Math.max(0, Math.floor(filterUnlockThreshold ?? 0));
     const isInstalling = (installProgress01 ?? 0) > 0;
     const isMaintaining = (maintenanceProgress01 ?? 0) > 0;
-    const depleted = filterInstalled && !isMaintaining && (filter01 ?? 0) <= (filterDepletedThreshold01 ?? 0.1);
 
     if (this.filterAccordion) {
-      this.filterAccordion.classList.toggle('is-dim', !filterInstalled);
+      this.filterAccordion.classList.toggle('is-dim', !filterUnlocked);
     }
 
+    if (this.filterFeedRow) this.filterFeedRow.hidden = Boolean(filterInstalled);
     if (this.filterFeedProgress) {
       this.filterFeedProgress.textContent = `${consumed} / ${target}`;
     }
@@ -266,18 +265,6 @@ export class Panel {
     if (this.filterHealthRow) this.filterHealthRow.hidden = !filterInstalled;
     if (this.filterHealth) this.filterHealth.textContent = `${Math.round(Math.max(0, filter01 ?? 0) * 100)}%`;
 
-    if (this.filterActionRow) this.filterActionRow.hidden = !filterInstalled;
-    if (this.filterAction) {
-      if (isMaintaining) {
-        this.filterAction.textContent = `Maintaining... ${Math.round((maintenanceProgress01 ?? 0) * 100)}%`;
-      } else if (depleted) {
-        this.filterAction.textContent = 'Maintenance required';
-      } else if ((maintenanceCooldownSec ?? 0) > 0) {
-        this.filterAction.textContent = `Maintenance cooldown: ${Math.ceil(maintenanceCooldownSec ?? 0)}s`;
-      } else {
-        this.filterAction.textContent = '--';
-      }
-    }
 
     if (this.filterToggleRow) this.filterToggleRow.hidden = !filterInstalled;
     if (this.toggleFilterPowerButton) {

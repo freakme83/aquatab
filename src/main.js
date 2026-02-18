@@ -8,12 +8,16 @@ import { Renderer } from './render/renderer.js';
 import { Panel } from './ui/panel.js';
 
 const DEFAULT_INITIAL_FISH_COUNT = 4;
+const SAVE_STORAGE_KEY = 'aquatab_save_v1';
+const SAVE_VERSION = 1;
+const AUTOSAVE_INTERVAL_MS = 10_000;
 
 const startScreen = document.getElementById('startScreen');
 const appRoot = document.getElementById('appRoot');
 const startFishSlider = document.querySelector('[data-start-control="initialFishCount"]');
 const startFishValue = document.querySelector('[data-start-value="initialFishCount"]');
 const startSimButton = document.getElementById('startSimButton');
+const startCard = startScreen?.querySelector('.start-card');
 
 const canvas = document.getElementById('aquariumCanvas');
 const panelRoot = document.getElementById('panelRoot');
@@ -24,6 +28,74 @@ let renderer = null;
 let panel = null;
 let started = false;
 let canvasClickHandler = null;
+
+let pendingSavePayload = null;
+
+let autosaveIntervalId = null;
+
+function loadSavedWorldSnapshot() {
+  try {
+    const raw = localStorage.getItem(SAVE_STORAGE_KEY);
+    if (!raw) return null;
+    const payload = JSON.parse(raw);
+    if (payload?.saveVersion !== SAVE_VERSION) return null;
+    if (!payload.worldState || payload.worldState.saveVersion !== SAVE_VERSION) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function formatRelativeSavedAt(epochMs) {
+  if (!Number.isFinite(epochMs) || epochMs <= 0) return 'unknown';
+  const deltaMs = Math.max(0, Date.now() - epochMs);
+  const minuteMs = 60_000;
+  const hourMs = 60 * minuteMs;
+  const dayMs = 24 * hourMs;
+
+  if (deltaMs < 15_000) return 'just now';
+  if (deltaMs < hourMs) {
+    const minutes = Math.max(1, Math.round(deltaMs / minuteMs));
+    return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
+  }
+  if (deltaMs < dayMs) {
+    const hours = Math.max(1, Math.round(deltaMs / hourMs));
+    return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  }
+
+  const days = Math.max(1, Math.round(deltaMs / dayMs));
+  return `${days} day${days === 1 ? '' : 's'} ago`;
+}
+
+function saveWorldSnapshot() {
+  if (!started || !world) return false;
+
+  try {
+    const payload = {
+      saveVersion: SAVE_VERSION,
+      savedAtEpochMs: Date.now(),
+      worldState: world.toJSON()
+    };
+    localStorage.setItem(SAVE_STORAGE_KEY, JSON.stringify(payload));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function startAutosave() {
+  if (autosaveIntervalId != null) return;
+  autosaveIntervalId = setInterval(() => {
+    saveWorldSnapshot();
+  }, AUTOSAVE_INTERVAL_MS);
+}
+
+function stopAutosave() {
+  if (autosaveIntervalId == null) return;
+  clearInterval(autosaveIntervalId);
+  autosaveIntervalId = null;
+}
+
 
 function measureCanvasSize() {
   const rect = canvas.getBoundingClientRect();
@@ -70,6 +142,37 @@ filterToast.style.fontSize = '12px';
 filterToast.style.zIndex = '30';
 filterToast.style.pointerEvents = 'none';
 document.body.appendChild(filterToast);
+
+const savedStartPanel = document.createElement('section');
+savedStartPanel.className = 'saved-start-panel';
+savedStartPanel.hidden = true;
+savedStartPanel.innerHTML = `
+  <h2>Saved simulation found</h2>
+  <p class="saved-start-meta" data-saved-start-meta>Last saved: unknown</p>
+  <div class="saved-start-actions">
+    <button type="button" class="saved-start-btn" data-saved-start-action="continue">Continue</button>
+    <button type="button" class="saved-start-link" data-saved-start-action="new">New sim</button>
+  </div>
+`;
+startCard?.appendChild(savedStartPanel);
+
+const savedStartMeta = savedStartPanel.querySelector('[data-saved-start-meta]');
+const savedStartContinueBtn = savedStartPanel.querySelector('[data-saved-start-action="continue"]');
+const savedStartNewBtn = savedStartPanel.querySelector('[data-saved-start-action="new"]');
+
+function refreshSavedStartPanel() {
+  const payload = loadSavedWorldSnapshot();
+  pendingSavePayload = payload;
+
+  if (!payload) {
+    savedStartPanel.hidden = true;
+    return;
+  }
+
+  const relative = formatRelativeSavedAt(payload.savedAtEpochMs);
+  if (savedStartMeta) savedStartMeta.textContent = `Last saved: ${relative}`;
+  savedStartPanel.hidden = false;
+}
 
 let filterToastTimeoutId = null;
 function showFilterToast(textValue) {
@@ -237,6 +340,7 @@ function stopBackgroundSim() {
 function syncDriversToVisibility() {
   if (!started) return;
   if (document.visibilityState === 'hidden') {
+    saveWorldSnapshot();
     stopRaf();
     hideCorpseAction();
     stopBackgroundSim();
@@ -249,16 +353,22 @@ function syncDriversToVisibility() {
 }
 
 document.addEventListener('visibilitychange', syncDriversToVisibility);
+window.addEventListener('beforeunload', () => {
+  saveWorldSnapshot();
+});
 
 
 function restartToStartScreen() {
   if (!started) return;
 
+  saveWorldSnapshot();
   stopRaf();
   stopBackgroundSim();
+  stopAutosave();
   hideCorpseAction();
 
   started = false;
+  pendingSavePayload = null;
   world = null;
   renderer = null;
 
@@ -269,9 +379,10 @@ function restartToStartScreen() {
 
   appRoot.hidden = true;
   startScreen.hidden = false;
+  refreshSavedStartPanel();
 }
 
-function startSimulation() {
+function startSimulation({ savedPayload = null } = {}) {
   if (started) return;
 
   const selectedFishCount = Number.parseInt(startFishSlider?.value ?? String(DEFAULT_INITIAL_FISH_COUNT), 10);
@@ -279,9 +390,18 @@ function startSimulation() {
 
   appRoot.hidden = false;
   startScreen.hidden = true;
+  pendingSavePayload = null;
 
   const initialSize = measureCanvasSize();
-  world = new World(initialSize.width, initialSize.height, initialFishCount);
+  if (savedPayload?.saveVersion === SAVE_VERSION) {
+    world = World.fromJSON(savedPayload, {
+      width: initialSize.width,
+      height: initialSize.height,
+      initialFishCount
+    });
+  } else {
+    world = new World(initialSize.width, initialSize.height, initialFishCount);
+  }
   renderer = new Renderer(canvas, world);
 
   const panelHandlers = {
@@ -339,7 +459,26 @@ function startSimulation() {
   requestAnimationFrame(resize);
 
   started = true;
+  startAutosave();
   syncDriversToVisibility();
 }
 
-startSimButton?.addEventListener('click', startSimulation);
+savedStartContinueBtn?.addEventListener('click', () => {
+  if (!pendingSavePayload) {
+    refreshSavedStartPanel();
+  }
+  if (!pendingSavePayload) return;
+
+  startSimulation({ savedPayload: pendingSavePayload });
+});
+
+savedStartNewBtn?.addEventListener('click', () => {
+  localStorage.removeItem(SAVE_STORAGE_KEY);
+  refreshSavedStartPanel();
+});
+
+startSimButton?.addEventListener('click', () => {
+  startSimulation();
+});
+
+refreshSavedStartPanel();
