@@ -304,6 +304,12 @@ export class World {
     return fish;
   }
 
+  #registerFish(fish) {
+    if (!fish) return null;
+    this.fish.push(fish);
+    return fish;
+  }
+
   #shuffleArray(items) {
     for (let i = items.length - 1; i > 0; i -= 1) {
       const swapIndex = Math.floor(Math.random() * (i + 1));
@@ -574,7 +580,7 @@ export class World {
     const clamped = Math.max(1, Math.min(50, Math.round(count)));
 
     while (this.fish.length < clamped) {
-      this.fish.push(this.#createFish());
+      this.#registerFish(this.#createFish());
     }
     while (this.fish.length > clamped) {
       const removed = this.fish.pop();
@@ -1149,7 +1155,7 @@ export class World {
         });
         baby.spawnTimeSec = this.simTimeSec;
         baby.ageSecCached = 0;
-        this.fish.push(baby);
+        this.#registerFish(baby);
         egg.state = 'HATCHED';
       } else {
         egg.state = 'FAILED';

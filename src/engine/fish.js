@@ -431,6 +431,16 @@ export class Fish {
       return;
     }
 
+    if (this.repro?.state === 'LAYING' && Number.isFinite(this.repro.layTargetX) && Number.isFinite(this.repro.layTargetY)) {
+      this.behavior = {
+        mode: 'seekLayTarget',
+        targetFoodId: null,
+        speedBoost: 1
+      };
+      this.target = { x: this.repro.layTargetX, y: this.repro.layTargetY };
+      return;
+    }
+
     if (this.isPlaying(world?.simTimeSec ?? 0)) {
       const isRunner = this.playState.role === 'RUNNER';
       this.behavior = {
