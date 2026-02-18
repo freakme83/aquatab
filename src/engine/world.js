@@ -57,6 +57,121 @@ const CORPSE_DIRT_INITIAL01 = 0.07;
 const CORPSE_DIRT_STEP01 = 0.01;
 const CORPSE_DIRT_MAX01 = 0.12;
 
+const WORLD_SAVE_VERSION = 1;
+export const WATER_SAVE_KEYS = [
+  'hygiene01',
+  'dirt01',
+  'filterInstalled',
+  'filter01',
+  'installProgress01',
+  'maintenanceProgress01',
+  'maintenanceCooldownSec',
+  'filterUnlocked',
+  'filterEnabled',
+  'effectiveFilter01'
+];
+export const FOOD_SAVE_KEYS = ['id', 'x', 'y', 'amount', 'ttl', 'vy'];
+export const EGG_SAVE_KEYS = [
+  'id',
+  'x',
+  'y',
+  'laidAtSec',
+  'hatchAtSec',
+  'motherId',
+  'fatherId',
+  'motherTraits',
+  'fatherTraits',
+  'state',
+  'canBeEaten',
+  'nutrition'
+];
+
+function deepCopyPlain(value) {
+  if (Array.isArray(value)) return value.map((entry) => deepCopyPlain(entry));
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const [key, entry] of Object.entries(value)) out[key] = deepCopyPlain(entry);
+    return out;
+  }
+  return value;
+}
+
+function pickSavedKeys(source, keys) {
+  const out = {};
+  for (const key of keys) out[key] = deepCopyPlain(source?.[key]);
+  return out;
+}
+
+function clampPosition(position, bounds, swimHeight) {
+  const x = Number.isFinite(position?.x) ? clamp(position.x, 0, bounds.width) : bounds.width * 0.5;
+  const y = Number.isFinite(position?.y) ? clamp(position.y, 0, swimHeight) : swimHeight * 0.5;
+  return { x, y };
+}
+
+function serializeFood(food) {
+  return pickSavedKeys(food, FOOD_SAVE_KEYS);
+}
+
+function deserializeFood(data, bounds, swimHeight) {
+  const source = data && typeof data === 'object' ? data : {};
+  const position = clampPosition(source, bounds, swimHeight);
+  return {
+    id: Number.isFinite(source.id) ? source.id : 0,
+    x: position.x,
+    y: position.y,
+    amount: Math.max(0.05, Number.isFinite(source.amount) ? source.amount : FOOD_DEFAULT_AMOUNT),
+    ttl: Number.isFinite(source.ttl) ? source.ttl : FOOD_DEFAULT_TTL,
+    vy: Number.isFinite(source.vy) ? source.vy : 0
+  };
+}
+
+function serializeEgg(egg) {
+  return pickSavedKeys(egg, EGG_SAVE_KEYS);
+}
+
+function deserializeEgg(data, bounds, swimHeight) {
+  const source = data && typeof data === 'object' ? data : {};
+  const position = clampPosition(source, bounds, swimHeight);
+  return {
+    id: Number.isFinite(source.id) ? source.id : 0,
+    x: position.x,
+    y: position.y,
+    laidAtSec: Number.isFinite(source.laidAtSec) ? source.laidAtSec : 0,
+    hatchAtSec: Number.isFinite(source.hatchAtSec) ? source.hatchAtSec : 0,
+    motherId: source.motherId ?? null,
+    fatherId: source.fatherId ?? null,
+    motherTraits: deepCopyPlain(source.motherTraits ?? {}),
+    fatherTraits: deepCopyPlain(source.fatherTraits ?? {}),
+    state: typeof source.state === 'string' ? source.state : 'INCUBATING',
+    canBeEaten: Boolean(source.canBeEaten ?? true),
+    nutrition: Math.max(0, Number.isFinite(source.nutrition) ? source.nutrition : 0.25)
+  };
+}
+
+function serializeWater(water) {
+  return pickSavedKeys(water, WATER_SAVE_KEYS);
+}
+
+function deserializeWater(data, defaults) {
+  const source = data && typeof data === 'object' ? data : {};
+  const out = pickSavedKeys(defaults, WATER_SAVE_KEYS);
+  for (const key of WATER_SAVE_KEYS) {
+    if (source[key] !== undefined) out[key] = deepCopyPlain(source[key]);
+  }
+
+  out.hygiene01 = clamp01(Number.isFinite(out.hygiene01) ? out.hygiene01 : WATER_INITIAL_HYGIENE01);
+  out.dirt01 = clamp01(Number.isFinite(out.dirt01) ? out.dirt01 : WATER_INITIAL_DIRT01);
+  out.filter01 = clamp01(Number.isFinite(out.filter01) ? out.filter01 : 0);
+  out.installProgress01 = clamp01(Number.isFinite(out.installProgress01) ? out.installProgress01 : 0);
+  out.maintenanceProgress01 = clamp01(Number.isFinite(out.maintenanceProgress01) ? out.maintenanceProgress01 : 0);
+  out.maintenanceCooldownSec = Math.max(0, Number.isFinite(out.maintenanceCooldownSec) ? out.maintenanceCooldownSec : 0);
+  out.filterInstalled = Boolean(out.filterInstalled);
+  out.filterUnlocked = Boolean(out.filterUnlocked);
+  out.filterEnabled = Boolean(out.filterEnabled ?? true);
+  out.effectiveFilter01 = clamp01(Number.isFinite(out.effectiveFilter01) ? out.effectiveFilter01 : 0);
+  return out;
+}
+
 function inheritTraits(motherTraits, fatherTraits, config = {}) {
   const mother = motherTraits ?? {};
   const father = fatherTraits ?? mother;
@@ -450,6 +565,74 @@ export class World {
     if (!this.fish.some((f) => f.id === this.selectedFishId)) {
       this.selectedFishId = this.fish[0]?.id ?? null;
     }
+  }
+
+
+  toJSON() {
+    return {
+      saveVersion: WORLD_SAVE_VERSION,
+      simTimeSec: Number.isFinite(this.simTimeSec) ? this.simTimeSec : 0,
+      water: serializeWater(this.water),
+      fish: this.fish.map((entry) => entry.toJSON()),
+      eggs: this.eggs.map((entry) => serializeEgg(entry)),
+      food: this.food.map((entry) => serializeFood(entry))
+    };
+  }
+
+  loadFromJSON(data) {
+    const source = data && typeof data === 'object' ? data : {};
+    if (source.saveVersion !== WORLD_SAVE_VERSION) return false;
+
+    const swimHeight = this.#swimHeight();
+    this.simTimeSec = Math.max(0, Number.isFinite(source.simTimeSec) ? source.simTimeSec : 0);
+    this.fish = Array.isArray(source.fish)
+      ? source.fish.map((entry) => Fish.fromJSON(entry, this.bounds))
+      : [];
+
+    for (const fish of this.fish) {
+      fish.position = clampPosition(fish.position, this.bounds, swimHeight);
+      fish.updateLifeCycle(this.simTimeSec);
+    }
+
+    this.eggs = Array.isArray(source.eggs)
+      ? source.eggs.map((entry) => deserializeEgg(entry, this.bounds, swimHeight))
+      : [];
+
+    this.food = Array.isArray(source.food)
+      ? source.food.map((entry) => deserializeFood(entry, this.bounds, swimHeight))
+      : [];
+
+    this.water = deserializeWater(source.water, this.#createInitialWaterState());
+
+    this.nextFishId = Math.max(1, ...this.fish.map((entry) => Math.floor(entry.id || 0) + 1));
+    this.nextFoodId = Math.max(1, ...this.food.map((entry) => Math.floor(entry.id || 0) + 1));
+    this.nextEggId = Math.max(1, ...this.eggs.map((entry) => Math.floor(entry.id || 0) + 1));
+
+    this.#rebuildFishById();
+    if (!this.fish.some((entry) => entry.id === this.selectedFishId)) {
+      this.selectedFishId = this.fish[0]?.id ?? null;
+    }
+
+    this.nameCounts = new Map();
+    for (const fish of this.fish) {
+      const currentName = String(fish.name ?? '').trim();
+      if (currentName) this.nameCounts.set(currentName, Math.max(1, this.nameCounts.get(currentName) ?? 0));
+    }
+
+    this.events = [];
+    this.playSessions = [];
+    this.matePairNextTryAt = new Map();
+    this.expiredFoodSinceLastWaterUpdate = 0;
+    this.filterUnlocked = Boolean(this.water.filterUnlocked || this.filterUnlocked);
+    this.filterUnlockThreshold = Math.max(1, this.initialFishCount * 4);
+
+    return true;
+  }
+
+  static fromJSON(data, { width, height, initialFishCount = 4 } = {}) {
+    const world = new World(width, height, initialFishCount);
+    world.loadFromJSON(data);
+    return world;
   }
 
   resize(width, height) {
