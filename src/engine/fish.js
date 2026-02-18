@@ -33,6 +33,51 @@ const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
 const clamp01 = (v) => clamp(v, 0, 1);
 const lerp = (a, b, t) => a + (b - a) * t;
+const deepCopyPlain = (value) => {
+  if (Array.isArray(value)) return value.map((entry) => deepCopyPlain(entry));
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const [key, entry] of Object.entries(value)) out[key] = deepCopyPlain(entry);
+    return out;
+  }
+  return value;
+};
+
+export const FISH_SAVE_KEYS = [
+  'id',
+  'name',
+  'spawnTimeSec',
+  'stageShiftBabySec',
+  'stageShiftJuvenileSec',
+  'traits',
+  'position',
+  'facing',
+  'headingAngle',
+  'desiredAngle',
+  'currentSpeed',
+  'cruisePhase',
+  'cruiseRate',
+  'target',
+  'sex',
+  'energy01',
+  'hunger01',
+  'wellbeing01',
+  'waterPenalty01',
+  'hungerState',
+  'lifeState',
+  'deathReason',
+  'deadAtSec',
+  'skeletonAtSec',
+  'corpseRemoved',
+  'corpseDirtApplied01',
+  'behavior',
+  'eatAnimTimer',
+  'eatAnimDuration',
+  'playState',
+  'repro',
+  'matingAnim',
+  'history'
+];
 // Smooth-ish ease for growth transitions.
 const easeInOut = (t) => t * t * (3 - 2 * t);
 
@@ -177,6 +222,50 @@ export class Fish {
 
     // Cached reference for pursuit updates (set during decideBehavior).
     this._worldRef = null;
+  }
+
+  toJSON() {
+    const out = {};
+    for (const key of FISH_SAVE_KEYS) out[key] = deepCopyPlain(this[key]);
+    return out;
+  }
+
+  static fromJSON(data, bounds) {
+    const source = data && typeof data === 'object' ? data : {};
+    const traits = source.traits && typeof source.traits === 'object' ? deepCopyPlain(source.traits) : {};
+    const history = source.history && typeof source.history === 'object' ? deepCopyPlain(source.history) : {};
+    const fish = new Fish(bounds, {
+      id: Number.isFinite(source.id) ? source.id : 0,
+      spawnTimeSec: Number.isFinite(source.spawnTimeSec) ? source.spawnTimeSec : 0,
+      stageShiftBabySec: Number.isFinite(source.stageShiftBabySec) ? source.stageShiftBabySec : undefined,
+      stageShiftJuvenileSec: Number.isFinite(source.stageShiftJuvenileSec) ? source.stageShiftJuvenileSec : undefined,
+      position: source.position && Number.isFinite(source.position.x) && Number.isFinite(source.position.y)
+        ? { x: source.position.x, y: source.position.y }
+        : undefined,
+      headingAngle: Number.isFinite(source.headingAngle) ? source.headingAngle : undefined,
+      traits,
+      history
+    });
+
+    for (const key of FISH_SAVE_KEYS) {
+      if (source[key] === undefined) continue;
+      fish[key] = deepCopyPlain(source[key]);
+    }
+
+    fish.name = typeof fish.name === 'string' ? fish.name : '';
+    fish.sex = fish.sex === 'female' || fish.sex === 'male' ? fish.sex : 'female';
+    fish.energy01 = clamp01(Number.isFinite(fish.energy01) ? fish.energy01 : 1);
+    fish.hunger01 = clamp01(Number.isFinite(fish.hunger01) ? fish.hunger01 : 0);
+    fish.wellbeing01 = clamp01(Number.isFinite(fish.wellbeing01) ? fish.wellbeing01 : 1);
+    fish.waterPenalty01 = clamp01(Number.isFinite(fish.waterPenalty01) ? fish.waterPenalty01 : 0);
+
+    if (!fish.position || !Number.isFinite(fish.position.x) || !Number.isFinite(fish.position.y)) {
+      fish.position = { x: bounds.width * 0.5, y: bounds.height * 0.5 };
+    }
+    fish.setBounds(bounds);
+    fish.updateLifeCycle(Math.max(0, Number.isFinite(source.spawnTimeSec) ? source.spawnTimeSec : 0));
+
+    return fish;
   }
 
   setBounds(bounds) {
