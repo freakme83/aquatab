@@ -17,6 +17,7 @@ const appRoot = document.getElementById('appRoot');
 const startFishSlider = document.querySelector('[data-start-control="initialFishCount"]');
 const startFishValue = document.querySelector('[data-start-value="initialFishCount"]');
 const startSimButton = document.getElementById('startSimButton');
+const startCard = startScreen?.querySelector('.start-card');
 
 const canvas = document.getElementById('aquariumCanvas');
 const panelRoot = document.getElementById('panelRoot');
@@ -142,34 +143,35 @@ filterToast.style.zIndex = '30';
 filterToast.style.pointerEvents = 'none';
 document.body.appendChild(filterToast);
 
-const resumeModalOverlay = document.createElement('div');
-resumeModalOverlay.className = 'resume-modal-overlay';
-resumeModalOverlay.hidden = true;
-resumeModalOverlay.innerHTML = `
-  <section class="resume-modal" role="dialog" aria-modal="true" aria-labelledby="resumeModalTitle">
-    <h2 id="resumeModalTitle">Resume simulation?</h2>
-    <p class="resume-modal-meta" data-resume-meta>Last saved: unknown</p>
-    <div class="resume-modal-actions">
-      <button type="button" class="resume-modal-btn" data-resume-action="continue">Continue</button>
-      <button type="button" class="resume-modal-btn is-secondary" data-resume-action="new">New sim</button>
-    </div>
-  </section>
+const savedStartPanel = document.createElement('section');
+savedStartPanel.className = 'saved-start-panel';
+savedStartPanel.hidden = true;
+savedStartPanel.innerHTML = `
+  <h2>Saved simulation found</h2>
+  <p class="saved-start-meta" data-saved-start-meta>Last saved: unknown</p>
+  <div class="saved-start-actions">
+    <button type="button" class="saved-start-btn" data-saved-start-action="continue">Continue</button>
+    <button type="button" class="saved-start-link" data-saved-start-action="new">New sim</button>
+  </div>
 `;
-document.body.appendChild(resumeModalOverlay);
+startCard?.appendChild(savedStartPanel);
 
-const resumeMeta = resumeModalOverlay.querySelector('[data-resume-meta]');
-const resumeContinueBtn = resumeModalOverlay.querySelector('[data-resume-action="continue"]');
-const resumeNewBtn = resumeModalOverlay.querySelector('[data-resume-action="new"]');
+const savedStartMeta = savedStartPanel.querySelector('[data-saved-start-meta]');
+const savedStartContinueBtn = savedStartPanel.querySelector('[data-saved-start-action="continue"]');
+const savedStartNewBtn = savedStartPanel.querySelector('[data-saved-start-action="new"]');
 
-function hideResumeModal() {
-  resumeModalOverlay.hidden = true;
-}
-
-function showResumeModal(payload) {
+function refreshSavedStartPanel() {
+  const payload = loadSavedWorldSnapshot();
   pendingSavePayload = payload;
-  const relative = formatRelativeSavedAt(payload?.savedAtEpochMs);
-  if (resumeMeta) resumeMeta.textContent = `Last saved: ${relative}`;
-  resumeModalOverlay.hidden = false;
+
+  if (!payload) {
+    savedStartPanel.hidden = true;
+    return;
+  }
+
+  const relative = formatRelativeSavedAt(payload.savedAtEpochMs);
+  if (savedStartMeta) savedStartMeta.textContent = `Last saved: ${relative}`;
+  savedStartPanel.hidden = false;
 }
 
 let filterToastTimeoutId = null;
@@ -377,6 +379,7 @@ function restartToStartScreen() {
 
   appRoot.hidden = true;
   startScreen.hidden = false;
+  refreshSavedStartPanel();
 }
 
 function startSimulation({ savedPayload = null } = {}) {
@@ -387,7 +390,7 @@ function startSimulation({ savedPayload = null } = {}) {
 
   appRoot.hidden = false;
   startScreen.hidden = true;
-  hideResumeModal();
+  pendingSavePayload = null;
 
   const initialSize = measureCanvasSize();
   if (savedPayload?.saveVersion === SAVE_VERSION) {
@@ -460,31 +463,22 @@ function startSimulation({ savedPayload = null } = {}) {
   syncDriversToVisibility();
 }
 
-resumeContinueBtn?.addEventListener('click', () => {
+savedStartContinueBtn?.addEventListener('click', () => {
   if (!pendingSavePayload) {
-    hideResumeModal();
-    startSimulation();
-    return;
+    refreshSavedStartPanel();
   }
+  if (!pendingSavePayload) return;
 
-  const payload = pendingSavePayload;
-  pendingSavePayload = null;
-  startSimulation({ savedPayload: payload });
+  startSimulation({ savedPayload: pendingSavePayload });
 });
 
-resumeNewBtn?.addEventListener('click', () => {
+savedStartNewBtn?.addEventListener('click', () => {
   localStorage.removeItem(SAVE_STORAGE_KEY);
-  pendingSavePayload = null;
-  hideResumeModal();
-  startSimulation();
+  refreshSavedStartPanel();
 });
 
 startSimButton?.addEventListener('click', () => {
-  const existingSave = loadSavedWorldSnapshot();
-  if (!existingSave) {
-    startSimulation();
-    return;
-  }
-
-  showResumeModal(existingSave);
+  startSimulation();
 });
+
+refreshSavedStartPanel();
