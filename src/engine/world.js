@@ -31,7 +31,7 @@ const MATE_MIN_HYGIENE = clamp01(REPRO_CONFIG.MATE_MIN_HYGIENE ?? 0.6);
 const GESTATION_SEC = REPRO_CONFIG.GESTATION_SEC ?? [300, 360];
 const EGG_INCUBATION_SEC = REPRO_CONFIG.EGG_INCUBATION_SEC ?? [120, 300];
 const MOTHER_COOLDOWN_SEC = REPRO_CONFIG.MOTHER_COOLDOWN_SEC ?? [600, 1080];
-const CLUTCH_SIZE = REPRO_CONFIG.CLUTCH_SIZE ?? [1, 2];
+const CLUTCH_SIZE = REPRO_CONFIG.CLUTCH_SIZE ?? [2, 4];
 
 const FEMALE_NAME_POOL = Array.isArray(CONFIG.FEMALE_NAME_POOL) ? CONFIG.FEMALE_NAME_POOL : [];
 const MALE_NAME_POOL = Array.isArray(CONFIG.MALE_NAME_POOL) ? CONFIG.MALE_NAME_POOL : [];
@@ -1237,7 +1237,7 @@ export class World {
     const father = this.getFishById(female.repro.fatherId) ?? null;
     const motherTraits = { ...(female.traits ?? {}) };
     const fatherTraits = father?.traits ? { ...father.traits } : { ...motherTraits };
-    const clutchCount = Math.max(1, randIntInclusive(CLUTCH_SIZE, 1, 2));
+    const clutchCount = Math.max(1, randIntInclusive(CLUTCH_SIZE, 2, 4));
 
     for (let i = 0; i < clutchCount; i += 1) {
       const x = clamp(female.position.x + rand(-6, 6), 0, this.bounds.width);
