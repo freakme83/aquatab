@@ -34,6 +34,33 @@ let pendingSavePayload = null;
 let autosaveIntervalId = null;
 
 let lastTimingDebugLogAtSec = -1;
+let lastTrendSampleSimTimeSec = null;
+let lastTrendSampleHygiene01 = null;
+let smoothedHygieneDeltaPerMin = 0;
+
+function computeCleanlinessTrend(simTimeSec, hygiene01) {
+  const currentSimTime = Number.isFinite(simTimeSec) ? simTimeSec : 0;
+  const currentHygiene = Math.max(0, Math.min(1, hygiene01 ?? 1));
+
+  if (lastTrendSampleSimTimeSec == null || lastTrendSampleHygiene01 == null) {
+    lastTrendSampleSimTimeSec = currentSimTime;
+    lastTrendSampleHygiene01 = currentHygiene;
+    return 'Stable';
+  }
+
+  const dt = Math.max(0, currentSimTime - lastTrendSampleSimTimeSec);
+  if (dt > 0) {
+    const deltaPerMin = ((currentHygiene - lastTrendSampleHygiene01) / dt) * 60;
+    const smoothing = 0.2;
+    smoothedHygieneDeltaPerMin = smoothedHygieneDeltaPerMin * (1 - smoothing) + deltaPerMin * smoothing;
+    lastTrendSampleSimTimeSec = currentSimTime;
+    lastTrendSampleHygiene01 = currentHygiene;
+  }
+
+  if (smoothedHygieneDeltaPerMin <= -0.018) return 'Dropping fast';
+  if (smoothedHygieneDeltaPerMin <= -0.004) return 'Dropping';
+  return 'Stable';
+}
 
 function computeWaterQuality(hygiene01, dirt01) {
   const hygiene = Math.max(0, Math.min(1, hygiene01 ?? 1));
@@ -302,7 +329,7 @@ function tick(now) {
     simTimeSec: world.simTimeSec,
     fishCount: world.fish.length,
     cleanliness01: world.water.hygiene01,
-    waterQuality: computeWaterQuality(world.water.hygiene01, world.water.dirt01),
+    cleanlinessTrend: computeCleanlinessTrend(world.simTimeSec, world.water.hygiene01),
     filterUnlocked: world.filterUnlocked,
     foodsConsumedCount: world.foodsConsumedCount,
     filterUnlockThreshold: world.filterUnlockThreshold,
@@ -397,6 +424,9 @@ function restartToStartScreen() {
   pendingSavePayload = null;
   world = null;
   renderer = null;
+  lastTrendSampleSimTimeSec = null;
+  lastTrendSampleHygiene01 = null;
+  smoothedHygieneDeltaPerMin = 0;
 
   if (canvasClickHandler) {
     canvas.removeEventListener('click', canvasClickHandler);
@@ -429,6 +459,9 @@ function startSimulation({ savedPayload = null } = {}) {
     world = new World(initialSize.width, initialSize.height, initialFishCount);
   }
   renderer = new Renderer(canvas, world);
+  lastTrendSampleSimTimeSec = null;
+  lastTrendSampleHygiene01 = null;
+  smoothedHygieneDeltaPerMin = 0;
 
   const panelHandlers = {
     onSpeedChange: (value) => world.setSpeedMultiplier(value),

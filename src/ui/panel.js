@@ -18,13 +18,13 @@ export class Panel {
     this.simTimeStat = this.root.querySelector('[data-stat="simTime"]');
     this.fishCountStat = this.root.querySelector('[data-stat="fishCount"]');
     this.cleanlinessStat = this.root.querySelector('[data-stat="cleanliness"]');
-    this.waterQualityStat = this.root.querySelector('[data-stat="waterQuality"]');
-    if (!this.waterQualityStat && this.cleanlinessStat?.closest('.stat-row')) {
+    this.cleanlinessTrendStat = this.root.querySelector('[data-stat="cleanlinessTrend"]');
+    if (!this.cleanlinessTrendStat && this.cleanlinessStat?.closest('.stat-row')) {
       const row = document.createElement('div');
       row.className = 'stat-row';
-      row.innerHTML = '<span>Water quality</span><strong data-stat="waterQuality">Great</strong>';
+      row.innerHTML = '<span>Trend</span><strong data-stat="cleanlinessTrend">Stable</strong>';
       this.cleanlinessStat.closest('.stat-row').insertAdjacentElement('afterend', row);
-      this.waterQualityStat = row.querySelector('[data-stat="waterQuality"]');
+      this.cleanlinessTrendStat = row.querySelector('[data-stat="cleanlinessTrend"]');
     }
 
     this.speedSlider = this.root.querySelector('[data-control="simSpeed"]');
@@ -204,7 +204,7 @@ export class Panel {
     simTimeSec,
     fishCount,
     cleanliness01,
-    waterQuality,
+    cleanlinessTrend,
     filterUnlocked,
     foodsConsumedCount,
     filterUnlockThreshold,
@@ -231,15 +231,14 @@ export class Panel {
       this.cleanlinessStat.textContent = `${cleanlinessPct}%`;
     }
 
-    if (this.waterQualityStat) {
-      const qualityLabel = ['Great', 'OK', 'Poor', 'Critical'].includes(waterQuality) ? waterQuality : 'Great';
-      this.waterQualityStat.textContent = qualityLabel;
-      this.waterQualityStat.style.color = {
-        Great: '#2f9f3b',
-        OK: '#44be56',
-        Poor: '#f0a13a',
-        Critical: '#ea5f5f'
-      }[qualityLabel];
+    if (this.cleanlinessTrendStat) {
+      const trendLabel = ['Stable', 'Dropping', 'Dropping fast'].includes(cleanlinessTrend) ? cleanlinessTrend : 'Stable';
+      this.cleanlinessTrendStat.textContent = trendLabel;
+      this.cleanlinessTrendStat.style.color = {
+        Stable: '#cfeeff',
+        Dropping: '#f0a13a',
+        'Dropping fast': '#ea5f5f'
+      }[trendLabel];
     }
 
     const consumed = Math.max(0, Math.floor(foodsConsumedCount ?? 0));
