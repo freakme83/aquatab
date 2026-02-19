@@ -30,6 +30,16 @@ const WATER_AGE_SENSITIVITY_MIN = Math.max(0, WATER_WELLBEING.ageSensitivityMin 
 const WATER_AGE_SENSITIVITY_EDGE_BOOST = Math.max(0, WATER_WELLBEING.ageSensitivityEdgeBoost ?? 0.6);
 const rand = (min, max) => min + Math.random() * (max - min);
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+const HOVER_CONFIG = CONFIG.fish.hover ?? {};
+const HOVER_MIN_SEC = Math.max(0, HOVER_CONFIG.minSec ?? 0.6);
+const HOVER_MAX_SEC = Math.max(HOVER_MIN_SEC, HOVER_CONFIG.maxSec ?? 2.0);
+const HOVER_COOLDOWN_MIN_SEC = Math.max(0, HOVER_CONFIG.cooldownMinSec ?? 6.0);
+const HOVER_COOLDOWN_MAX_SEC = Math.max(HOVER_COOLDOWN_MIN_SEC, HOVER_CONFIG.cooldownMaxSec ?? 14.0);
+const HOVER_CHANCE_PER_CHECK = clamp(HOVER_CONFIG.chancePerCheck ?? 0.25, 0, 1);
+const HOVER_WALL_MARGIN_PX = Math.max(0, HOVER_CONFIG.wallMarginPx ?? 20);
+const HOVER_DRIFT_AMP_PX = Math.max(0, HOVER_CONFIG.driftAmpPx ?? 2.5);
+const HOVER_DRIFT_RATE = Math.max(0, HOVER_CONFIG.driftRate ?? 1.2);
+const HOVER_SPEED_FACTOR = clamp(HOVER_CONFIG.speedFactor ?? 0.15, 0.01, 1);
 
 const clamp01 = (v) => clamp(v, 0, 1);
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -208,6 +218,11 @@ export class Fish {
     };
 
     this.matingAnim = null;
+
+    this.hoverUntilSec = 0;
+    this.nextHoverCheckAtSec = 0;
+    this.hoverAnchor = null;
+    this.hoverPhase = rand(0, TAU);
 
     this.history = {
       motherId: options.history?.motherId ?? null,
@@ -407,6 +422,7 @@ export class Fish {
 
     if (this.lifeState !== 'ALIVE') {
       this.behavior = { mode: 'deadSink', targetFoodId: null, speedBoost: 1 };
+      this.#updateHoverAfterBehavior(world?.simTimeSec ?? 0);
       return;
     }
 
@@ -417,6 +433,7 @@ export class Fish {
         speedBoost: 1
       };
       this.target = { x: this.repro.layTargetX, y: this.repro.layTargetY };
+      this.#updateHoverAfterBehavior(world?.simTimeSec ?? 0);
       return;
     }
 
@@ -428,17 +445,20 @@ export class Fish {
         speedBoost: isRunner ? PLAY_RUNNER_SPEED_BOOST : PLAY_SPEED_BOOST,
         targetFishId: this.playState.targetFishId
       };
+      this.#updateHoverAfterBehavior(world?.simTimeSec ?? 0);
       return;
     }
 
     if (this.hungerState === 'FED') {
       this.behavior = { mode: 'wander', targetFoodId: null, speedBoost: 1 };
+      this.#updateHoverAfterBehavior(world?.simTimeSec ?? 0);
       return;
     }
 
     const visibleFood = this.#findNearestFood(world?.food ?? []);
     if (!visibleFood) {
       this.behavior = { mode: 'wander', targetFoodId: null, speedBoost: 1 };
+      this.#updateHoverAfterBehavior(world?.simTimeSec ?? 0);
       return;
     }
 
@@ -448,6 +468,7 @@ export class Fish {
       speedBoost: FOOD_SPEED_BOOST[this.hungerState] ?? 1
     };
     this.target = { x: visibleFood.x, y: visibleFood.y };
+    this.#updateHoverAfterBehavior(world?.simTimeSec ?? 0);
   }
 
   applySteering(dt) {
@@ -488,7 +509,15 @@ export class Fish {
       }
     }
 
-    if (this.behavior.mode === 'wander' && this.#shouldRetarget()) this.target = this.#pickTarget();
+    const nowSec = this._worldRef?.simTimeSec ?? 0;
+    if (this.#shouldCancelHoverForUrgentGoal(nowSec)) this.cancelHover();
+
+    const isHovering = this.#isHoverActive(nowSec);
+    if (isHovering) {
+      this.target = this.#hoverDesiredPos(nowSec);
+    } else if (this.behavior.mode === 'wander' && this.#shouldRetarget()) {
+      this.target = this.#pickTarget();
+    }
 
     const seek = this.#seekVector();
     if (this.behavior.mode === 'seekFood') {
@@ -500,7 +529,6 @@ export class Fish {
     let desiredX = seek.x + avoidance.x;
     let desiredY = seek.y + avoidance.y;
 
-    const nowSec = this._worldRef?.simTimeSec ?? 0;
     if (this.matingAnim && this.lifeState === 'ALIVE') {
       const progress = clamp01((nowSec - this.matingAnim.startSec) / Math.max(0.001, this.matingAnim.durationSec ?? 1.1));
       if (progress >= 1) {
@@ -548,8 +576,16 @@ export class Fish {
     this.cruisePhase = normalizeAngle(this.cruisePhase + dt * this.cruiseRate);
     const cruiseFactor = 1 + Math.sin(this.cruisePhase) * 0.18;
     const speedBoost = (this.behavior.mode === 'seekFood' || this.behavior.mode === 'playChase' || this.behavior.mode === 'playEvade' || this.behavior.mode === 'seekLayTarget') ? this.behavior.speedBoost : 1;
-    const desiredSpeed = this.#baseSpeed() * cruiseFactor * speedBoost;
-    this.currentSpeed += (desiredSpeed - this.currentSpeed) * Math.min(1, dt * 0.8);
+    const normalDesiredSpeed = this.#baseSpeed() * cruiseFactor * speedBoost;
+    const desiredSpeed = isHovering ? normalDesiredSpeed * HOVER_SPEED_FACTOR : normalDesiredSpeed;
+    const speedResponse = isHovering ? Math.min(1, dt * 5.2) : Math.min(1, dt * 0.8);
+    this.currentSpeed += (desiredSpeed - this.currentSpeed) * speedResponse;
+
+    if (isHovering) {
+      // Keep hover visually close to "asılı" by hard-capping per-tick speed.
+      const hoverSpeedCap = this.#baseSpeed() * HOVER_SPEED_FACTOR;
+      this.currentSpeed = Math.min(this.currentSpeed, hoverSpeedCap);
+    }
 
     const prevX = this.position.x;
     const prevY = this.position.y;
@@ -693,6 +729,10 @@ export class Fish {
     return Math.sin(progress * Math.PI);
   }
 
+  isHovering(nowSec) {
+    return this.#isHoverActive(nowSec);
+  }
+
   headPoint() {
     const bodyLength = this.size * 1.32;
     const headOffset = bodyLength * 0.22;
@@ -755,6 +795,96 @@ export class Fish {
       minY: margin,
       maxY
     };
+  }
+
+  #hoverSafeBounds() {
+    const movement = this.#movementBounds();
+    const minX = movement.minX + HOVER_WALL_MARGIN_PX;
+    const maxX = movement.maxX - HOVER_WALL_MARGIN_PX;
+    const minY = movement.minY + HOVER_WALL_MARGIN_PX;
+    const maxY = movement.maxY - HOVER_WALL_MARGIN_PX;
+
+    return {
+      minX: minX <= maxX ? minX : movement.minX,
+      maxX: minX <= maxX ? maxX : movement.maxX,
+      minY: minY <= maxY ? minY : movement.minY,
+      maxY: minY <= maxY ? maxY : movement.maxY
+    };
+  }
+
+  #isAwayFromHoverWalls() {
+    const safe = this.#hoverSafeBounds();
+    return this.position.x >= safe.minX
+      && this.position.x <= safe.maxX
+      && this.position.y >= safe.minY
+      && this.position.y <= safe.maxY;
+  }
+
+  #isHoverEligible() {
+    if (this.lifeState !== 'ALIVE') return false;
+    if ((this.eatAnimTimer ?? 0) > 0) return false;
+    if (this.behavior?.mode !== 'wander') return false;
+    if (this.behavior?.targetFoodId) return false;
+    if (this.isPlaying(this._worldRef?.simTimeSec ?? 0)) return false;
+    if (this.repro?.state === 'LAYING' || this.repro?.state === 'GRAVID') return false;
+    if (this.matingAnim) return false;
+    if (!this.#isAwayFromHoverWalls()) return false;
+    return true;
+  }
+
+  #isHoverActive(nowSec) {
+    if (!Number.isFinite(nowSec)) return false;
+    if (!this.hoverAnchor || nowSec >= this.hoverUntilSec) {
+      this.cancelHover();
+      return false;
+    }
+    return true;
+  }
+
+  #shouldCancelHoverForUrgentGoal(nowSec) {
+    if (!this.#isHoverActive(nowSec)) return false;
+    if (this.lifeState !== 'ALIVE') return true;
+    if ((this.eatAnimTimer ?? 0) > 0) return true;
+    if (this.behavior?.mode === 'seekFood' || this.behavior?.targetFoodId) return true;
+    if (this.behavior?.mode === 'playChase' || this.behavior?.mode === 'playEvade') return true;
+    if (this.isPlaying(nowSec)) return true;
+    if (this.repro?.state === 'LAYING') return true;
+    if (this.matingAnim) return true;
+    return false;
+  }
+
+  #hoverDesiredPos(nowSec) {
+    const anchor = this.hoverAnchor ?? this.position;
+    const p = (nowSec * HOVER_DRIFT_RATE) + this.hoverPhase;
+    const dx = Math.sin(p) * HOVER_DRIFT_AMP_PX;
+    const dy = Math.cos(p * 0.8) * HOVER_DRIFT_AMP_PX * 0.7;
+    const safe = this.#hoverSafeBounds();
+    return {
+      x: clamp(anchor.x + dx, safe.minX, safe.maxX),
+      y: clamp(anchor.y + dy, safe.minY, safe.maxY)
+    };
+  }
+
+  #updateHoverSchedule(nowSec) {
+    if (!Number.isFinite(nowSec) || nowSec < this.nextHoverCheckAtSec) return;
+
+    this.nextHoverCheckAtSec = nowSec + rand(HOVER_COOLDOWN_MIN_SEC, HOVER_COOLDOWN_MAX_SEC);
+    if (!this.#isHoverEligible()) return;
+    if (Math.random() >= HOVER_CHANCE_PER_CHECK) return;
+
+    this.hoverUntilSec = nowSec + rand(HOVER_MIN_SEC, HOVER_MAX_SEC);
+    this.hoverAnchor = { x: this.position.x, y: this.position.y };
+    this.hoverPhase = rand(0, TAU);
+  }
+
+  #updateHoverAfterBehavior(nowSec) {
+    if (this.#shouldCancelHoverForUrgentGoal(nowSec)) this.cancelHover();
+    this.#updateHoverSchedule(nowSec);
+  }
+
+  cancelHover() {
+    this.hoverUntilSec = 0;
+    this.hoverAnchor = null;
   }
 
   #pickTarget() {
