@@ -15,6 +15,9 @@ const FOOD_DEFAULT_TTL = CONFIG.world.food.defaultTtlSec;
 const FOOD_FALL_ACCEL = CONFIG.world.food.fallAccel;
 const FOOD_FALL_DAMPING = CONFIG.world.food.fallDamping;
 const FOOD_MAX_FALL_SPEED = CONFIG.world.food.maxFallSpeed;
+const POOP_DEFAULT_TTL_SEC = Math.max(1, CONFIG.world.poop?.defaultTtlSec ?? 120);
+const POOP_DIRT_PER_SEC = Math.max(0, CONFIG.world.poop?.dirtPerSec ?? 0);
+const POOP_RISE_SPEED = Math.max(0, CONFIG.world.poop?.riseSpeed ?? 0);
 const AGE_CONFIG = CONFIG.fish.age;
 const INITIAL_MAX_AGE_SEC = Math.max(0, AGE_CONFIG.INITIAL_MAX_AGE_SEC ?? 1200);
 const GROWTH_CONFIG = CONFIG.fish.growth;
@@ -71,6 +74,7 @@ export const WATER_SAVE_KEYS = [
   'effectiveFilter01'
 ];
 export const FOOD_SAVE_KEYS = ['id', 'x', 'y', 'amount', 'ttl', 'vy'];
+export const POOP_SAVE_KEYS = ['id', 'x', 'y', 'ttlSec', 'maxTtlSec', 'vy', 'canBeEaten', 'nutrition'];
 export const EGG_SAVE_KEYS = [
   'id',
   'x',
@@ -122,6 +126,25 @@ function deserializeFood(data, bounds, swimHeight) {
     amount: Math.max(0.05, Number.isFinite(source.amount) ? source.amount : FOOD_DEFAULT_AMOUNT),
     ttl: Number.isFinite(source.ttl) ? source.ttl : FOOD_DEFAULT_TTL,
     vy: Number.isFinite(source.vy) ? source.vy : 0
+  };
+}
+
+function serializePoop(poop) {
+  return pickSavedKeys(poop, POOP_SAVE_KEYS);
+}
+
+function deserializePoop(data, bounds, swimHeight) {
+  const source = data && typeof data === 'object' ? data : {};
+  const position = clampPosition(source, bounds, swimHeight);
+  return {
+    id: Number.isFinite(source.id) ? source.id : 0,
+    x: position.x,
+    y: position.y,
+    ttlSec: Math.max(0, Number.isFinite(source.ttlSec) ? source.ttlSec : POOP_DEFAULT_TTL_SEC),
+    maxTtlSec: Math.max(1, Number.isFinite(source.maxTtlSec) ? source.maxTtlSec : POOP_DEFAULT_TTL_SEC),
+    vy: Number.isFinite(source.vy) ? source.vy : -POOP_RISE_SPEED,
+    canBeEaten: Boolean(source.canBeEaten ?? true),
+    nutrition: Math.max(0, Number.isFinite(source.nutrition) ? source.nutrition : 0.1)
   };
 }
 
@@ -278,6 +301,7 @@ export class World {
     this.eggs = [];
     this.bubbles = [];
     this.nextFoodId = 1;
+    this.nextPoopId = 1;
     this.nextFishId = 1;
     this.nextPlaySessionId = 1;
     this.nextEggId = 1;
@@ -592,7 +616,8 @@ export class World {
       water: serializeWater(this.water),
       fish: this.fish.map((entry) => entry.toJSON()),
       eggs: this.eggs.map((entry) => serializeEgg(entry)),
-      food: this.food.map((entry) => serializeFood(entry))
+      food: this.food.map((entry) => serializeFood(entry)),
+      poop: this.poop.map((entry) => serializePoop(entry))
     };
   }
 
@@ -622,10 +647,15 @@ export class World {
       ? source.food.map((entry) => deserializeFood(entry, this.bounds, swimHeight))
       : [];
 
+    this.poop = Array.isArray(source.poop)
+      ? source.poop.map((entry) => deserializePoop(entry, this.bounds, swimHeight))
+      : [];
+
     this.water = deserializeWater(source.water, this.#createInitialWaterState());
 
     this.nextFishId = Math.max(1, ...this.fish.map((entry) => Math.floor(entry.id || 0) + 1));
     this.nextFoodId = Math.max(1, ...this.food.map((entry) => Math.floor(entry.id || 0) + 1));
+    this.nextPoopId = Math.max(1, ...this.poop.map((entry) => Math.floor(entry.id || 0) + 1));
     this.nextEggId = Math.max(1, ...this.eggs.map((entry) => Math.floor(entry.id || 0) + 1));
 
     this.#rebuildFishById();
@@ -666,6 +696,11 @@ export class World {
       food.y = Math.min(Math.max(0, food.y), Math.max(0, this.#swimHeight()));
     }
 
+    for (const poop of this.poop) {
+      poop.x = Math.min(Math.max(0, poop.x), width);
+      poop.y = Math.min(Math.max(0, poop.y), Math.max(0, this.#swimHeight()));
+    }
+
     for (const bubble of this.bubbles) {
       bubble.x = Math.min(Math.max(0, bubble.x), width);
       bubble.y = Math.min(Math.max(0, bubble.y), height + 40);
@@ -689,6 +724,25 @@ export class World {
     });
 
     this.emit('food:spawn', { x: clampedX, y: clampedY, amount, ttl });
+  }
+
+
+  spawnPoop(x, y, ttlSec = POOP_DEFAULT_TTL_SEC) {
+    const clampedX = clamp(x, 0, this.bounds.width);
+    const clampedY = clamp(y, 0, this.#swimHeight());
+
+    const poop = {
+      id: this.nextPoopId++,
+      x: clampedX,
+      y: clampedY,
+      ttlSec: Math.max(0, Number.isFinite(ttlSec) ? ttlSec : POOP_DEFAULT_TTL_SEC),
+      maxTtlSec: Math.max(1, Number.isFinite(ttlSec) ? ttlSec : POOP_DEFAULT_TTL_SEC),
+      vy: -POOP_RISE_SPEED,
+      canBeEaten: true,
+      nutrition: 0.1
+    };
+    this.poop.push(poop);
+    return poop;
   }
 
   consumeFood(foodId, amountToConsume = 0.5) {
@@ -715,7 +769,7 @@ export class World {
   }
 
   // Future hook: edible target discovery.
-  // For now, fish can only eat food. Later we may include eggs for certain species/traits.
+  // For now, fish can only eat food. Later we may include eggs/poop for certain species or traits.
   getEdibleTargetsForFish(fish) {
     return this.food;
   }
@@ -847,6 +901,7 @@ export class World {
 
     this.#updateFishLifeState();
     this.#updateFood(simDt, motionDt);
+    this.#updatePoop(simDt, motionDt);
     this.#updateEggs(simDt);
     this.#updateWaterHygiene(simDt);
     this.#updateFxParticles(motionDt);
@@ -970,7 +1025,8 @@ export class World {
 
     const bioloadDirt = WATER_BIOLOAD_DIRT_PER_SEC * bioload * dtSec;
     const expiredFoodDirt = expiredFoodCount * WATER_DIRT_PER_EXPIRED_FOOD;
-    water.dirt01 = clamp(water.dirt01 + bioloadDirt + expiredFoodDirt, 0, 1);
+    const poopDirt = this.poop.length * POOP_DIRT_PER_SEC * dtSec;
+    water.dirt01 = clamp(water.dirt01 + bioloadDirt + expiredFoodDirt + poopDirt, 0, 1);
 
     const removedDirt = FILTER_DIRT_REMOVE_PER_SEC * effectiveFilter01 * dtSec;
     water.dirt01 = clamp(water.dirt01 - removedDirt, 0, 1);
@@ -1341,6 +1397,25 @@ export class World {
   }
 
 
+  #updatePoop(simDt, motionDt) {
+    const bottomY = this.#swimHeight();
+
+    for (let i = this.poop.length - 1; i >= 0; i -= 1) {
+      const item = this.poop[i];
+      if (Number.isFinite(item.ttlSec)) item.ttlSec -= simDt;
+
+      item.vy = Number.isFinite(item.vy) ? item.vy : -POOP_RISE_SPEED;
+      item.y += item.vy * motionDt;
+      item.y = clamp(item.y, 0, bottomY);
+      item.x = clamp(item.x, 0, this.bounds.width);
+
+      if (Number.isFinite(item.ttlSec) && item.ttlSec <= 0) {
+        this.poop.splice(i, 1);
+      }
+    }
+  }
+
+
   #updateFxParticles(dt) {
     if (!Number.isFinite(dt) || dt <= 0) return;
 
@@ -1424,6 +1499,11 @@ export class World {
     for (const food of this.food) {
       food.x = Math.min(Math.max(0, food.x), width);
       food.y = Math.min(Math.max(0, food.y), Math.max(0, this.#swimHeight()));
+    }
+
+    for (const poop of this.poop) {
+      poop.x = Math.min(Math.max(0, poop.x), width);
+      poop.y = Math.min(Math.max(0, poop.y), Math.max(0, this.#swimHeight()));
     }
 
     for (const bubble of this.bubbles) {

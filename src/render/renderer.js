@@ -102,6 +102,7 @@ export class Renderer {
     this.#drawBubbles(ctx);
     this.#drawFilterModule(ctx, time);
     this.#drawFood(ctx);
+    this.#drawPoop(ctx);
     this.#drawEggs(ctx);
     this.#drawFxParticles(ctx);
     this.#drawFishSchool(ctx, time);
@@ -401,6 +402,31 @@ export class Renderer {
       ctx.beginPath();
       ctx.fillStyle = 'rgba(221, 255, 226, 0.52)';
       ctx.arc(x - radius * 0.2, y - radius * 0.2, radius * 0.45, 0, TAU);
+      ctx.fill();
+    }
+  }
+
+
+  #drawPoop(ctx) {
+    const sx = this.tankRect.width / this.world.bounds.width;
+    const sy = this.tankRect.height / this.world.bounds.height;
+
+    for (const item of this.world.poop ?? []) {
+      const x = this.tankRect.x + item.x * sx;
+      const y = this.tankRect.y + item.y * sy;
+      const maxTtl = Math.max(1, Number.isFinite(item.maxTtlSec) ? item.maxTtlSec : 120);
+      const ttlSec = Math.max(0, Number.isFinite(item.ttlSec) ? item.ttlSec : maxTtl);
+      const life01 = Math.max(0, Math.min(1, ttlSec / maxTtl));
+      const alpha = 0.22 + life01 * 0.53;
+
+      ctx.beginPath();
+      ctx.fillStyle = `rgba(116, 73, 44, ${alpha})`;
+      ctx.ellipse(x, y, 3.4, 2.1, 0.2, 0, TAU);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.fillStyle = `rgba(154, 109, 72, ${alpha * 0.5})`;
+      ctx.ellipse(x - 0.8, y - 0.5, 1.3, 0.9, 0.2, 0, TAU);
       ctx.fill();
     }
   }
