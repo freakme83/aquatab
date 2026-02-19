@@ -289,7 +289,7 @@ function tick(now) {
   renderer.render(now, renderDelta);
 
   panel.updateStats({
-    uiTimeSec: world.realTimeSec,
+    simTimeSec: world.simTimeSec,
     fishCount: world.fish.length,
     cleanliness01: world.water.hygiene01,
     filterUnlocked: world.filterUnlocked,
@@ -307,15 +307,14 @@ function tick(now) {
   updateCorpseActionButton();
 
   const timing = world.debugTiming;
-  const logSecond = Math.floor(world.realTimeSec);
+  const logSecond = Math.floor(world.simTimeSec);
   if (timing && logSecond > lastTimingDebugLogAtSec) {
     lastTimingDebugLogAtSec = logSecond;
     console.log('[sim-timing]', {
       speedMultiplier: timing.speedMultiplier,
       rawDelta: Number(timing.rawDelta.toFixed(4)),
+      simDt: Number(timing.simDt.toFixed(4)),
       motionDt: Number(timing.motionDt.toFixed(4)),
-      lifeDt: Number(timing.lifeDt.toFixed(4)),
-      realTimeSec: Number(timing.realTimeSec.toFixed(2)),
       simTimeSec: Number(timing.simTimeSec.toFixed(2))
     });
   }
