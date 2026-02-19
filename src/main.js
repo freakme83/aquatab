@@ -33,6 +33,8 @@ let pendingSavePayload = null;
 
 let autosaveIntervalId = null;
 
+let lastTimingDebugLogAtSec = -1;
+
 function loadSavedWorldSnapshot() {
   try {
     const raw = localStorage.getItem(SAVE_STORAGE_KEY);
@@ -287,7 +289,7 @@ function tick(now) {
   renderer.render(now, renderDelta);
 
   panel.updateStats({
-    simTimeSec: world.simTimeSec,
+    uiTimeSec: world.realTimeSec,
     fishCount: world.fish.length,
     cleanliness01: world.water.hygiene01,
     filterUnlocked: world.filterUnlocked,
@@ -303,6 +305,20 @@ function tick(now) {
   });
   panel.updateFishInspector(world.fish, world.selectedFishId, world.simTimeSec);
   updateCorpseActionButton();
+
+  const timing = world.debugTiming;
+  const logSecond = Math.floor(world.realTimeSec);
+  if (timing && logSecond > lastTimingDebugLogAtSec) {
+    lastTimingDebugLogAtSec = logSecond;
+    console.log('[sim-timing]', {
+      speedMultiplier: timing.speedMultiplier,
+      rawDelta: Number(timing.rawDelta.toFixed(4)),
+      motionDt: Number(timing.motionDt.toFixed(4)),
+      lifeDt: Number(timing.lifeDt.toFixed(4)),
+      realTimeSec: Number(timing.realTimeSec.toFixed(2)),
+      simTimeSec: Number(timing.simTimeSec.toFixed(2))
+    });
+  }
 
   rafId = requestAnimationFrame(tick);
 }

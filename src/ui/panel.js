@@ -193,6 +193,7 @@ export class Panel {
   }
 
   updateStats({
+    uiTimeSec,
     simTimeSec,
     fishCount,
     cleanliness01,
@@ -208,7 +209,7 @@ export class Panel {
     filterDepletedThreshold01
   }) {
     if (this.simTimeStat) {
-      const totalSec = Math.max(0, Math.floor(simTimeSec ?? 0));
+      const totalSec = Math.max(0, Math.floor(uiTimeSec ?? simTimeSec ?? 0));
       const hh = String(Math.floor(totalSec / 3600)).padStart(2, '0');
       const mm = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0');
       const ss = String(totalSec % 60).padStart(2, '0');

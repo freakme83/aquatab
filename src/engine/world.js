@@ -7,6 +7,7 @@ import { Fish } from './fish.js';
 import { CONFIG } from '../config.js';
 
 const MAX_TILT = CONFIG.world.maxTiltRad;
+const SIM_BASE_LIFE_SCALE = Math.max(0, Number.isFinite(CONFIG.sim?.baseLifeScale) ? CONFIG.sim.baseLifeScale : 1);
 const rand = (min, max) => min + Math.random() * (max - min);
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 const clamp01 = (v) => clamp(v, 0, 1);
@@ -282,6 +283,7 @@ export class World {
     this.nextPlaySessionId = 1;
     this.nextEggId = 1;
     this.simTimeSec = 0;
+    this.realTimeSec = 0;
     this.selectedFishId = null;
     this.nameCounts = new Map();
     this.fishById = new Map();
@@ -306,6 +308,14 @@ export class World {
 
     this.paused = false;
     this.speedMultiplier = 1;
+    this.debugTiming = {
+      speedMultiplier: this.speedMultiplier,
+      rawDelta: 0,
+      motionDt: 0,
+      lifeDt: 0,
+      realTimeSec: this.realTimeSec,
+      simTimeSec: this.simTimeSec
+    };
 
     this.#generateInitialPopulation(this.initialFishCount);
     this.#seedBubbles();
@@ -581,6 +591,8 @@ export class World {
     return {
       saveVersion: WORLD_SAVE_VERSION,
       simTimeSec: Number.isFinite(this.simTimeSec) ? this.simTimeSec : 0,
+      realTimeSec: Number.isFinite(this.realTimeSec) ? this.realTimeSec : 0,
+      speedMultiplier: Number.isFinite(this.speedMultiplier) ? this.speedMultiplier : 1,
       water: serializeWater(this.water),
       fish: this.fish.map((entry) => entry.toJSON()),
       eggs: this.eggs.map((entry) => serializeEgg(entry)),
@@ -594,6 +606,8 @@ export class World {
 
     const swimHeight = this.#swimHeight();
     this.simTimeSec = Math.max(0, Number.isFinite(source.simTimeSec) ? source.simTimeSec : 0);
+    this.realTimeSec = Math.max(0, Number.isFinite(source.realTimeSec) ? source.realTimeSec : this.simTimeSec);
+    this.speedMultiplier = Math.max(0.5, Math.min(3, Number.isFinite(source.speedMultiplier) ? source.speedMultiplier : this.speedMultiplier));
     this.fish = Array.isArray(source.fish)
       ? source.fish.map((entry) => Fish.fromJSON(entry, this.bounds))
       : [];
@@ -798,7 +812,10 @@ export class World {
   }
 
   setSpeedMultiplier(value) {
-    this.speedMultiplier = Math.max(0.5, Math.min(3, value));
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return this.speedMultiplier;
+    this.speedMultiplier = Math.max(0.5, Math.min(3, parsed));
+    return this.speedMultiplier;
   }
 
   togglePause() {
@@ -809,26 +826,36 @@ export class World {
   update(rawDelta) {
     if (this.paused) return;
 
-    const delta = rawDelta * this.speedMultiplier;
-    this.simTimeSec += delta;
+    const motionDt = rawDelta * this.speedMultiplier;
+    const lifeDt = rawDelta * this.speedMultiplier * SIM_BASE_LIFE_SCALE;
+    this.realTimeSec += rawDelta;
+    this.simTimeSec += lifeDt;
+    this.debugTiming = {
+      speedMultiplier: this.speedMultiplier,
+      rawDelta,
+      motionDt,
+      lifeDt,
+      realTimeSec: this.realTimeSec,
+      simTimeSec: this.simTimeSec
+    };
 
     for (const fish of this.fish) fish.updateLifeCycle?.(this.simTimeSec);
     for (const fish of this.fish) fish.updatePlayState?.(this.simTimeSec);
     this.#updatePlaySessions();
     this.#tryExpandPlaySessions();
     this.#tryStartPlaySessions();
-    this.#updateReproduction(delta);
-    for (const fish of this.fish) fish.updateMetabolism(delta, this);
-    for (const fish of this.fish) fish.decideBehavior(this, delta);
-    for (const fish of this.fish) fish.applySteering(delta);
+    this.#updateReproduction(lifeDt);
+    for (const fish of this.fish) fish.updateMetabolism(lifeDt, this);
+    for (const fish of this.fish) fish.decideBehavior(this, motionDt);
+    for (const fish of this.fish) fish.applySteering(motionDt);
     for (const fish of this.fish) fish.tryConsumeFood(this);
 
     this.#updateFishLifeState();
-    this.#updateFood(delta);
-    this.#updateEggs(delta);
-    this.#updateWaterHygiene(delta);
-    this.#updateFxParticles(delta);
-    this.#updateBubbles(delta);
+    this.#updateFood(lifeDt, motionDt);
+    this.#updateEggs(lifeDt);
+    this.#updateWaterHygiene(lifeDt);
+    this.#updateFxParticles(motionDt);
+    this.#updateBubbles(motionDt);
   }
 
   #createInitialWaterState() {
@@ -1294,15 +1321,15 @@ export class World {
   }
 
 
-  #updateFood(delta) {
+  #updateFood(lifeDt, motionDt) {
     const bottomY = this.#swimHeight();
 
     for (let i = this.food.length - 1; i >= 0; i -= 1) {
       const item = this.food[i];
-      if (Number.isFinite(item.ttl)) item.ttl -= delta;
+      if (Number.isFinite(item.ttl)) item.ttl -= lifeDt;
 
-      item.vy += FOOD_FALL_ACCEL * delta;
-      item.y += item.vy * delta;
+      item.vy += FOOD_FALL_ACCEL * motionDt;
+      item.y += item.vy * motionDt;
       if (item.y >= bottomY) {
         item.y = bottomY;
         item.vy *= FOOD_FALL_DAMPING;
