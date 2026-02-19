@@ -20,7 +20,8 @@ export const CONFIG = Object.freeze({
     'Aisha', 'Fatima', 'Samira', 'Imani', 'Zainab', 'Nadia', 'Soraya', 'Naomi', 'Talia', 'Mira',
     'Amara', 'Esme', 'Elisa', 'Luna', 'Aurora', 'Selena', 'Rhea', 'Tessa', 'Vera', 'Iris',
 
-    'Kira', 'Lena', 'Mara', 'Helena', 'Alba', 'Celine', 'Rosa', 'Mina', 'Jasmine', 'Allegra'
+    'Kira', 'Lena', 'Mara', 'Helena', 'Alba', 'Celine', 'Rosa', 'Mina', 'Jasmine', 'Allegra',
+    'Seyma', 'Nese', 'Hatice', 'Gozde', 'Belgin', 'Rahime'
   ],
 
   MALE_NAME_POOL: [
@@ -37,7 +38,8 @@ export const CONFIG = Object.freeze({
     'Bjorn', 'Erik', 'Magnus', 'Soren', 'Lars', 'Aron', 'Kai', 'Noel', 'Dominik', 'Adrian',
     'Roman', 'Felix', 'Victor', 'Jonas', 'Hugo', 'Levi', 'Silas', 'Orion', 'Atlas', 'Rowan',
 
-    'Kofi', 'Kwame', 'Zubair', 'Tenzin', 'Arjun', 'Dev', 'Rohan', 'Sahil', 'Iker', 'Thiago'
+    'Kofi', 'Kwame', 'Zubair', 'Tenzin', 'Arjun', 'Dev', 'Rohan', 'Sahil', 'Iker', 'Thiago',
+    'Onur', 'Kadir', 'Emir', 'Gokhan'
   ],
 
   reproduction: {
