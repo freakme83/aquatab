@@ -33,12 +33,13 @@ const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const HOVER_CONFIG = CONFIG.fish.hover ?? {};
 const HOVER_MIN_SEC = Math.max(0, HOVER_CONFIG.minSec ?? 0.6);
 const HOVER_MAX_SEC = Math.max(HOVER_MIN_SEC, HOVER_CONFIG.maxSec ?? 2.0);
-const HOVER_COOLDOWN_MIN_SEC = Math.max(0, HOVER_CONFIG.cooldownMinSec ?? 6.0);
-const HOVER_COOLDOWN_MAX_SEC = Math.max(HOVER_COOLDOWN_MIN_SEC, HOVER_CONFIG.cooldownMaxSec ?? 14.0);
-const HOVER_CHANCE_PER_CHECK = clamp(HOVER_CONFIG.chancePerCheck ?? 0.25, 0, 1);
+const HOVER_COOLDOWN_MIN_SEC = Math.max(0, HOVER_CONFIG.cooldownMinSec ?? 30.0);
+const HOVER_COOLDOWN_MAX_SEC = Math.max(HOVER_COOLDOWN_MIN_SEC, HOVER_CONFIG.cooldownMaxSec ?? 60.0);
+const HOVER_CHANCE_PER_CHECK = clamp(HOVER_CONFIG.chancePerCheck ?? 0.85, 0, 1);
 const HOVER_WALL_MARGIN_PX = Math.max(0, HOVER_CONFIG.wallMarginPx ?? 20);
-const HOVER_DRIFT_AMP_PX = Math.max(0, HOVER_CONFIG.driftAmpPx ?? 2.5);
-const HOVER_DRIFT_RATE = Math.max(0, HOVER_CONFIG.driftRate ?? 1.2);
+const HOVER_OFFSET_MIN_PX = Math.max(0, HOVER_CONFIG.offsetMinPx ?? 8);
+const HOVER_OFFSET_MAX_PX = Math.max(HOVER_OFFSET_MIN_PX, HOVER_CONFIG.offsetMaxPx ?? 18);
+const HOVER_TURN_RATE_MULTIPLIER = clamp(HOVER_CONFIG.turnRateMultiplier ?? 0.2, 0.01, 1);
 const HOVER_SPEED_FACTOR = clamp(HOVER_CONFIG.speedFactor ?? 0.15, 0.01, 1);
 
 const clamp01 = (v) => clamp(v, 0, 1);
@@ -220,9 +221,9 @@ export class Fish {
     this.matingAnim = null;
 
     this.hoverUntilSec = 0;
-    this.nextHoverCheckAtSec = 0;
+    this.nextHoverEligibleAtSimSec = rand(HOVER_COOLDOWN_MIN_SEC, HOVER_COOLDOWN_MAX_SEC);
     this.hoverAnchor = null;
-    this.hoverPhase = rand(0, TAU);
+    this.hoverOffset = null;
 
     this.history = {
       motherId: options.history?.motherId ?? null,
@@ -570,8 +571,9 @@ export class Fish {
     this.facing = resolveFacingByCos(rawDesiredAngle, this.facing);
 
     const constrainedDesired = clampAngleForFacing(rawDesiredAngle, this.facing);
-    this.desiredAngle = moveTowardsAngle(this.desiredAngle, constrainedDesired, DESIRED_TURN_RATE * dt);
-    this.headingAngle = moveTowardsAngle(this.headingAngle, this.desiredAngle, MAX_TURN_RATE * dt);
+    const turnRateScale = isHovering ? HOVER_TURN_RATE_MULTIPLIER : 1;
+    this.desiredAngle = moveTowardsAngle(this.desiredAngle, constrainedDesired, DESIRED_TURN_RATE * dt * turnRateScale);
+    this.headingAngle = moveTowardsAngle(this.headingAngle, this.desiredAngle, MAX_TURN_RATE * dt * turnRateScale);
 
     this.cruisePhase = normalizeAngle(this.cruisePhase + dt * this.cruiseRate);
     const cruiseFactor = 1 + Math.sin(this.cruisePhase) * 0.18;
@@ -825,6 +827,7 @@ export class Fish {
     if ((this.eatAnimTimer ?? 0) > 0) return false;
     if (this.behavior?.mode !== 'wander') return false;
     if (this.behavior?.targetFoodId) return false;
+    if (this.hungerState === 'HUNGRY' || this.hungerState === 'STARVING') return false;
     if (this.isPlaying(this._worldRef?.simTimeSec ?? 0)) return false;
     if (this.repro?.state === 'LAYING' || this.repro?.state === 'GRAVID') return false;
     if (this.matingAnim) return false;
@@ -834,7 +837,8 @@ export class Fish {
 
   #isHoverActive(nowSec) {
     if (!Number.isFinite(nowSec)) return false;
-    if (!this.hoverAnchor || nowSec >= this.hoverUntilSec) {
+    if (!this.hoverAnchor) return false;
+    if (nowSec >= this.hoverUntilSec) {
       this.cancelHover();
       return false;
     }
@@ -848,33 +852,42 @@ export class Fish {
     if (this.behavior?.mode === 'seekFood' || this.behavior?.targetFoodId) return true;
     if (this.behavior?.mode === 'playChase' || this.behavior?.mode === 'playEvade') return true;
     if (this.isPlaying(nowSec)) return true;
-    if (this.repro?.state === 'LAYING') return true;
+    if (this.repro?.state === 'LAYING' || this.repro?.state === 'GRAVID') return true;
     if (this.matingAnim) return true;
     return false;
   }
 
-  #hoverDesiredPos(nowSec) {
+  #hoverDesiredPos() {
     const anchor = this.hoverAnchor ?? this.position;
-    const p = (nowSec * HOVER_DRIFT_RATE) + this.hoverPhase;
-    const dx = Math.sin(p) * HOVER_DRIFT_AMP_PX;
-    const dy = Math.cos(p * 0.8) * HOVER_DRIFT_AMP_PX * 0.7;
+    const offset = this.hoverOffset ?? { x: 0, y: 0 };
     const safe = this.#hoverSafeBounds();
     return {
-      x: clamp(anchor.x + dx, safe.minX, safe.maxX),
-      y: clamp(anchor.y + dy, safe.minY, safe.maxY)
+      x: clamp(anchor.x + offset.x, safe.minX, safe.maxX),
+      y: clamp(anchor.y + offset.y, safe.minY, safe.maxY)
+    };
+  }
+
+  #pickHoverOffset() {
+    const angle = rand(0, TAU);
+    const radius = rand(HOVER_OFFSET_MIN_PX, HOVER_OFFSET_MAX_PX);
+    return {
+      x: Math.cos(angle) * radius,
+      y: Math.sin(angle) * radius
     };
   }
 
   #updateHoverSchedule(nowSec) {
-    if (!Number.isFinite(nowSec) || nowSec < this.nextHoverCheckAtSec) return;
+    if (!Number.isFinite(nowSec) || nowSec < this.nextHoverEligibleAtSimSec) return;
 
-    this.nextHoverCheckAtSec = nowSec + rand(HOVER_COOLDOWN_MIN_SEC, HOVER_COOLDOWN_MAX_SEC);
     if (!this.#isHoverEligible()) return;
-    if (Math.random() >= HOVER_CHANCE_PER_CHECK) return;
+    if (Math.random() >= HOVER_CHANCE_PER_CHECK) {
+      this.nextHoverEligibleAtSimSec = nowSec + rand(3, 8);
+      return;
+    }
 
     this.hoverUntilSec = nowSec + rand(HOVER_MIN_SEC, HOVER_MAX_SEC);
     this.hoverAnchor = { x: this.position.x, y: this.position.y };
-    this.hoverPhase = rand(0, TAU);
+    this.hoverOffset = this.#pickHoverOffset();
   }
 
   #updateHoverAfterBehavior(nowSec) {
@@ -883,8 +896,12 @@ export class Fish {
   }
 
   cancelHover() {
+    if (Number.isFinite(this._worldRef?.simTimeSec)) {
+      this.nextHoverEligibleAtSimSec = this._worldRef.simTimeSec + rand(HOVER_COOLDOWN_MIN_SEC, HOVER_COOLDOWN_MAX_SEC);
+    }
     this.hoverUntilSec = 0;
     this.hoverAnchor = null;
+    this.hoverOffset = null;
   }
 
   #pickTarget() {
