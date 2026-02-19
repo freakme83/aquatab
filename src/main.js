@@ -17,7 +17,13 @@ const appRoot = document.getElementById('appRoot');
 const startFishSlider = document.querySelector('[data-start-control="initialFishCount"]');
 const startFishValue = document.querySelector('[data-start-value="initialFishCount"]');
 const startSimButton = document.getElementById('startSimButton');
-const startCard = startScreen?.querySelector('.start-card');
+const continueSimButton = document.getElementById('continueSimButton');
+const savedStartMeta = document.querySelector('[data-saved-start-meta]');
+const infoModalBackdrop = document.getElementById('infoModalBackdrop');
+const infoModalTitle = document.getElementById('infoModalTitle');
+const infoModalContent = document.getElementById('infoModalContent');
+const infoModalClose = document.getElementById('infoModalClose');
+const infoModalButtons = Array.from(document.querySelectorAll('[data-info-modal]'));
 
 const canvas = document.getElementById('aquariumCanvas');
 const panelRoot = document.getElementById('panelRoot');
@@ -60,16 +66,6 @@ function computeCleanlinessTrend(simTimeSec, hygiene01) {
   if (smoothedHygieneDeltaPerMin <= -0.018) return 'Dropping fast';
   if (smoothedHygieneDeltaPerMin <= -0.004) return 'Dropping';
   return 'Stable';
-}
-
-function computeWaterQuality(hygiene01, dirt01) {
-  const hygiene = Math.max(0, Math.min(1, hygiene01 ?? 1));
-  const dirt = Math.max(0, Math.min(1, dirt01 ?? 0));
-
-  if (hygiene >= 0.85 && dirt <= 0.10) return 'Great';
-  if (hygiene >= 0.70 && dirt <= 0.25) return 'OK';
-  if (hygiene >= 0.45 && dirt <= 0.45) return 'Poor';
-  return 'Critical';
 }
 
 function loadSavedWorldSnapshot() {
@@ -182,35 +178,63 @@ filterToast.style.zIndex = '30';
 filterToast.style.pointerEvents = 'none';
 document.body.appendChild(filterToast);
 
-const savedStartPanel = document.createElement('section');
-savedStartPanel.className = 'saved-start-panel';
-savedStartPanel.hidden = true;
-savedStartPanel.innerHTML = `
-  <h2>Saved simulation found</h2>
-  <p class="saved-start-meta" data-saved-start-meta>Last saved: unknown</p>
-  <div class="saved-start-actions">
-    <button type="button" class="saved-start-btn" data-saved-start-action="continue">Continue</button>
-    <button type="button" class="saved-start-link" data-saved-start-action="new">New sim</button>
-  </div>
-`;
-startCard?.appendChild(savedStartPanel);
 
-const savedStartMeta = savedStartPanel.querySelector('[data-saved-start-meta]');
-const savedStartContinueBtn = savedStartPanel.querySelector('[data-saved-start-action="continue"]');
-const savedStartNewBtn = savedStartPanel.querySelector('[data-saved-start-action="new"]');
+const infoModalCopy = {
+  howToPlay: {
+    title: 'How to Play',
+    body: [
+      'Lorem ipsum fishum: Start Sim ile tanka gir, balıkları izle ve boş alana tıklayarak yem bırak.',
+      'Lorem ipsum aquariumum: Sağ panelden hız, duraklatma ve diğer ayarlarla simülasyonu yönet.',
+      'Lorem ipsum chillum: Şimdilik bu metin geçici ama okunabilir kalsın diye biraz uzun yazıldı.'
+    ]
+  },
+  about: {
+    title: 'About',
+    body: [
+      'Aquchi, odaklanma sırasında arka planda akan sakin bir akvaryum deneyimi gibi düşünülmüştür.',
+      'Bu alan şimdilik placeholder metin içeriyor; ileride oyun detayları, sürüm notları ve küçük ipuçları gelecek.',
+      'Lorem ipsum bubblum: Deniz köpüğü kadar anlamsız ama okunabilir bir demo yazısı.'
+    ]
+  },
+  coffee: {
+    title: 'Buy me a coffee',
+    body: [
+      'Kahve linki yakında burada olacak. Şimdilik sadece buton akışını test etmek için sahte içerik gösteriyoruz.',
+      'Lorem ipsum caffeine: Simülasyonunu başlat, devam et, sonra keyfi bir kahve molası hayal et.',
+      'Bu metin kaydırılabilir modal davranışını göstermek için bilerek birkaç satır daha uzun tutuldu.'
+    ]
+  }
+};
+
+function openInfoModal(key) {
+  const modalData = infoModalCopy[key];
+  if (!modalData || !infoModalBackdrop || !infoModalTitle || !infoModalContent) return;
+
+  infoModalTitle.textContent = modalData.title;
+  infoModalContent.innerHTML = modalData.body.map((line) => `<p>${line}</p>`).join('');
+  infoModalBackdrop.hidden = false;
+}
+
+function closeInfoModal() {
+  if (!infoModalBackdrop) return;
+  infoModalBackdrop.hidden = true;
+}
 
 function refreshSavedStartPanel() {
   const payload = loadSavedWorldSnapshot();
   pendingSavePayload = payload;
 
-  if (!payload) {
-    savedStartPanel.hidden = true;
+  const hasSave = Boolean(payload);
+  if (continueSimButton) continueSimButton.disabled = !hasSave;
+
+  if (!savedStartMeta) return;
+  if (!hasSave) {
+    savedStartMeta.textContent = 'Saved simulation found: no';
     return;
   }
 
   const relative = formatRelativeSavedAt(payload.savedAtEpochMs);
-  if (savedStartMeta) savedStartMeta.textContent = `Last saved: ${relative}`;
-  savedStartPanel.hidden = false;
+  savedStartMeta.textContent = `Saved simulation found: yes (last saved ${relative})`;
 }
 
 let filterToastTimeoutId = null;
@@ -522,18 +546,24 @@ function startSimulation({ savedPayload = null } = {}) {
   syncDriversToVisibility();
 }
 
-savedStartContinueBtn?.addEventListener('click', () => {
-  if (!pendingSavePayload) {
-    refreshSavedStartPanel();
-  }
+continueSimButton?.addEventListener('click', () => {
+  if (!pendingSavePayload) refreshSavedStartPanel();
   if (!pendingSavePayload) return;
 
   startSimulation({ savedPayload: pendingSavePayload });
 });
 
-savedStartNewBtn?.addEventListener('click', () => {
-  localStorage.removeItem(SAVE_STORAGE_KEY);
-  refreshSavedStartPanel();
+infoModalButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    const key = button.getAttribute('data-info-modal');
+    if (!key) return;
+    openInfoModal(key);
+  });
+});
+
+infoModalClose?.addEventListener('click', closeInfoModal);
+infoModalBackdrop?.addEventListener('click', (event) => {
+  if (event.target === infoModalBackdrop) closeInfoModal();
 });
 
 startSimButton?.addEventListener('click', () => {
