@@ -289,8 +289,7 @@ function tick(now) {
   renderer.render(now, renderDelta);
 
   panel.updateStats({
-    simTimeSec: world.simTimeSec,
-    realTimeSec: world.realTimeSec,
+    uiTimeSec: world.realTimeSec,
     fishCount: world.fish.length,
     cleanliness01: world.water.hygiene01,
     filterUnlocked: world.filterUnlocked,
