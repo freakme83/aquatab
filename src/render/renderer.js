@@ -469,9 +469,7 @@ export class Renderer {
     const bodyHeight = rp.bodyHeight * (1 + pregnancySwell);
     const isDead = fish.lifeState === 'DEAD';
     const isSkeleton = fish.lifeState === 'SKELETON';
-    const isHovering = Boolean(fish.isHovering?.(this.world.simTimeSec));
-    const tailWagScale = isHovering ? 0.18 : 1;
-    const tailWag = isDead || isSkeleton ? 0 : Math.sin(time * 0.004 + position.x * 0.008) * rp.tailWagAmp * tailWagScale;
+    const tailWag = isDead || isSkeleton ? 0 : Math.sin(time * 0.004 + position.x * 0.008) * rp.tailWagAmp;
     const tint = Math.sin((fish.colorHue + rp.radius) * 0.14) * 3;
 
     const baseLight = 54 + Math.sin(rp.radius * 0.33) * 4;
@@ -501,14 +499,6 @@ export class Renderer {
         ctx.ellipse(0, 0, bodyLength * 0.62, bodyHeight * 0.62, 0, 0, TAU);
         ctx.fill();
       }
-    }
-
-    if (isHovering && fish.lifeState === 'ALIVE') {
-      const hoverPulse = 0.09 + (Math.sin(time * 0.006 + fish.id) * 0.5 + 0.5) * 0.08;
-      ctx.beginPath();
-      ctx.fillStyle = `rgba(206, 238, 255, ${hoverPulse})`;
-      ctx.ellipse(0, 0, bodyLength * 0.58, bodyHeight * 0.58, 0, 0, TAU);
-      ctx.fill();
     }
 
     if (fish.id === this.world.selectedFishId) {

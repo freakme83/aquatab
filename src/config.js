@@ -130,19 +130,8 @@ export const CONFIG = Object.freeze({
       // Extra steering weight when actively seeking food (so wall avoidance doesn't
       // make hungry fish look "meh" about pellets).
       seekForceMultiplier: 2.4
-    },
-
-    hover: {
-      minSec: 0.6,
-      maxSec: 2.0,
-      cooldownMinSec: 6.0,
-      cooldownMaxSec: 14.0,
-      chancePerCheck: 0.25,
-      wallMarginPx: 20,
-      driftAmpPx: 2.5,
-      driftRate: 1.2,
-      speedFactor: 0.08
-    },
+    }
+    ,
 
     // Life cycle & growth (age-driven growth + small per-fish randomness).
     age: {

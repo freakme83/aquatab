@@ -1201,9 +1201,6 @@ export class World {
       partnerId: female.id,
       bubbleBurstDone: false
     };
-
-    female.cancelHover?.();
-    male.cancelHover?.();
   }
 
   #layEggClutch(female, nowSec) {
