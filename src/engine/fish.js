@@ -633,7 +633,7 @@ export class Fish {
 
     if (this.digestBites >= 2) {
       this.digestBites = 0;
-      world.spawnPoop?.(this.position.x, this.position.y);
+      world.schedulePoopFromFish?.(this.id, rand(5, 10));
     }
   }
 

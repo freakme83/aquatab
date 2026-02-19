@@ -338,7 +338,11 @@ test('fish produces poop every 2 meals and poop expires', () => {
   fish.behavior = { mode: 'seekFood', targetFoodId: world.food[0].id, speedBoost: 1 };
   fish.tryConsumeFood(world);
   assert.equal(fish.digestBites, 0);
+  assert.equal(world.poop.length, 0);
+
+  world.update(11);
   assert.equal(world.poop.length, 1);
+  assert.ok(['pellet', 'neutral', 'floaty'].includes(world.poop[0].type));
 
   world.poop[0].ttlSec = 0.01;
   world.update(0.02);
@@ -353,6 +357,7 @@ test('poop survives save/load as optional field', () => {
   assert.equal(world2.poop.length, 1);
   assert.equal(world2.poop[0].x, 50);
   assert.equal(world2.poop[0].y, 60);
+  assert.equal(typeof world2.poop[0].type, 'string');
 
   const legacy = world.toJSON();
   delete legacy.poop;
@@ -362,4 +367,18 @@ test('poop survives save/load as optional field', () => {
     initialFishCount: world.initialFishCount
   });
   assert.equal(world3.poop.length, 0);
+});
+
+test('poop spawn type distribution uses weighted random bands', () => {
+  const worldPellet = makeWorldForTest();
+  withStubbedRandom(0.2, () => worldPellet.spawnPoop(20, 20));
+  assert.equal(worldPellet.poop[0].type, 'pellet');
+
+  const worldNeutral = makeWorldForTest();
+  withStubbedRandom(0.8, () => worldNeutral.spawnPoop(20, 20));
+  assert.equal(worldNeutral.poop[0].type, 'neutral');
+
+  const worldFloaty = makeWorldForTest();
+  withStubbedRandom(0.95, () => worldFloaty.spawnPoop(20, 20));
+  assert.equal(worldFloaty.poop[0].type, 'floaty');
 });

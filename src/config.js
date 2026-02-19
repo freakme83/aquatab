@@ -76,7 +76,10 @@ export const CONFIG = Object.freeze({
     poop: {
       defaultTtlSec: 120,
       dirtPerSec: 0.00008,
-      riseSpeed: 4
+      riseSpeed: 4,
+      baseDriftSpeed: 4,
+      driftDamping: 0.99,
+      jitter: 0.04
     },
     fishLifecycle: {
       deadToSkeletonSec: 120,
