@@ -60,7 +60,7 @@ export const CONFIG = Object.freeze({
     GESTATION_SEC: [300, 360],
     EGG_INCUBATION_SEC: [120, 300],
     MOTHER_COOLDOWN_SEC: [600, 1080],
-    CLUTCH_SIZE: [1, 2],
+    CLUTCH_SIZE: [2, 4],
 
     // Genetics
     TRAIT_MUTATION_PCT: 0.05

@@ -304,3 +304,28 @@ test('speed multiplier affects motion/life dt and persists through save-load', (
   assert.equal(loaded.debugTiming.motionDt, 2);
   assert.equal(loaded.debugTiming.lifeDt, 1);
 });
+
+test('laying clutch uses updated egg range of 2 to 4', () => {
+  const worldMin = makeWorldForTest();
+  const femaleMin = worldMin.fish.find((f) => f.sex === 'female') ?? worldMin.fish[0];
+  forceFishAliveAdultFed(femaleMin);
+  femaleMin.sex = 'female';
+  femaleMin.repro.state = 'LAYING';
+  femaleMin.repro.layTargetX = femaleMin.position.x;
+  femaleMin.repro.layTargetY = femaleMin.position.y;
+
+  withStubbedRandom(0, () => worldMin.update(0.01));
+  assert.equal(worldMin.eggs.length, 2, 'minimum clutch should produce 2 eggs');
+
+  const worldMax = makeWorldForTest();
+  const femaleMax = worldMax.fish.find((f) => f.sex === 'female') ?? worldMax.fish[0];
+  forceFishAliveAdultFed(femaleMax);
+  femaleMax.sex = 'female';
+  femaleMax.repro.state = 'LAYING';
+  femaleMax.repro.layTargetX = femaleMax.position.x;
+  femaleMax.repro.layTargetY = femaleMax.position.y;
+
+  withStubbedRandom(0.999999, () => worldMax.update(0.01));
+  assert.equal(worldMax.eggs.length, 4, 'maximum clutch should produce 4 eggs');
+});
+
