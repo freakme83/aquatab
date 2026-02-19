@@ -46,6 +46,10 @@ const WATER_BASELINE_DECAY_PER_SEC = Math.max(0, WATER_CONFIG.baselineDecayPerSe
 const WATER_BIOLOAD_DIRT_PER_SEC = Math.max(0, WATER_CONFIG.bioloadDirtPerSec ?? 0);
 const WATER_DIRT_PER_EXPIRED_FOOD = Math.max(0, WATER_CONFIG.dirtPerExpiredFood ?? 0);
 const WATER_DIRT_TO_DECAY_MULTIPLIER = Math.max(0, WATER_CONFIG.dirtToDecayMultiplier ?? 3);
+const WATER_DIRT_DECAY_POWER = Math.max(1, WATER_CONFIG.dirtDecayPower ?? 1);
+const WATER_DIRT_DECAY_STRENGTH = Math.max(0, WATER_CONFIG.dirtDecayStrength ?? WATER_DIRT_TO_DECAY_MULTIPLIER);
+const WATER_HYGIENE_DROP_PER_EXPIRED_FOOD = Math.max(0, WATER_CONFIG.hygieneDropPerExpiredFood ?? 0);
+const WATER_HYGIENE_DROP_PER_POOP_SPAWN = Math.max(0, WATER_CONFIG.hygieneDropPerPoopSpawn ?? 0);
 const FILTER_DIRT_REMOVE_PER_SEC = Math.max(0, WATER_CONFIG.filterDirtRemovePerSec ?? 0);
 const FILTER_WEAR_BASE_PER_SEC = Math.max(0, WATER_CONFIG.wearBasePerSec ?? 0);
 const FILTER_WEAR_BIOLOAD_FACTOR = Math.max(0, WATER_CONFIG.wearBioloadFactor ?? 0);
@@ -765,6 +769,9 @@ export class World {
       nutrition: 0.1
     };
     this.poop.push(poop);
+    if (WATER_HYGIENE_DROP_PER_POOP_SPAWN > 0 && this.water) {
+      this.water.hygiene01 = clamp(this.water.hygiene01 - WATER_HYGIENE_DROP_PER_POOP_SPAWN, 0, 1);
+    }
     return poop;
   }
 
@@ -1073,7 +1080,7 @@ export class World {
       water.filter01 = clamp(water.filter01 - wearRate * dtSec, 0, 1);
     }
 
-    const dirtMultiplier = 1 + water.dirt01 * WATER_DIRT_TO_DECAY_MULTIPLIER;
+    const dirtMultiplier = 1 + (water.dirt01 ** WATER_DIRT_DECAY_POWER) * WATER_DIRT_DECAY_STRENGTH;
     const baselineDecay = WATER_BASELINE_DECAY_PER_SEC * effectiveBioload * dirtMultiplier * dtSec;
     const hygieneRecovery = WATER_BASELINE_DECAY_PER_SEC * Math.max(0, bioload - effectiveBioload) * dtSec;
     water.hygiene01 = clamp(water.hygiene01 - baselineDecay + hygieneRecovery, 0, 1);
@@ -1426,6 +1433,9 @@ export class World {
       if (Number.isFinite(item.ttl) && item.ttl <= 0) {
         this.food.splice(i, 1);
         this.expiredFoodSinceLastWaterUpdate += 1;
+        if (WATER_HYGIENE_DROP_PER_EXPIRED_FOOD > 0 && this.water) {
+          this.water.hygiene01 = clamp(this.water.hygiene01 - WATER_HYGIENE_DROP_PER_EXPIRED_FOOD, 0, 1);
+        }
         this.emit('foodExpired', { foodId: item.id });
       }
     }
