@@ -73,6 +73,11 @@ export const CONFIG = Object.freeze({
       fallDamping: 0.15,
       maxFallSpeed: 26
     },
+    poop: {
+      defaultTtlSec: 120,
+      dirtPerSec: 0.00008,
+      riseSpeed: 4
+    },
     fishLifecycle: {
       deadToSkeletonSec: 120,
       skeletonToRemoveSec: 120
