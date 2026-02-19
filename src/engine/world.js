@@ -308,6 +308,14 @@ export class World {
 
     this.paused = false;
     this.speedMultiplier = 1;
+    this.debugTiming = {
+      speedMultiplier: this.speedMultiplier,
+      rawDelta: 0,
+      motionDt: 0,
+      lifeDt: 0,
+      realTimeSec: this.realTimeSec,
+      simTimeSec: this.simTimeSec
+    };
 
     this.#generateInitialPopulation(this.initialFishCount);
     this.#seedBubbles();
@@ -584,6 +592,7 @@ export class World {
       saveVersion: WORLD_SAVE_VERSION,
       simTimeSec: Number.isFinite(this.simTimeSec) ? this.simTimeSec : 0,
       realTimeSec: Number.isFinite(this.realTimeSec) ? this.realTimeSec : 0,
+      speedMultiplier: Number.isFinite(this.speedMultiplier) ? this.speedMultiplier : 1,
       water: serializeWater(this.water),
       fish: this.fish.map((entry) => entry.toJSON()),
       eggs: this.eggs.map((entry) => serializeEgg(entry)),
@@ -598,6 +607,7 @@ export class World {
     const swimHeight = this.#swimHeight();
     this.simTimeSec = Math.max(0, Number.isFinite(source.simTimeSec) ? source.simTimeSec : 0);
     this.realTimeSec = Math.max(0, Number.isFinite(source.realTimeSec) ? source.realTimeSec : this.simTimeSec);
+    this.speedMultiplier = Math.max(0.5, Math.min(3, Number.isFinite(source.speedMultiplier) ? source.speedMultiplier : this.speedMultiplier));
     this.fish = Array.isArray(source.fish)
       ? source.fish.map((entry) => Fish.fromJSON(entry, this.bounds))
       : [];
@@ -802,7 +812,10 @@ export class World {
   }
 
   setSpeedMultiplier(value) {
-    this.speedMultiplier = Math.max(0.5, Math.min(3, value));
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return this.speedMultiplier;
+    this.speedMultiplier = Math.max(0.5, Math.min(3, parsed));
+    return this.speedMultiplier;
   }
 
   togglePause() {
@@ -813,10 +826,18 @@ export class World {
   update(rawDelta) {
     if (this.paused) return;
 
-    const motionDt = rawDelta;
+    const motionDt = rawDelta * this.speedMultiplier;
     const lifeDt = rawDelta * this.speedMultiplier * SIM_BASE_LIFE_SCALE;
     this.realTimeSec += rawDelta;
     this.simTimeSec += lifeDt;
+    this.debugTiming = {
+      speedMultiplier: this.speedMultiplier,
+      rawDelta,
+      motionDt,
+      lifeDt,
+      realTimeSec: this.realTimeSec,
+      simTimeSec: this.simTimeSec
+    };
 
     for (const fish of this.fish) fish.updateLifeCycle?.(this.simTimeSec);
     for (const fish of this.fish) fish.updatePlayState?.(this.simTimeSec);

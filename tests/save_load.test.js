@@ -276,3 +276,31 @@ test('world update splits motion and lifecycle deltas', () => {
   assert.equal(world.simTimeSec, startSimTime + 0.5);
   assert.equal(world.food[0].ttl, 0.5, 'food ttl should advance by lifeDt');
 });
+
+
+test('speed multiplier affects motion/life dt and persists through save-load', () => {
+  const world = makeWorldForTest();
+  world.setSpeedMultiplier(2);
+
+  const simStart = world.simTimeSec;
+  const realStart = world.realTimeSec;
+
+  world.update(1);
+
+  assert.equal(world.realTimeSec, realStart + 1);
+  assert.equal(world.simTimeSec, simStart + 1, 'lifeDt should be rawDelta * speed * baseLifeScale');
+  assert.equal(world.debugTiming.motionDt, 2);
+  assert.equal(world.debugTiming.lifeDt, 1);
+
+  const loaded = roundTrip(world);
+  assert.equal(loaded.speedMultiplier, 2);
+
+  const loadedSimStart = loaded.simTimeSec;
+  const loadedRealStart = loaded.realTimeSec;
+  loaded.update(1);
+
+  assert.equal(loaded.realTimeSec, loadedRealStart + 1);
+  assert.equal(loaded.simTimeSec, loadedSimStart + 1);
+  assert.equal(loaded.debugTiming.motionDt, 2);
+  assert.equal(loaded.debugTiming.lifeDt, 1);
+});
