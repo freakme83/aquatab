@@ -43,7 +43,6 @@ function forceFishAliveAdultFed(fish) {
 test('basic world round-trip preserves core entities and indexes', () => {
   const world = makeWorldForTest();
   world.simTimeSec = 321.5;
-  world.realTimeSec = 654.25;
   world.spawnFood(120, 100, 0.8, 99);
   world.spawnFood(130, 110, 0.7, 88);
   world.eggs.push({
@@ -64,7 +63,6 @@ test('basic world round-trip preserves core entities and indexes', () => {
   const world2 = roundTrip(world);
 
   assert.equal(world2.simTimeSec, world.simTimeSec);
-  assert.equal(world2.realTimeSec, world.realTimeSec);
   assert.equal(world2.fish.length, world.fish.length);
   assert.equal(world2.eggs.length, world.eggs.length);
   assert.equal(world2.food.length, world.food.length);
@@ -261,48 +259,43 @@ test('corrupted save input is safe and clamps positions', () => {
 
 
 
-test('world update splits motion and lifecycle deltas', () => {
+test('world update advances canonical sim clock for motion and lifecycle', () => {
   const world = makeWorldForTest();
   world.setSpeedMultiplier(1);
 
   world.spawnFood(100, 100, 1, 1);
 
   const startSimTime = world.simTimeSec;
-  const startRealTime = world.realTimeSec;
-
   world.update(1);
 
-  assert.equal(world.realTimeSec, startRealTime + 1);
-  assert.equal(world.simTimeSec, startSimTime + 0.5);
-  assert.equal(world.food[0].ttl, 0.5, 'food ttl should advance by lifeDt');
+  assert.equal(world.simTimeSec, startSimTime + 1);
+  assert.equal(world.food.length, 0, 'food ttl should advance by canonical sim dt');
+  assert.equal(world.debugTiming.simDt, 1);
+  assert.equal(world.debugTiming.motionDt, 1);
 });
 
 
-test('speed multiplier affects motion/life dt and persists through save-load', () => {
+test('speed multiplier scales canonical sim clock and persists through save-load', () => {
   const world = makeWorldForTest();
   world.setSpeedMultiplier(2);
 
   const simStart = world.simTimeSec;
-  const realStart = world.realTimeSec;
 
   world.update(1);
 
-  assert.equal(world.realTimeSec, realStart + 1);
-  assert.equal(world.simTimeSec, simStart + 1, 'lifeDt should be rawDelta * speed * baseLifeScale');
+  assert.equal(world.simTimeSec, simStart + 2);
+  assert.equal(world.debugTiming.simDt, 2);
   assert.equal(world.debugTiming.motionDt, 2);
-  assert.equal(world.debugTiming.lifeDt, 1);
 
   const loaded = roundTrip(world);
   assert.equal(loaded.speedMultiplier, 2);
 
   const loadedSimStart = loaded.simTimeSec;
-  const loadedRealStart = loaded.realTimeSec;
   loaded.update(1);
 
-  assert.equal(loaded.realTimeSec, loadedRealStart + 1);
-  assert.equal(loaded.simTimeSec, loadedSimStart + 1);
+  assert.equal(loaded.simTimeSec, loadedSimStart + 2);
+  assert.equal(loaded.debugTiming.simDt, 2);
   assert.equal(loaded.debugTiming.motionDt, 2);
-  assert.equal(loaded.debugTiming.lifeDt, 1);
 });
 
 test('laying clutch uses updated egg range of 2 to 4', () => {
@@ -328,4 +321,3 @@ test('laying clutch uses updated egg range of 2 to 4', () => {
   withStubbedRandom(0.999999, () => worldMax.update(0.01));
   assert.equal(worldMax.eggs.length, 4, 'maximum clutch should produce 4 eggs');
 });
-
