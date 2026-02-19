@@ -16,6 +16,7 @@ export class Panel {
     this.tabContents = [...this.root.querySelectorAll('.tab-content')];
 
     this.simTimeStat = this.root.querySelector('[data-stat="simTime"]');
+    this.realTimeStat = this.root.querySelector('[data-stat="realTime"]');
     this.fishCountStat = this.root.querySelector('[data-stat="fishCount"]');
     this.cleanlinessStat = this.root.querySelector('[data-stat="cleanliness"]');
 
@@ -193,8 +194,8 @@ export class Panel {
   }
 
   updateStats({
-    uiTimeSec,
     simTimeSec,
+    realTimeSec,
     fishCount,
     cleanliness01,
     filterUnlocked,
@@ -209,11 +210,19 @@ export class Panel {
     filterDepletedThreshold01
   }) {
     if (this.simTimeStat) {
-      const totalSec = Math.max(0, Math.floor(uiTimeSec ?? simTimeSec ?? 0));
+      const totalSec = Math.max(0, Math.floor(simTimeSec ?? 0));
       const hh = String(Math.floor(totalSec / 3600)).padStart(2, '0');
       const mm = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0');
       const ss = String(totalSec % 60).padStart(2, '0');
       this.simTimeStat.textContent = `${hh}:${mm}:${ss}`;
+    }
+
+    if (this.realTimeStat) {
+      const totalSec = Math.max(0, Math.floor(realTimeSec ?? 0));
+      const hh = String(Math.floor(totalSec / 3600)).padStart(2, '0');
+      const mm = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0');
+      const ss = String(totalSec % 60).padStart(2, '0');
+      this.realTimeStat.textContent = `${hh}:${mm}:${ss}`;
     }
 
     this.fishCountStat.textContent = String(fishCount);
