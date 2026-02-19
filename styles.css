@@ -96,6 +96,11 @@ body::before {
   gap: 10px;
 }
 
+.start-actions {
+  display: grid;
+  gap: 10px;
+}
+
 .start-btn {
   width: 100%;
   border: 1px solid rgba(177, 231, 255, 0.44);
