@@ -30,8 +30,10 @@ const MATE_MIN_HYGIENE = clamp01(REPRO_CONFIG.MATE_MIN_HYGIENE ?? 0.6);
 const GESTATION_SEC = REPRO_CONFIG.GESTATION_SEC ?? [300, 360];
 const EGG_INCUBATION_SEC = REPRO_CONFIG.EGG_INCUBATION_SEC ?? [120, 300];
 const MOTHER_COOLDOWN_SEC = REPRO_CONFIG.MOTHER_COOLDOWN_SEC ?? [600, 1080];
-const CLUTCH_SIZE = REPRO_CONFIG.CLUTCH_SIZE ?? [2, 4];
-const HATCH_FLOOR = 0.02;
+const CLUTCH_SIZE = REPRO_CONFIG.CLUTCH_SIZE ?? [1, 2];
+
+const FEMALE_NAME_POOL = Array.isArray(CONFIG.FEMALE_NAME_POOL) ? CONFIG.FEMALE_NAME_POOL : [];
+const MALE_NAME_POOL = Array.isArray(CONFIG.MALE_NAME_POOL) ? CONFIG.MALE_NAME_POOL : [];
 const WATER_INITIAL_HYGIENE01 = 1;
 const WATER_INITIAL_DIRT01 = 0;
 const WATER_REFERENCE_FISH_COUNT = Math.max(1, WATER_CONFIG.referenceFishCount ?? 20);
@@ -54,6 +56,130 @@ const CORPSE_DIRT_STEP_SEC = 60;
 const CORPSE_DIRT_INITIAL01 = 0.07;
 const CORPSE_DIRT_STEP01 = 0.01;
 const CORPSE_DIRT_MAX01 = 0.12;
+
+const WORLD_SAVE_VERSION = 1;
+export const WATER_SAVE_KEYS = [
+  'hygiene01',
+  'dirt01',
+  'filterInstalled',
+  'filter01',
+  'installProgress01',
+  'maintenanceProgress01',
+  'maintenanceCooldownSec',
+  'filterUnlocked',
+  'filterEnabled',
+  'effectiveFilter01'
+];
+export const FOOD_SAVE_KEYS = ['id', 'x', 'y', 'amount', 'ttl', 'vy'];
+export const EGG_SAVE_KEYS = [
+  'id',
+  'x',
+  'y',
+  'laidAtSec',
+  'hatchAtSec',
+  'motherId',
+  'fatherId',
+  'motherTraits',
+  'fatherTraits',
+  'state',
+  'canBeEaten',
+  'nutrition'
+];
+
+function deepCopyPlain(value) {
+  if (Array.isArray(value)) return value.map((entry) => deepCopyPlain(entry));
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const [key, entry] of Object.entries(value)) out[key] = deepCopyPlain(entry);
+    return out;
+  }
+  return value;
+}
+
+function pickSavedKeys(source, keys) {
+  const out = {};
+  for (const key of keys) out[key] = deepCopyPlain(source?.[key]);
+  return out;
+}
+
+function clampPosition(position, bounds, swimHeight) {
+  const x = Number.isFinite(position?.x) ? clamp(position.x, 0, bounds.width) : bounds.width * 0.5;
+  const y = Number.isFinite(position?.y) ? clamp(position.y, 0, swimHeight) : swimHeight * 0.5;
+  return { x, y };
+}
+
+function serializeFood(food) {
+  return pickSavedKeys(food, FOOD_SAVE_KEYS);
+}
+
+function deserializeFood(data, bounds, swimHeight) {
+  const source = data && typeof data === 'object' ? data : {};
+  const position = clampPosition(source, bounds, swimHeight);
+  return {
+    id: Number.isFinite(source.id) ? source.id : 0,
+    x: position.x,
+    y: position.y,
+    amount: Math.max(0.05, Number.isFinite(source.amount) ? source.amount : FOOD_DEFAULT_AMOUNT),
+    ttl: Number.isFinite(source.ttl) ? source.ttl : FOOD_DEFAULT_TTL,
+    vy: Number.isFinite(source.vy) ? source.vy : 0
+  };
+}
+
+function serializeEgg(egg) {
+  return pickSavedKeys(egg, EGG_SAVE_KEYS);
+}
+
+function deserializeEgg(data, bounds, swimHeight) {
+  const source = data && typeof data === 'object' ? data : {};
+  const position = clampPosition(source, bounds, swimHeight);
+  return {
+    id: Number.isFinite(source.id) ? source.id : 0,
+    x: position.x,
+    y: position.y,
+    laidAtSec: Number.isFinite(source.laidAtSec) ? source.laidAtSec : 0,
+    hatchAtSec: Number.isFinite(source.hatchAtSec) ? source.hatchAtSec : 0,
+    motherId: source.motherId ?? null,
+    fatherId: source.fatherId ?? null,
+    motherTraits: deepCopyPlain(source.motherTraits ?? {}),
+    fatherTraits: deepCopyPlain(source.fatherTraits ?? {}),
+    state: typeof source.state === 'string' ? source.state : 'INCUBATING',
+    canBeEaten: Boolean(source.canBeEaten ?? true),
+    nutrition: Math.max(0, Number.isFinite(source.nutrition) ? source.nutrition : 0.25)
+  };
+}
+
+function serializeWater(water) {
+  return pickSavedKeys(water, WATER_SAVE_KEYS);
+}
+
+function deserializeWater(data, defaults) {
+  const source = data && typeof data === 'object' ? data : {};
+  const out = pickSavedKeys(defaults, WATER_SAVE_KEYS);
+  for (const key of WATER_SAVE_KEYS) {
+    if (source[key] !== undefined) out[key] = deepCopyPlain(source[key]);
+  }
+
+  out.hygiene01 = clamp01(Number.isFinite(out.hygiene01) ? out.hygiene01 : WATER_INITIAL_HYGIENE01);
+  out.dirt01 = clamp01(Number.isFinite(out.dirt01) ? out.dirt01 : WATER_INITIAL_DIRT01);
+  out.filter01 = clamp01(Number.isFinite(out.filter01) ? out.filter01 : 0);
+  out.installProgress01 = clamp01(Number.isFinite(out.installProgress01) ? out.installProgress01 : 0);
+  out.maintenanceProgress01 = clamp01(Number.isFinite(out.maintenanceProgress01) ? out.maintenanceProgress01 : 0);
+  out.maintenanceCooldownSec = Math.max(0, Number.isFinite(out.maintenanceCooldownSec) ? out.maintenanceCooldownSec : 0);
+  out.filterInstalled = Boolean(out.filterInstalled);
+  out.filterUnlocked = Boolean(out.filterUnlocked);
+  out.filterEnabled = Boolean(out.filterEnabled ?? true);
+  out.effectiveFilter01 = clamp01(Number.isFinite(out.effectiveFilter01) ? out.effectiveFilter01 : 0);
+  return out;
+}
+
+function normalizeWorldSaveSource(data) {
+  const source = data && typeof data === 'object' ? data : null;
+  if (!source) return null;
+  if (source.saveVersion === WORLD_SAVE_VERSION && source.worldState && typeof source.worldState === 'object') {
+    return source.worldState;
+  }
+  return source;
+}
 
 function inheritTraits(motherTraits, fatherTraits, config = {}) {
   const mother = motherTraits ?? {};
@@ -131,7 +257,6 @@ export class World {
 
     this.bounds = { width, height, sandHeight: this.#computeSandHeight(height) };
     this.fish = [];
-    this.fishById = new Map();
     this.food = [];
     // Forward-compatible containers for new systems.
     this.poop = [];
@@ -176,7 +301,7 @@ export class World {
     this.fxParticles = [];
 
     // Global environment state (will grow over time).
-    this.water = this.createInitialWaterState();
+    this.water = this.#createInitialWaterState();
     this.expiredFoodSinceLastWaterUpdate = 0;
 
     this.paused = false;
@@ -239,7 +364,82 @@ export class World {
     return true;
   }
 
-  #createFish({ sex, initialAgeSec = 0, hungryStart = false, position = null, traits = null } = {}) {
+  #registerFish(fish) {
+    if (!fish) return;
+    this.fishById.set(fish.id, fish);
+  }
+
+  #unregisterFishById(fishId) {
+    this.fishById.delete(fishId);
+  }
+
+  #rebuildFishById() {
+    this.fishById = new Map();
+    for (const fish of this.fish) this.#registerFish(fish);
+  }
+
+  getFishById(fishId) {
+    return this.fishById.get(fishId) ?? null;
+  }
+
+
+  #usedNames(excludeFishId = null) {
+    const names = new Set();
+    for (const fish of this.fish) {
+      if (excludeFishId != null && fish.id === excludeFishId) continue;
+      const currentName = String(fish.name ?? '').trim();
+      if (!currentName) continue;
+      names.add(currentName);
+    }
+    return names;
+  }
+
+  #registerName(baseName, usedNames) {
+    const current = this.nameCounts.get(baseName) ?? 0;
+    const next = Math.max(1, current + 1);
+    const uniqueName = next === 1 ? baseName : `${baseName} (${next})`;
+    this.nameCounts.set(baseName, next);
+    usedNames.add(uniqueName);
+    return uniqueName;
+  }
+
+  assignDefaultNameForSex(sex) {
+    const sourcePool = sex === 'female' ? FEMALE_NAME_POOL : MALE_NAME_POOL;
+    const pool = sourcePool.filter((name) => typeof name === 'string' && name.trim().length > 0);
+    if (pool.length === 0) return this.makeUniqueName('Fish') ?? 'Fish';
+
+    const usedNames = this.#usedNames();
+    const unusedBaseNames = pool.filter((name) => !this.nameCounts.has(name) && !usedNames.has(name));
+
+    const pickFrom = unusedBaseNames.length > 0 ? unusedBaseNames : pool;
+    const chosenBase = pickFrom[Math.floor(Math.random() * pickFrom.length)];
+    return this.#registerName(chosenBase, usedNames);
+  }
+
+  makeUniqueName(desiredName, { excludeFishId = null } = {}) {
+    const normalized = String(desiredName ?? '').trim().slice(0, 24);
+    if (!normalized) return null;
+
+    const usedNames = this.#usedNames(excludeFishId);
+    if (!usedNames.has(normalized)) {
+      this.nameCounts.set(normalized, Math.max(1, this.nameCounts.get(normalized) ?? 0));
+      usedNames.add(normalized);
+      return normalized;
+    }
+
+    let suffix = Math.max(2, (this.nameCounts.get(normalized) ?? 1) + 1);
+    let candidate = `${normalized} (${suffix})`;
+    while (usedNames.has(candidate)) {
+      suffix += 1;
+      candidate = `${normalized} (${suffix})`;
+    }
+
+    this.nameCounts.set(normalized, suffix);
+    usedNames.add(candidate);
+    return candidate;
+  }
+
+  #createFish({ sex, initialAgeSec = 0, hungryStart = false, position = null, traits = null, name = null, bornInAquarium = false, motherId = null, fatherId = null } = {}) {
     const sizeRange = GROWTH_CONFIG.sizeFactorRange;
     const growthRange = GROWTH_CONFIG.growthRateRange;
 
@@ -283,7 +483,17 @@ export class World {
       position: { x: spawn.x, y: spawn.y },
       headingAngle: this.#randomHeading(),
       speedFactor: rand(0.42, 0.68),
-      traits: traits ?? undefined
+      traits: traits ?? undefined,
+      history: {
+        motherId: motherId != null ? String(motherId) : null,
+        fatherId: fatherId != null ? String(fatherId) : null,
+        childrenIds: [],
+        bornInAquarium,
+        birthSimTimeSec: this.simTimeSec,
+        deathSimTimeSec: null,
+        mealsEaten: 0,
+        mateCount: 0
+      }
     });
 
     if (sex === 'female' || sex === 'male') {
@@ -303,31 +513,6 @@ export class World {
     fish.updateLifeCycle(this.simTimeSec);
     this.#registerFish(fish);
     return fish;
-  }
-
-  #registerFish(fish) {
-    if (!fish) return null;
-    this.fish.push(fish);
-    return fish;
-  }
-
-  #registerFish(fish) {
-    if (!fish) return null;
-    this.fish.push(fish);
-    this.fishById.set(fish.id, fish);
-    return fish;
-  }
-
-  #registerFish(fish) {
-    if (!fish) return null;
-    this.fish.push(fish);
-    this.fishById.set(fish.id, fish);
-    return fish;
-  }
-
-  #rebuildFishById() {
-    this.fishById.clear();
-    for (const fish of this.fish) this.fishById.set(fish.id, fish);
   }
 
   #shuffleArray(items) {
@@ -566,7 +751,7 @@ export class World {
     const index = this.fish.findIndex((entry) => entry.id === fishId && entry.lifeState !== 'ALIVE');
     if (index < 0) return false;
     this.fish.splice(index, 1);
-    this.fishById.delete(fishId);
+    this.#unregisterFishById(fishId);
     if (this.selectedFishId === fishId) this.selectedFishId = null;
     return true;
   }
@@ -578,7 +763,7 @@ export class World {
     const fish = this.fish[index];
     fish.corpseRemoved = true;
     this.fish.splice(index, 1);
-    this.fishById.delete(fishId);
+    this.#unregisterFishById(fishId);
     if (this.selectedFishId === fishId) this.selectedFishId = null;
     return true;
   }
@@ -600,11 +785,11 @@ export class World {
     const clamped = Math.max(1, Math.min(50, Math.round(count)));
 
     while (this.fish.length < clamped) {
-      this.#registerFish(this.#createFish());
+      this.fish.push(this.#createFish());
     }
     while (this.fish.length > clamped) {
       const removed = this.fish.pop();
-      if (removed) this.fishById.delete(removed.id);
+      if (removed) this.#unregisterFishById(removed.id);
     }
 
     if (!this.fish.some((f) => f.id === this.selectedFishId)) {
@@ -646,7 +831,7 @@ export class World {
     this.#updateBubbles(delta);
   }
 
-  createInitialWaterState() {
+  #createInitialWaterState() {
     return {
       hygiene01: WATER_INITIAL_HYGIENE01,
       dirt01: WATER_INITIAL_DIRT01,
@@ -714,7 +899,6 @@ export class World {
       if (fish.corpseDirtApplied01 >= CORPSE_DIRT_MAX01) {
         fish.corpseRemoved = true;
         this.fish.splice(i, 1);
-        this.fishById.delete(fish.id);
         if (this.selectedFishId === fish.id) this.selectedFishId = null;
       }
     }
@@ -1002,6 +1186,9 @@ export class World {
 
     male.repro.cooldownUntilSec = nowSec + randRange(MATE_FATHER_COOLDOWN_SEC, 120, 240);
 
+    female.history.mateCount += 1;
+    male.history.mateCount += 1;
+
     female.matingAnim = {
       startSec: nowSec,
       durationSec: 1.1,
@@ -1017,7 +1204,7 @@ export class World {
   }
 
   #layEggClutch(female, nowSec) {
-    const father = this.fish.find((f) => f.id === female.repro.fatherId) ?? null;
+    const father = this.getFishById(female.repro.fatherId) ?? null;
     const motherTraits = { ...(female.traits ?? {}) };
     const fatherTraits = father?.traits ? { ...father.traits } : { ...motherTraits };
     const clutchCount = Math.max(1, randIntInclusive(CLUTCH_SIZE, 1, 2));
@@ -1154,9 +1341,8 @@ export class World {
       let hatchChance = 0;
       if (hygiene01 >= MATE_MIN_HYGIENE) {
         const t = clamp01((hygiene01 - 0.60) / 0.40);
-        hatchChance = 0.25 + 0.75 * (t * t);
+        hatchChance = 0.20 + 0.80 * (t * t);
       }
-      hatchChance = clamp01(Math.max(HATCH_FLOOR, hatchChance));
 
       const success = Math.random() < hatchChance;
       if (success) {
@@ -1172,11 +1358,27 @@ export class World {
         const baby = this.#createFish({
           initialAgeSec: 0,
           position: { x: spawnX, y: spawnY },
-          traits: babyTraits
+          traits: babyTraits,
+          bornInAquarium: true,
+          motherId: egg.motherId,
+          fatherId: egg.fatherId
         });
         baby.spawnTimeSec = this.simTimeSec;
         baby.ageSecCached = 0;
-        this.#registerFish(baby);
+        this.fish.push(baby);
+
+        const mother = this.getFishById(egg.motherId);
+        if (mother) {
+          const babyId = String(baby.id);
+          if (!mother.history.childrenIds.includes(babyId)) mother.history.childrenIds.push(babyId);
+        }
+
+        const father = this.getFishById(egg.fatherId);
+        if (father) {
+          const babyId = String(baby.id);
+          if (!father.history.childrenIds.includes(babyId)) father.history.childrenIds.push(babyId);
+        }
+
         egg.state = 'HATCHED';
       } else {
         egg.state = 'FAILED';

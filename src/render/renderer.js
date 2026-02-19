@@ -413,22 +413,16 @@ export class Renderer {
     for (const egg of this.world.eggs ?? []) {
       const x = this.tankRect.x + egg.x * sx;
       const y = this.tankRect.y + egg.y * sy;
-      const r = 2.3;
+      const r = 2.2;
 
       ctx.beginPath();
-      ctx.fillStyle = 'rgba(218, 203, 255, 0.92)';
-      ctx.ellipse(x, y, r * 1.08, r * 0.76, 0, 0, TAU);
+      ctx.fillStyle = 'rgba(245, 243, 233, 0.95)';
+      ctx.ellipse(x, y, r, r * 0.82, 0, 0, TAU);
       ctx.fill();
 
       ctx.beginPath();
-      ctx.strokeStyle = 'rgba(238, 228, 255, 0.9)';
-      ctx.lineWidth = 0.8;
-      ctx.ellipse(x, y, r * 1.08, r * 0.76, 0, 0, TAU);
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.62)';
-      ctx.arc(x - r * 0.34, y - r * 0.18, r * 0.24, 0, TAU);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.58)';
+      ctx.arc(x - r * 0.3, y - r * 0.2, r * 0.28, 0, TAU);
       ctx.fill();
     }
   }
@@ -475,9 +469,7 @@ export class Renderer {
     const bodyHeight = rp.bodyHeight * (1 + pregnancySwell);
     const isDead = fish.lifeState === 'DEAD';
     const isSkeleton = fish.lifeState === 'SKELETON';
-    const isHovering = Boolean(fish.isHovering?.(this.world.simTimeSec));
-    const tailWagScale = isHovering ? 0.18 : 1;
-    const tailWag = isDead || isSkeleton ? 0 : Math.sin(time * 0.004 + position.x * 0.008) * rp.tailWagAmp * tailWagScale;
+    const tailWag = isDead || isSkeleton ? 0 : Math.sin(time * 0.004 + position.x * 0.008) * rp.tailWagAmp;
     const tint = Math.sin((fish.colorHue + rp.radius) * 0.14) * 3;
 
     const baseLight = 54 + Math.sin(rp.radius * 0.33) * 4;
