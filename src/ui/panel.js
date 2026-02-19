@@ -18,6 +18,14 @@ export class Panel {
     this.simTimeStat = this.root.querySelector('[data-stat="simTime"]');
     this.fishCountStat = this.root.querySelector('[data-stat="fishCount"]');
     this.cleanlinessStat = this.root.querySelector('[data-stat="cleanliness"]');
+    this.waterQualityStat = this.root.querySelector('[data-stat="waterQuality"]');
+    if (!this.waterQualityStat && this.cleanlinessStat?.closest('.stat-row')) {
+      const row = document.createElement('div');
+      row.className = 'stat-row';
+      row.innerHTML = '<span>Water quality</span><strong data-stat="waterQuality">Great</strong>';
+      this.cleanlinessStat.closest('.stat-row').insertAdjacentElement('afterend', row);
+      this.waterQualityStat = row.querySelector('[data-stat="waterQuality"]');
+    }
 
     this.speedSlider = this.root.querySelector('[data-control="simSpeed"]');
     this.toggleButton = this.root.querySelector('[data-control="togglePause"]');
@@ -196,6 +204,7 @@ export class Panel {
     simTimeSec,
     fishCount,
     cleanliness01,
+    waterQuality,
     filterUnlocked,
     foodsConsumedCount,
     filterUnlockThreshold,
@@ -220,6 +229,17 @@ export class Panel {
     if (this.cleanlinessStat) {
       const cleanlinessPct = Math.round((cleanliness01 ?? 1) * 100);
       this.cleanlinessStat.textContent = `${cleanlinessPct}%`;
+    }
+
+    if (this.waterQualityStat) {
+      const qualityLabel = ['Great', 'OK', 'Poor', 'Critical'].includes(waterQuality) ? waterQuality : 'Great';
+      this.waterQualityStat.textContent = qualityLabel;
+      this.waterQualityStat.style.color = {
+        Great: '#2f9f3b',
+        OK: '#44be56',
+        Poor: '#f0a13a',
+        Critical: '#ea5f5f'
+      }[qualityLabel];
     }
 
     const consumed = Math.max(0, Math.floor(foodsConsumedCount ?? 0));

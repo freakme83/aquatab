@@ -35,6 +35,16 @@ let autosaveIntervalId = null;
 
 let lastTimingDebugLogAtSec = -1;
 
+function computeWaterQuality(hygiene01, dirt01) {
+  const hygiene = Math.max(0, Math.min(1, hygiene01 ?? 1));
+  const dirt = Math.max(0, Math.min(1, dirt01 ?? 0));
+
+  if (hygiene >= 0.85 && dirt <= 0.10) return 'Great';
+  if (hygiene >= 0.70 && dirt <= 0.25) return 'OK';
+  if (hygiene >= 0.45 && dirt <= 0.45) return 'Poor';
+  return 'Critical';
+}
+
 function loadSavedWorldSnapshot() {
   try {
     const raw = localStorage.getItem(SAVE_STORAGE_KEY);
@@ -292,6 +302,7 @@ function tick(now) {
     simTimeSec: world.simTimeSec,
     fishCount: world.fish.length,
     cleanliness01: world.water.hygiene01,
+    waterQuality: computeWaterQuality(world.water.hygiene01, world.water.dirt01),
     filterUnlocked: world.filterUnlocked,
     foodsConsumedCount: world.foodsConsumedCount,
     filterUnlockThreshold: world.filterUnlockThreshold,

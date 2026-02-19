@@ -92,6 +92,9 @@ export const CONFIG = Object.freeze({
     water: {
       hygiene01: 1,
       dirt01: 0,
+      POLLUTION_TINT_START: 0.90,
+      POLLUTION_TINT_MAX_ALPHA: 0.18,
+      POLLUTION_TINT_COLOR: '86, 108, 78',
       referenceFishCount: 20,
       baselineDecayPerSec: 0.0002,
       bioloadDirtPerSec: 0.00035,
