@@ -3,6 +3,8 @@
  * Responsibility: draw-only layers for tank, water ambiance, and fish visuals.
  */
 
+import { CONFIG } from '../config.js';
+
 const TAU = Math.PI * 2;
 const rand = (min, max) => min + Math.random() * (max - min);
 
@@ -95,6 +97,7 @@ export class Renderer {
     ctx.save();
     this.#clipTankWater(ctx);
     this.#drawCachedBackground(ctx);
+    this.#drawPollutionTint(ctx);
     this.#drawWaterPlants(ctx, time);
     this.#drawGroundAlgae(ctx, time);
     this.#drawPlayEffects(ctx, time);
@@ -281,6 +284,25 @@ export class Renderer {
   #drawCachedBackground(ctx) {
     const { x, y } = this.tankRect;
     ctx.drawImage(this.backgroundCanvas, x, y);
+  }
+
+
+  #drawPollutionTint(ctx) {
+    const { x, y, width, height } = this.tankRect;
+    const dirt01 = Math.max(0, Math.min(1, this.world.water?.dirt01 ?? 0));
+    const start = Math.max(0, Math.min(1, CONFIG.world.water.POLLUTION_TINT_START ?? 0.9));
+    const span = Math.max(0.0001, 1 - start);
+
+    let t = Math.max(0, Math.min(1, (dirt01 - start) / span));
+    t = t * t * (3 - 2 * t);
+
+    const maxAlpha = Math.max(0, Math.min(1, CONFIG.world.water.POLLUTION_TINT_MAX_ALPHA ?? 0.18));
+    const alpha = t * maxAlpha;
+    if (alpha <= 0.001) return;
+
+    const tintColor = CONFIG.world.water.POLLUTION_TINT_COLOR ?? '86, 108, 78';
+    ctx.fillStyle = `rgba(${tintColor}, ${alpha})`;
+    ctx.fillRect(x, y, width, height);
   }
 
   #drawWaterParticles(ctx, delta) {
