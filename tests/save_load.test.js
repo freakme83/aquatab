@@ -257,3 +257,128 @@ test('corrupted save input is safe and clamps positions', () => {
   assert.ok(egg.y >= 0 && egg.y <= loaded.bounds.height);
 });
 
+
+
+test('world update advances canonical sim clock for motion and lifecycle', () => {
+  const world = makeWorldForTest();
+  world.setSpeedMultiplier(1);
+
+  world.spawnFood(100, 100, 1, 1);
+
+  const startSimTime = world.simTimeSec;
+  world.update(1);
+
+  assert.equal(world.simTimeSec, startSimTime + 1);
+  assert.equal(world.food.length, 0, 'food ttl should advance by canonical sim dt');
+  assert.equal(world.debugTiming.simDt, 1);
+  assert.equal(world.debugTiming.motionDt, 1);
+});
+
+
+test('speed multiplier scales canonical sim clock and persists through save-load', () => {
+  const world = makeWorldForTest();
+  world.setSpeedMultiplier(2);
+
+  const simStart = world.simTimeSec;
+
+  world.update(1);
+
+  assert.equal(world.simTimeSec, simStart + 2);
+  assert.equal(world.debugTiming.simDt, 2);
+  assert.equal(world.debugTiming.motionDt, 2);
+
+  const loaded = roundTrip(world);
+  assert.equal(loaded.speedMultiplier, 2);
+
+  const loadedSimStart = loaded.simTimeSec;
+  loaded.update(1);
+
+  assert.equal(loaded.simTimeSec, loadedSimStart + 2);
+  assert.equal(loaded.debugTiming.simDt, 2);
+  assert.equal(loaded.debugTiming.motionDt, 2);
+});
+
+test('laying clutch uses updated egg range of 2 to 4', () => {
+  const worldMin = makeWorldForTest();
+  const femaleMin = worldMin.fish.find((f) => f.sex === 'female') ?? worldMin.fish[0];
+  forceFishAliveAdultFed(femaleMin);
+  femaleMin.sex = 'female';
+  femaleMin.repro.state = 'LAYING';
+  femaleMin.repro.layTargetX = femaleMin.position.x;
+  femaleMin.repro.layTargetY = femaleMin.position.y;
+
+  withStubbedRandom(0, () => worldMin.update(0.01));
+  assert.equal(worldMin.eggs.length, 2, 'minimum clutch should produce 2 eggs');
+
+  const worldMax = makeWorldForTest();
+  const femaleMax = worldMax.fish.find((f) => f.sex === 'female') ?? worldMax.fish[0];
+  forceFishAliveAdultFed(femaleMax);
+  femaleMax.sex = 'female';
+  femaleMax.repro.state = 'LAYING';
+  femaleMax.repro.layTargetX = femaleMax.position.x;
+  femaleMax.repro.layTargetY = femaleMax.position.y;
+
+  withStubbedRandom(0.999999, () => worldMax.update(0.01));
+  assert.equal(worldMax.eggs.length, 4, 'maximum clutch should produce 4 eggs');
+});
+
+
+test('fish produces poop every 2 meals and poop expires', () => {
+  const world = makeWorldForTest();
+  const fish = world.fish[0];
+  forceFishAliveAdultFed(fish);
+
+  world.spawnFood(fish.position.x, fish.position.y, 1, 120);
+  fish.behavior = { mode: 'seekFood', targetFoodId: world.food[0].id, speedBoost: 1 };
+  fish.tryConsumeFood(world);
+  assert.equal(fish.digestBites, 1);
+  assert.equal(world.poop.length, 0);
+
+  world.spawnFood(fish.position.x, fish.position.y, 1, 120);
+  fish.behavior = { mode: 'seekFood', targetFoodId: world.food[0].id, speedBoost: 1 };
+  fish.tryConsumeFood(world);
+  assert.equal(fish.digestBites, 0);
+  assert.equal(world.poop.length, 0);
+
+  world.update(11);
+  assert.equal(world.poop.length, 1);
+  assert.ok(['pellet', 'neutral', 'floaty'].includes(world.poop[0].type));
+
+  world.poop[0].ttlSec = 0.01;
+  world.update(0.02);
+  assert.equal(world.poop.length, 0);
+});
+
+test('poop survives save/load as optional field', () => {
+  const world = makeWorldForTest();
+  world.spawnPoop(50, 60, 12);
+
+  const world2 = roundTrip(world);
+  assert.equal(world2.poop.length, 1);
+  assert.equal(world2.poop[0].x, 50);
+  assert.equal(world2.poop[0].y, 60);
+  assert.equal(typeof world2.poop[0].type, 'string');
+
+  const legacy = world.toJSON();
+  delete legacy.poop;
+  const world3 = World.fromJSON(legacy, {
+    width: world.bounds.width,
+    height: world.bounds.height,
+    initialFishCount: world.initialFishCount
+  });
+  assert.equal(world3.poop.length, 0);
+});
+
+test('poop spawn type distribution uses weighted random bands', () => {
+  const worldPellet = makeWorldForTest();
+  withStubbedRandom(0.2, () => worldPellet.spawnPoop(20, 20));
+  assert.equal(worldPellet.poop[0].type, 'pellet');
+
+  const worldNeutral = makeWorldForTest();
+  withStubbedRandom(0.8, () => worldNeutral.spawnPoop(20, 20));
+  assert.equal(worldNeutral.poop[0].type, 'neutral');
+
+  const worldFloaty = makeWorldForTest();
+  withStubbedRandom(0.95, () => worldFloaty.spawnPoop(20, 20));
+  assert.equal(worldFloaty.poop[0].type, 'floaty');
+});

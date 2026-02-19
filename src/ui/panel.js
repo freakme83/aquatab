@@ -18,6 +18,14 @@ export class Panel {
     this.simTimeStat = this.root.querySelector('[data-stat="simTime"]');
     this.fishCountStat = this.root.querySelector('[data-stat="fishCount"]');
     this.cleanlinessStat = this.root.querySelector('[data-stat="cleanliness"]');
+    this.cleanlinessTrendStat = this.root.querySelector('[data-stat="cleanlinessTrend"]');
+    if (!this.cleanlinessTrendStat && this.cleanlinessStat?.closest('.stat-row')) {
+      const row = document.createElement('div');
+      row.className = 'stat-row';
+      row.innerHTML = '<span>Trend</span><strong data-stat="cleanlinessTrend">Stable</strong>';
+      this.cleanlinessStat.closest('.stat-row').insertAdjacentElement('afterend', row);
+      this.cleanlinessTrendStat = row.querySelector('[data-stat="cleanlinessTrend"]');
+    }
 
     this.speedSlider = this.root.querySelector('[data-control="simSpeed"]');
     this.toggleButton = this.root.querySelector('[data-control="togglePause"]');
@@ -196,6 +204,7 @@ export class Panel {
     simTimeSec,
     fishCount,
     cleanliness01,
+    cleanlinessTrend,
     filterUnlocked,
     foodsConsumedCount,
     filterUnlockThreshold,
@@ -220,6 +229,16 @@ export class Panel {
     if (this.cleanlinessStat) {
       const cleanlinessPct = Math.round((cleanliness01 ?? 1) * 100);
       this.cleanlinessStat.textContent = `${cleanlinessPct}%`;
+    }
+
+    if (this.cleanlinessTrendStat) {
+      const trendLabel = ['Stable', 'Dropping', 'Dropping fast'].includes(cleanlinessTrend) ? cleanlinessTrend : 'Stable';
+      this.cleanlinessTrendStat.textContent = trendLabel;
+      this.cleanlinessTrendStat.style.color = {
+        Stable: '#cfeeff',
+        Dropping: '#f0a13a',
+        'Dropping fast': '#ea5f5f'
+      }[trendLabel];
     }
 
     const consumed = Math.max(0, Math.floor(foodsConsumedCount ?? 0));

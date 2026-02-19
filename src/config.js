@@ -20,7 +20,8 @@ export const CONFIG = Object.freeze({
     'Aisha', 'Fatima', 'Samira', 'Imani', 'Zainab', 'Nadia', 'Soraya', 'Naomi', 'Talia', 'Mira',
     'Amara', 'Esme', 'Elisa', 'Luna', 'Aurora', 'Selena', 'Rhea', 'Tessa', 'Vera', 'Iris',
 
-    'Kira', 'Lena', 'Mara', 'Helena', 'Alba', 'Celine', 'Rosa', 'Mina', 'Jasmine', 'Allegra'
+    'Kira', 'Lena', 'Mara', 'Helena', 'Alba', 'Celine', 'Rosa', 'Mina', 'Jasmine', 'Allegra',
+    'Seyma', 'Nese', 'Hatice', 'Gozde', 'Belgin', 'Rahime'
   ],
 
   MALE_NAME_POOL: [
@@ -37,7 +38,8 @@ export const CONFIG = Object.freeze({
     'Bjorn', 'Erik', 'Magnus', 'Soren', 'Lars', 'Aron', 'Kai', 'Noel', 'Dominik', 'Adrian',
     'Roman', 'Felix', 'Victor', 'Jonas', 'Hugo', 'Levi', 'Silas', 'Orion', 'Atlas', 'Rowan',
 
-    'Kofi', 'Kwame', 'Zubair', 'Tenzin', 'Arjun', 'Dev', 'Rohan', 'Sahil', 'Iker', 'Thiago'
+    'Kofi', 'Kwame', 'Zubair', 'Tenzin', 'Arjun', 'Dev', 'Rohan', 'Sahil', 'Iker', 'Thiago',
+    'Onur', 'Kadir', 'Emir', 'Gokhan'
   ],
 
   reproduction: {
@@ -56,7 +58,7 @@ export const CONFIG = Object.freeze({
     GESTATION_SEC: [300, 360],
     EGG_INCUBATION_SEC: [120, 300],
     MOTHER_COOLDOWN_SEC: [600, 1080],
-    CLUTCH_SIZE: [1, 2],
+    CLUTCH_SIZE: [2, 4],
 
     // Genetics
     TRAIT_MUTATION_PCT: 0.05
@@ -71,6 +73,14 @@ export const CONFIG = Object.freeze({
       fallDamping: 0.15,
       maxFallSpeed: 26
     },
+    poop: {
+      defaultTtlSec: 120,
+      dirtPerSec: 0.00008,
+      riseSpeed: 4,
+      baseDriftSpeed: 4,
+      driftDamping: 0.99,
+      jitter: 0.04
+    },
     fishLifecycle: {
       deadToSkeletonSec: 120,
       skeletonToRemoveSec: 120
@@ -82,6 +92,13 @@ export const CONFIG = Object.freeze({
     water: {
       hygiene01: 1,
       dirt01: 0,
+      POLLUTION_TINT_START: 0.90,
+      POLLUTION_TINT_MAX_ALPHA: 0.18,
+      POLLUTION_TINT_COLOR: '86, 108, 78',
+      dirtDecayPower: 1.9,
+      dirtDecayStrength: 8.0,
+      hygieneDropPerExpiredFood: 0.012,
+      hygieneDropPerPoopSpawn: 0.003,
       referenceFishCount: 20,
       baselineDecayPerSec: 0.0002,
       bioloadDirtPerSec: 0.00035,

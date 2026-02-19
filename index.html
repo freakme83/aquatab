@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Aquchi Sim</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -16,14 +17,27 @@
           <input type="range" min="1" max="6" value="4" step="1" data-start-control="initialFishCount" />
         </label>
 
-        <button type="button" class="start-btn" id="startSimButton">Start Sim</button>
+        <div class="start-actions" aria-label="Start actions">
+          <button type="button" class="start-btn" id="startSimButton">Start Sim</button>
+          <button type="button" class="start-btn" id="continueSimButton">Continue</button>
+          <button type="button" class="start-btn" data-info-modal="howToPlay">How to Play</button>
+          <button type="button" class="start-btn" data-info-modal="about">About</button>
+          <button type="button" class="start-btn" id="buyCoffeeButton">Buy me a coffee</button>
+        </div>
 
-        <section class="about-placeholder" aria-label="About placeholder">
-          <h2>About</h2>
-          <p>Coming soon: game information and simulation tips will appear here.</p>
-        </section>
+        <p class="saved-start-meta" data-saved-start-meta>Saved simulation found: no</p>
       </div>
     </section>
+
+    <div class="info-modal-backdrop" id="infoModalBackdrop" hidden>
+      <section class="info-modal" role="dialog" aria-modal="true" aria-labelledby="infoModalTitle">
+        <header class="info-modal-header">
+          <h2 id="infoModalTitle">Info</h2>
+          <button type="button" class="info-modal-close" id="infoModalClose" aria-label="Close">✕</button>
+        </header>
+        <div class="info-modal-content" id="infoModalContent"></div>
+      </section>
+    </div>
 
     <main class="page-layout" id="appRoot" hidden>
       <section class="tank-stage" aria-label="Aquarium stage">
@@ -53,6 +67,7 @@
           <div class="stat-row"><span>Total Sim Time</span><strong data-stat="simTime">00:00:00</strong></div>
           <div class="stat-row"><span>Fish</span><strong data-stat="fishCount">0</strong></div>
           <div class="stat-row"><span>Cleanliness</span><strong data-stat="cleanliness">100%</strong></div>
+          <div class="stat-row"><span>Trend</span><strong data-stat="cleanlinessTrend">Stable</strong></div>
         </section>
 
         <section class="tab-content" data-content="controls" role="tabpanel">

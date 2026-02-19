@@ -3,6 +3,8 @@
  * Responsibility: draw-only layers for tank, water ambiance, and fish visuals.
  */
 
+import { CONFIG } from '../config.js';
+
 const TAU = Math.PI * 2;
 const rand = (min, max) => min + Math.random() * (max - min);
 
@@ -95,6 +97,7 @@ export class Renderer {
     ctx.save();
     this.#clipTankWater(ctx);
     this.#drawCachedBackground(ctx);
+    this.#drawPollutionTint(ctx);
     this.#drawWaterPlants(ctx, time);
     this.#drawGroundAlgae(ctx, time);
     this.#drawPlayEffects(ctx, time);
@@ -102,6 +105,7 @@ export class Renderer {
     this.#drawBubbles(ctx);
     this.#drawFilterModule(ctx, time);
     this.#drawFood(ctx);
+    this.#drawPoop(ctx);
     this.#drawEggs(ctx);
     this.#drawFxParticles(ctx);
     this.#drawFishSchool(ctx, time);
@@ -282,6 +286,25 @@ export class Renderer {
     ctx.drawImage(this.backgroundCanvas, x, y);
   }
 
+
+  #drawPollutionTint(ctx) {
+    const { x, y, width, height } = this.tankRect;
+    const dirt01 = Math.max(0, Math.min(1, this.world.water?.dirt01 ?? 0));
+    const start = Math.max(0, Math.min(1, CONFIG.world.water.POLLUTION_TINT_START ?? 0.9));
+    const span = Math.max(0.0001, 1 - start);
+
+    let t = Math.max(0, Math.min(1, (dirt01 - start) / span));
+    t = t * t * (3 - 2 * t);
+
+    const maxAlpha = Math.max(0, Math.min(1, CONFIG.world.water.POLLUTION_TINT_MAX_ALPHA ?? 0.18));
+    const alpha = t * maxAlpha;
+    if (alpha <= 0.001) return;
+
+    const tintColor = CONFIG.world.water.POLLUTION_TINT_COLOR ?? '86, 108, 78';
+    ctx.fillStyle = `rgba(${tintColor}, ${alpha})`;
+    ctx.fillRect(x, y, width, height);
+  }
+
   #drawWaterParticles(ctx, delta) {
     if (this.quality === 'low') return;
 
@@ -401,6 +424,31 @@ export class Renderer {
       ctx.beginPath();
       ctx.fillStyle = 'rgba(221, 255, 226, 0.52)';
       ctx.arc(x - radius * 0.2, y - radius * 0.2, radius * 0.45, 0, TAU);
+      ctx.fill();
+    }
+  }
+
+
+  #drawPoop(ctx) {
+    const sx = this.tankRect.width / this.world.bounds.width;
+    const sy = this.tankRect.height / this.world.bounds.height;
+
+    for (const item of this.world.poop ?? []) {
+      const x = this.tankRect.x + item.x * sx;
+      const y = this.tankRect.y + item.y * sy;
+      const maxTtl = Math.max(1, Number.isFinite(item.maxTtlSec) ? item.maxTtlSec : 120);
+      const ttlSec = Math.max(0, Number.isFinite(item.ttlSec) ? item.ttlSec : maxTtl);
+      const life01 = Math.max(0, Math.min(1, ttlSec / maxTtl));
+      const alpha = 0.22 + life01 * 0.53;
+
+      ctx.beginPath();
+      ctx.fillStyle = `rgba(116, 73, 44, ${alpha})`;
+      ctx.ellipse(x, y, 3.4, 2.1, 0.2, 0, TAU);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.fillStyle = `rgba(154, 109, 72, ${alpha * 0.5})`;
+      ctx.ellipse(x - 0.8, y - 0.5, 1.3, 0.9, 0.2, 0, TAU);
       ctx.fill();
     }
   }

@@ -15,6 +15,11 @@ const FOOD_DEFAULT_TTL = CONFIG.world.food.defaultTtlSec;
 const FOOD_FALL_ACCEL = CONFIG.world.food.fallAccel;
 const FOOD_FALL_DAMPING = CONFIG.world.food.fallDamping;
 const FOOD_MAX_FALL_SPEED = CONFIG.world.food.maxFallSpeed;
+const POOP_DEFAULT_TTL_SEC = Math.max(1, CONFIG.world.poop?.defaultTtlSec ?? 120);
+const POOP_DIRT_PER_SEC = Math.max(0, CONFIG.world.poop?.dirtPerSec ?? 0);
+const POOP_BASE_DRIFT_SPEED = Math.max(0, CONFIG.world.poop?.baseDriftSpeed ?? CONFIG.world.poop?.riseSpeed ?? 4);
+const POOP_DRIFT_DAMPING = clamp(CONFIG.world.poop?.driftDamping ?? 0.99, 0.9, 0.9999);
+const POOP_JITTER = Math.max(0, CONFIG.world.poop?.jitter ?? 0.04);
 const AGE_CONFIG = CONFIG.fish.age;
 const INITIAL_MAX_AGE_SEC = Math.max(0, AGE_CONFIG.INITIAL_MAX_AGE_SEC ?? 1200);
 const GROWTH_CONFIG = CONFIG.fish.growth;
@@ -30,7 +35,7 @@ const MATE_MIN_HYGIENE = clamp01(REPRO_CONFIG.MATE_MIN_HYGIENE ?? 0.6);
 const GESTATION_SEC = REPRO_CONFIG.GESTATION_SEC ?? [300, 360];
 const EGG_INCUBATION_SEC = REPRO_CONFIG.EGG_INCUBATION_SEC ?? [120, 300];
 const MOTHER_COOLDOWN_SEC = REPRO_CONFIG.MOTHER_COOLDOWN_SEC ?? [600, 1080];
-const CLUTCH_SIZE = REPRO_CONFIG.CLUTCH_SIZE ?? [1, 2];
+const CLUTCH_SIZE = REPRO_CONFIG.CLUTCH_SIZE ?? [2, 4];
 
 const FEMALE_NAME_POOL = Array.isArray(CONFIG.FEMALE_NAME_POOL) ? CONFIG.FEMALE_NAME_POOL : [];
 const MALE_NAME_POOL = Array.isArray(CONFIG.MALE_NAME_POOL) ? CONFIG.MALE_NAME_POOL : [];
@@ -41,6 +46,10 @@ const WATER_BASELINE_DECAY_PER_SEC = Math.max(0, WATER_CONFIG.baselineDecayPerSe
 const WATER_BIOLOAD_DIRT_PER_SEC = Math.max(0, WATER_CONFIG.bioloadDirtPerSec ?? 0);
 const WATER_DIRT_PER_EXPIRED_FOOD = Math.max(0, WATER_CONFIG.dirtPerExpiredFood ?? 0);
 const WATER_DIRT_TO_DECAY_MULTIPLIER = Math.max(0, WATER_CONFIG.dirtToDecayMultiplier ?? 3);
+const WATER_DIRT_DECAY_POWER = Math.max(1, WATER_CONFIG.dirtDecayPower ?? 1);
+const WATER_DIRT_DECAY_STRENGTH = Math.max(0, WATER_CONFIG.dirtDecayStrength ?? WATER_DIRT_TO_DECAY_MULTIPLIER);
+const WATER_HYGIENE_DROP_PER_EXPIRED_FOOD = Math.max(0, WATER_CONFIG.hygieneDropPerExpiredFood ?? 0);
+const WATER_HYGIENE_DROP_PER_POOP_SPAWN = Math.max(0, WATER_CONFIG.hygieneDropPerPoopSpawn ?? 0);
 const FILTER_DIRT_REMOVE_PER_SEC = Math.max(0, WATER_CONFIG.filterDirtRemovePerSec ?? 0);
 const FILTER_WEAR_BASE_PER_SEC = Math.max(0, WATER_CONFIG.wearBasePerSec ?? 0);
 const FILTER_WEAR_BIOLOAD_FACTOR = Math.max(0, WATER_CONFIG.wearBioloadFactor ?? 0);
@@ -71,6 +80,7 @@ export const WATER_SAVE_KEYS = [
   'effectiveFilter01'
 ];
 export const FOOD_SAVE_KEYS = ['id', 'x', 'y', 'amount', 'ttl', 'vy'];
+export const POOP_SAVE_KEYS = ['id', 'x', 'y', 'ttlSec', 'maxTtlSec', 'vx', 'vy', 'type', 'canBeEaten', 'nutrition'];
 export const EGG_SAVE_KEYS = [
   'id',
   'x',
@@ -123,6 +133,37 @@ function deserializeFood(data, bounds, swimHeight) {
     ttl: Number.isFinite(source.ttl) ? source.ttl : FOOD_DEFAULT_TTL,
     vy: Number.isFinite(source.vy) ? source.vy : 0
   };
+}
+
+function serializePoop(poop) {
+  return pickSavedKeys(poop, POOP_SAVE_KEYS);
+}
+
+function deserializePoop(data, bounds, swimHeight) {
+  const source = data && typeof data === 'object' ? data : {};
+  const position = clampPosition(source, bounds, swimHeight);
+  const type = source.type === 'floaty' || source.type === 'neutral' || source.type === 'pellet'
+    ? source.type
+    : 'pellet';
+  return {
+    id: Number.isFinite(source.id) ? source.id : 0,
+    x: position.x,
+    y: position.y,
+    ttlSec: Math.max(0, Number.isFinite(source.ttlSec) ? source.ttlSec : POOP_DEFAULT_TTL_SEC),
+    maxTtlSec: Math.max(1, Number.isFinite(source.maxTtlSec) ? source.maxTtlSec : POOP_DEFAULT_TTL_SEC),
+    vx: Number.isFinite(source.vx) ? source.vx : 0,
+    vy: Number.isFinite(source.vy) ? source.vy : (type === 'floaty' ? -POOP_BASE_DRIFT_SPEED : POOP_BASE_DRIFT_SPEED),
+    type,
+    canBeEaten: Boolean(source.canBeEaten ?? true),
+    nutrition: Math.max(0, Number.isFinite(source.nutrition) ? source.nutrition : 0.1)
+  };
+}
+
+function pickPoopTypeByWeight() {
+  const roll = Math.random();
+  if (roll < 0.7) return 'pellet';
+  if (roll < 0.9) return 'neutral';
+  return 'floaty';
 }
 
 function serializeEgg(egg) {
@@ -278,6 +319,7 @@ export class World {
     this.eggs = [];
     this.bubbles = [];
     this.nextFoodId = 1;
+    this.nextPoopId = 1;
     this.nextFishId = 1;
     this.nextPlaySessionId = 1;
     this.nextEggId = 1;
@@ -297,6 +339,7 @@ export class World {
     this.events = [];
     this.playSessions = [];
     this.matePairNextTryAt = new Map();
+    this.scheduledPoopSpawns = [];
     this.groundAlgae = [];
     this.fxParticles = [];
 
@@ -306,6 +349,13 @@ export class World {
 
     this.paused = false;
     this.speedMultiplier = 1;
+    this.debugTiming = {
+      speedMultiplier: this.speedMultiplier,
+      rawDelta: 0,
+      simDt: 0,
+      motionDt: 0,
+      simTimeSec: this.simTimeSec
+    };
 
     this.#generateInitialPopulation(this.initialFishCount);
     this.#seedBubbles();
@@ -581,10 +631,12 @@ export class World {
     return {
       saveVersion: WORLD_SAVE_VERSION,
       simTimeSec: Number.isFinite(this.simTimeSec) ? this.simTimeSec : 0,
+      speedMultiplier: Number.isFinite(this.speedMultiplier) ? this.speedMultiplier : 1,
       water: serializeWater(this.water),
       fish: this.fish.map((entry) => entry.toJSON()),
       eggs: this.eggs.map((entry) => serializeEgg(entry)),
-      food: this.food.map((entry) => serializeFood(entry))
+      food: this.food.map((entry) => serializeFood(entry)),
+      poop: this.poop.map((entry) => serializePoop(entry))
     };
   }
 
@@ -594,6 +646,9 @@ export class World {
 
     const swimHeight = this.#swimHeight();
     this.simTimeSec = Math.max(0, Number.isFinite(source.simTimeSec) ? source.simTimeSec : 0);
+    // Compatibility note: older saves included `realTimeSec` as a parallel clock.
+    // We intentionally ignore it and keep `simTimeSec` as the only canonical sim time.
+    this.speedMultiplier = Math.max(0.5, Math.min(3, Number.isFinite(source.speedMultiplier) ? source.speedMultiplier : this.speedMultiplier));
     this.fish = Array.isArray(source.fish)
       ? source.fish.map((entry) => Fish.fromJSON(entry, this.bounds))
       : [];
@@ -611,10 +666,15 @@ export class World {
       ? source.food.map((entry) => deserializeFood(entry, this.bounds, swimHeight))
       : [];
 
+    this.poop = Array.isArray(source.poop)
+      ? source.poop.map((entry) => deserializePoop(entry, this.bounds, swimHeight))
+      : [];
+
     this.water = deserializeWater(source.water, this.#createInitialWaterState());
 
     this.nextFishId = Math.max(1, ...this.fish.map((entry) => Math.floor(entry.id || 0) + 1));
     this.nextFoodId = Math.max(1, ...this.food.map((entry) => Math.floor(entry.id || 0) + 1));
+    this.nextPoopId = Math.max(1, ...this.poop.map((entry) => Math.floor(entry.id || 0) + 1));
     this.nextEggId = Math.max(1, ...this.eggs.map((entry) => Math.floor(entry.id || 0) + 1));
 
     this.#rebuildFishById();
@@ -631,6 +691,7 @@ export class World {
     this.events = [];
     this.playSessions = [];
     this.matePairNextTryAt = new Map();
+    this.scheduledPoopSpawns = [];
     this.expiredFoodSinceLastWaterUpdate = 0;
     this.filterUnlocked = Boolean(this.water.filterUnlocked || this.filterUnlocked);
     this.filterUnlockThreshold = Math.max(1, this.initialFishCount * 4);
@@ -653,6 +714,11 @@ export class World {
     for (const food of this.food) {
       food.x = Math.min(Math.max(0, food.x), width);
       food.y = Math.min(Math.max(0, food.y), Math.max(0, this.#swimHeight()));
+    }
+
+    for (const poop of this.poop) {
+      poop.x = Math.min(Math.max(0, poop.x), width);
+      poop.y = Math.min(Math.max(0, poop.y), Math.max(0, this.#swimHeight()));
     }
 
     for (const bubble of this.bubbles) {
@@ -680,6 +746,46 @@ export class World {
     this.emit('food:spawn', { x: clampedX, y: clampedY, amount, ttl });
   }
 
+
+  spawnPoop(x, y, ttlSec = POOP_DEFAULT_TTL_SEC) {
+    const clampedX = clamp(x, 0, this.bounds.width);
+    const clampedY = clamp(y, 0, this.#swimHeight());
+    const type = pickPoopTypeByWeight();
+
+    let initialVy = POOP_BASE_DRIFT_SPEED;
+    if (type === 'floaty') initialVy = -POOP_BASE_DRIFT_SPEED;
+    else if (type === 'neutral') initialVy = rand(-POOP_BASE_DRIFT_SPEED * 0.3, POOP_BASE_DRIFT_SPEED * 0.3);
+
+    const poop = {
+      id: this.nextPoopId++,
+      x: clampedX,
+      y: clampedY,
+      ttlSec: Math.max(0, Number.isFinite(ttlSec) ? ttlSec : POOP_DEFAULT_TTL_SEC),
+      maxTtlSec: Math.max(1, Number.isFinite(ttlSec) ? ttlSec : POOP_DEFAULT_TTL_SEC),
+      vx: 0,
+      vy: initialVy,
+      type,
+      canBeEaten: true,
+      nutrition: 0.1
+    };
+    this.poop.push(poop);
+    if (WATER_HYGIENE_DROP_PER_POOP_SPAWN > 0 && this.water) {
+      this.water.hygiene01 = clamp(this.water.hygiene01 - WATER_HYGIENE_DROP_PER_POOP_SPAWN, 0, 1);
+    }
+    return poop;
+  }
+
+  schedulePoopFromFish(fishId, delaySec = 0) {
+    const fish = this.getFishById(fishId);
+    if (!fish || fish.lifeState !== 'ALIVE') return false;
+    const safeDelaySec = clamp(Number.isFinite(delaySec) ? delaySec : 0, 0, 30);
+    this.scheduledPoopSpawns.push({
+      fishId,
+      spawnAtSec: this.simTimeSec + safeDelaySec
+    });
+    return true;
+  }
+
   consumeFood(foodId, amountToConsume = 0.5) {
     const food = this.food.find((entry) => entry.id === foodId);
     if (!food) return 0;
@@ -704,7 +810,7 @@ export class World {
   }
 
   // Future hook: edible target discovery.
-  // For now, fish can only eat food. Later we may include eggs for certain species/traits.
+  // For now, fish can only eat food. Later we may include eggs/poop for certain species or traits.
   getEdibleTargetsForFish(fish) {
     return this.food;
   }
@@ -798,7 +904,10 @@ export class World {
   }
 
   setSpeedMultiplier(value) {
-    this.speedMultiplier = Math.max(0.5, Math.min(3, value));
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return this.speedMultiplier;
+    this.speedMultiplier = Math.max(0.5, Math.min(3, parsed));
+    return this.speedMultiplier;
   }
 
   togglePause() {
@@ -809,26 +918,36 @@ export class World {
   update(rawDelta) {
     if (this.paused) return;
 
-    const delta = rawDelta * this.speedMultiplier;
-    this.simTimeSec += delta;
+    const simDt = rawDelta * this.speedMultiplier;
+    const motionDt = simDt;
+    this.simTimeSec += simDt;
+    this.debugTiming = {
+      speedMultiplier: this.speedMultiplier,
+      rawDelta,
+      simDt,
+      motionDt,
+      simTimeSec: this.simTimeSec
+    };
 
     for (const fish of this.fish) fish.updateLifeCycle?.(this.simTimeSec);
     for (const fish of this.fish) fish.updatePlayState?.(this.simTimeSec);
     this.#updatePlaySessions();
     this.#tryExpandPlaySessions();
     this.#tryStartPlaySessions();
-    this.#updateReproduction(delta);
-    for (const fish of this.fish) fish.updateMetabolism(delta, this);
-    for (const fish of this.fish) fish.decideBehavior(this, delta);
-    for (const fish of this.fish) fish.applySteering(delta);
+    this.#updateReproduction(simDt);
+    for (const fish of this.fish) fish.updateMetabolism(simDt, this);
+    for (const fish of this.fish) fish.decideBehavior(this, motionDt);
+    for (const fish of this.fish) fish.applySteering(motionDt);
     for (const fish of this.fish) fish.tryConsumeFood(this);
 
     this.#updateFishLifeState();
-    this.#updateFood(delta);
-    this.#updateEggs(delta);
-    this.#updateWaterHygiene(delta);
-    this.#updateFxParticles(delta);
-    this.#updateBubbles(delta);
+    this.#updateScheduledPoopSpawns();
+    this.#updateFood(simDt, motionDt);
+    this.#updatePoop(simDt, motionDt);
+    this.#updateEggs(simDt);
+    this.#updateWaterHygiene(simDt);
+    this.#updateFxParticles(motionDt);
+    this.#updateBubbles(motionDt);
   }
 
   #createInitialWaterState() {
@@ -948,7 +1067,8 @@ export class World {
 
     const bioloadDirt = WATER_BIOLOAD_DIRT_PER_SEC * bioload * dtSec;
     const expiredFoodDirt = expiredFoodCount * WATER_DIRT_PER_EXPIRED_FOOD;
-    water.dirt01 = clamp(water.dirt01 + bioloadDirt + expiredFoodDirt, 0, 1);
+    const poopDirt = this.poop.length * POOP_DIRT_PER_SEC * dtSec;
+    water.dirt01 = clamp(water.dirt01 + bioloadDirt + expiredFoodDirt + poopDirt, 0, 1);
 
     const removedDirt = FILTER_DIRT_REMOVE_PER_SEC * effectiveFilter01 * dtSec;
     water.dirt01 = clamp(water.dirt01 - removedDirt, 0, 1);
@@ -960,7 +1080,7 @@ export class World {
       water.filter01 = clamp(water.filter01 - wearRate * dtSec, 0, 1);
     }
 
-    const dirtMultiplier = 1 + water.dirt01 * WATER_DIRT_TO_DECAY_MULTIPLIER;
+    const dirtMultiplier = 1 + (water.dirt01 ** WATER_DIRT_DECAY_POWER) * WATER_DIRT_DECAY_STRENGTH;
     const baselineDecay = WATER_BASELINE_DECAY_PER_SEC * effectiveBioload * dirtMultiplier * dtSec;
     const hygieneRecovery = WATER_BASELINE_DECAY_PER_SEC * Math.max(0, bioload - effectiveBioload) * dtSec;
     water.hygiene01 = clamp(water.hygiene01 - baselineDecay + hygieneRecovery, 0, 1);
@@ -1210,7 +1330,7 @@ export class World {
     const father = this.getFishById(female.repro.fatherId) ?? null;
     const motherTraits = { ...(female.traits ?? {}) };
     const fatherTraits = father?.traits ? { ...father.traits } : { ...motherTraits };
-    const clutchCount = Math.max(1, randIntInclusive(CLUTCH_SIZE, 1, 2));
+    const clutchCount = Math.max(1, randIntInclusive(CLUTCH_SIZE, 2, 4));
 
     for (let i = 0; i < clutchCount; i += 1) {
       const x = clamp(female.position.x + rand(-6, 6), 0, this.bounds.width);
@@ -1294,15 +1414,15 @@ export class World {
   }
 
 
-  #updateFood(delta) {
+  #updateFood(simDt, motionDt) {
     const bottomY = this.#swimHeight();
 
     for (let i = this.food.length - 1; i >= 0; i -= 1) {
       const item = this.food[i];
-      if (Number.isFinite(item.ttl)) item.ttl -= delta;
+      if (Number.isFinite(item.ttl)) item.ttl -= simDt;
 
-      item.vy += FOOD_FALL_ACCEL * delta;
-      item.y += item.vy * delta;
+      item.vy += FOOD_FALL_ACCEL * motionDt;
+      item.y += item.vy * motionDt;
       if (item.y >= bottomY) {
         item.y = bottomY;
         item.vy *= FOOD_FALL_DAMPING;
@@ -1313,8 +1433,90 @@ export class World {
       if (Number.isFinite(item.ttl) && item.ttl <= 0) {
         this.food.splice(i, 1);
         this.expiredFoodSinceLastWaterUpdate += 1;
+        if (WATER_HYGIENE_DROP_PER_EXPIRED_FOOD > 0 && this.water) {
+          this.water.hygiene01 = clamp(this.water.hygiene01 - WATER_HYGIENE_DROP_PER_EXPIRED_FOOD, 0, 1);
+        }
         this.emit('foodExpired', { foodId: item.id });
       }
+    }
+  }
+
+
+  #updatePoop(simDt, motionDt) {
+    if (!Number.isFinite(simDt) || simDt <= 0) return;
+
+    const bottomY = this.#swimHeight();
+
+    for (let i = this.poop.length - 1; i >= 0; i -= 1) {
+      const item = this.poop[i];
+      if (Number.isFinite(item.ttlSec)) item.ttlSec -= simDt;
+
+      const type = item.type === 'floaty' || item.type === 'neutral' || item.type === 'pellet'
+        ? item.type
+        : 'pellet';
+      item.type = type;
+
+      item.vx = Number.isFinite(item.vx) ? item.vx : 0;
+      item.vy = Number.isFinite(item.vy) ? item.vy : (type === 'floaty' ? -POOP_BASE_DRIFT_SPEED : POOP_BASE_DRIFT_SPEED);
+
+      if (type === 'pellet') {
+        const blend = Math.min(1, simDt * 1.5);
+        item.vy += (POOP_BASE_DRIFT_SPEED - item.vy) * blend;
+        item.vx *= POOP_DRIFT_DAMPING;
+      } else if (type === 'floaty') {
+        const blend = Math.min(1, simDt * 1.5);
+        item.vy += (-POOP_BASE_DRIFT_SPEED - item.vy) * blend;
+        item.vx += rand(-POOP_JITTER, POOP_JITTER) * simDt;
+      } else {
+        item.vy *= POOP_DRIFT_DAMPING;
+        item.vx *= POOP_DRIFT_DAMPING;
+        item.vy += rand(-POOP_JITTER, POOP_JITTER) * simDt;
+        item.vx += rand(-POOP_JITTER, POOP_JITTER) * simDt;
+      }
+
+      item.vx *= POOP_DRIFT_DAMPING;
+      item.vy *= POOP_DRIFT_DAMPING;
+      item.x += item.vx * motionDt;
+      item.y += item.vy * motionDt;
+
+      item.x = clamp(item.x, 0, this.bounds.width);
+
+      if (item.y >= bottomY) {
+        item.y = bottomY;
+        if (type === 'pellet') {
+          item.vy = 0;
+          item.vx *= 0.92;
+        } else {
+          item.vy = Math.min(0, item.vy);
+        }
+      } else if (item.y <= 0) {
+        item.y = 0;
+        if (type === 'floaty') {
+          item.vy = 0;
+          item.vx *= 0.97;
+        } else {
+          item.vy = Math.max(0, item.vy);
+        }
+      }
+
+      if (Number.isFinite(item.ttlSec) && item.ttlSec <= 0) {
+        this.poop.splice(i, 1);
+      }
+    }
+  }
+
+  #updateScheduledPoopSpawns() {
+    if (!this.scheduledPoopSpawns.length) return;
+
+    for (let i = this.scheduledPoopSpawns.length - 1; i >= 0; i -= 1) {
+      const entry = this.scheduledPoopSpawns[i];
+      if (this.simTimeSec < (entry.spawnAtSec ?? Infinity)) continue;
+
+      const fish = this.getFishById(entry.fishId);
+      if (fish && fish.lifeState === 'ALIVE') {
+        this.spawnPoop(fish.position.x, fish.position.y);
+      }
+      this.scheduledPoopSpawns.splice(i, 1);
     }
   }
 
@@ -1402,6 +1604,11 @@ export class World {
     for (const food of this.food) {
       food.x = Math.min(Math.max(0, food.x), width);
       food.y = Math.min(Math.max(0, food.y), Math.max(0, this.#swimHeight()));
+    }
+
+    for (const poop of this.poop) {
+      poop.x = Math.min(Math.max(0, poop.x), width);
+      poop.y = Math.min(Math.max(0, poop.y), Math.max(0, this.#swimHeight()));
     }
 
     for (const bubble of this.bubbles) {
