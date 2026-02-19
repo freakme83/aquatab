@@ -321,3 +321,64 @@ test('laying clutch uses updated egg range of 2 to 4', () => {
   withStubbedRandom(0.999999, () => worldMax.update(0.01));
   assert.equal(worldMax.eggs.length, 4, 'maximum clutch should produce 4 eggs');
 });
+
+
+test('fish produces poop every 2 meals and poop expires', () => {
+  const world = makeWorldForTest();
+  const fish = world.fish[0];
+  forceFishAliveAdultFed(fish);
+
+  world.spawnFood(fish.position.x, fish.position.y, 1, 120);
+  fish.behavior = { mode: 'seekFood', targetFoodId: world.food[0].id, speedBoost: 1 };
+  fish.tryConsumeFood(world);
+  assert.equal(fish.digestBites, 1);
+  assert.equal(world.poop.length, 0);
+
+  world.spawnFood(fish.position.x, fish.position.y, 1, 120);
+  fish.behavior = { mode: 'seekFood', targetFoodId: world.food[0].id, speedBoost: 1 };
+  fish.tryConsumeFood(world);
+  assert.equal(fish.digestBites, 0);
+  assert.equal(world.poop.length, 0);
+
+  world.update(11);
+  assert.equal(world.poop.length, 1);
+  assert.ok(['pellet', 'neutral', 'floaty'].includes(world.poop[0].type));
+
+  world.poop[0].ttlSec = 0.01;
+  world.update(0.02);
+  assert.equal(world.poop.length, 0);
+});
+
+test('poop survives save/load as optional field', () => {
+  const world = makeWorldForTest();
+  world.spawnPoop(50, 60, 12);
+
+  const world2 = roundTrip(world);
+  assert.equal(world2.poop.length, 1);
+  assert.equal(world2.poop[0].x, 50);
+  assert.equal(world2.poop[0].y, 60);
+  assert.equal(typeof world2.poop[0].type, 'string');
+
+  const legacy = world.toJSON();
+  delete legacy.poop;
+  const world3 = World.fromJSON(legacy, {
+    width: world.bounds.width,
+    height: world.bounds.height,
+    initialFishCount: world.initialFishCount
+  });
+  assert.equal(world3.poop.length, 0);
+});
+
+test('poop spawn type distribution uses weighted random bands', () => {
+  const worldPellet = makeWorldForTest();
+  withStubbedRandom(0.2, () => worldPellet.spawnPoop(20, 20));
+  assert.equal(worldPellet.poop[0].type, 'pellet');
+
+  const worldNeutral = makeWorldForTest();
+  withStubbedRandom(0.8, () => worldNeutral.spawnPoop(20, 20));
+  assert.equal(worldNeutral.poop[0].type, 'neutral');
+
+  const worldFloaty = makeWorldForTest();
+  withStubbedRandom(0.95, () => worldFloaty.spawnPoop(20, 20));
+  assert.equal(worldFloaty.poop[0].type, 'floaty');
+});

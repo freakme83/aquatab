@@ -87,6 +87,7 @@ export const FISH_SAVE_KEYS = [
   'playState',
   'repro',
   'matingAnim',
+  'digestBites',
   'history'
 ];
 // Smooth-ish ease for growth transitions.
@@ -219,6 +220,7 @@ export class Fish {
     };
 
     this.matingAnim = null;
+    this.digestBites = Math.max(0, Math.floor(options.digestBites ?? 0));
 
     this.hoverUntilSec = 0;
     this.nextHoverEligibleAtSimSec = rand(HOVER_COOLDOWN_MIN_SEC, HOVER_COOLDOWN_MAX_SEC);
@@ -274,6 +276,7 @@ export class Fish {
     fish.hunger01 = clamp01(Number.isFinite(fish.hunger01) ? fish.hunger01 : 0);
     fish.wellbeing01 = clamp01(Number.isFinite(fish.wellbeing01) ? fish.wellbeing01 : 1);
     fish.waterPenalty01 = clamp01(Number.isFinite(fish.waterPenalty01) ? fish.waterPenalty01 : 0);
+    fish.digestBites = Math.max(0, Math.floor(fish.digestBites ?? 0));
 
     if (!fish.position || !Number.isFinite(fish.position.x) || !Number.isFinite(fish.position.y)) {
       fish.position = { x: bounds.width * 0.5, y: bounds.height * 0.5 };
@@ -625,6 +628,13 @@ export class Fish {
     this.eatAnimTimer = this.eatAnimDuration;
     this.eat(consumed);
     this.history.mealsEaten += 1;
+    this.digestBites += 1;
+    if (this.lifeState !== 'ALIVE') return;
+
+    if (this.digestBites >= 2) {
+      this.digestBites = 0;
+      world.schedulePoopFromFish?.(this.id, rand(5, 10));
+    }
   }
 
 
