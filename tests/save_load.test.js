@@ -43,6 +43,7 @@ function forceFishAliveAdultFed(fish) {
 test('basic world round-trip preserves core entities and indexes', () => {
   const world = makeWorldForTest();
   world.simTimeSec = 321.5;
+  world.realTimeSec = 654.25;
   world.spawnFood(120, 100, 0.8, 99);
   world.spawnFood(130, 110, 0.7, 88);
   world.eggs.push({
@@ -63,6 +64,7 @@ test('basic world round-trip preserves core entities and indexes', () => {
   const world2 = roundTrip(world);
 
   assert.equal(world2.simTimeSec, world.simTimeSec);
+  assert.equal(world2.realTimeSec, world.realTimeSec);
   assert.equal(world2.fish.length, world.fish.length);
   assert.equal(world2.eggs.length, world.eggs.length);
   assert.equal(world2.food.length, world.food.length);
@@ -257,3 +259,20 @@ test('corrupted save input is safe and clamps positions', () => {
   assert.ok(egg.y >= 0 && egg.y <= loaded.bounds.height);
 });
 
+
+
+test('world update splits motion and lifecycle deltas', () => {
+  const world = makeWorldForTest();
+  world.setSpeedMultiplier(1);
+
+  world.spawnFood(100, 100, 1, 1);
+
+  const startSimTime = world.simTimeSec;
+  const startRealTime = world.realTimeSec;
+
+  world.update(1);
+
+  assert.equal(world.realTimeSec, startRealTime + 1);
+  assert.equal(world.simTimeSec, startSimTime + 0.5);
+  assert.equal(world.food[0].ttl, 0.5, 'food ttl should advance by lifeDt');
+});
