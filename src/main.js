@@ -62,6 +62,16 @@ function computeCleanlinessTrend(simTimeSec, hygiene01) {
   return 'Stable';
 }
 
+function computeWaterQuality(hygiene01, dirt01) {
+  const hygiene = Math.max(0, Math.min(1, hygiene01 ?? 1));
+  const dirt = Math.max(0, Math.min(1, dirt01 ?? 0));
+
+  if (hygiene >= 0.85 && dirt <= 0.10) return 'Great';
+  if (hygiene >= 0.70 && dirt <= 0.25) return 'OK';
+  if (hygiene >= 0.45 && dirt <= 0.45) return 'Poor';
+  return 'Critical';
+}
+
 function loadSavedWorldSnapshot() {
   try {
     const raw = localStorage.getItem(SAVE_STORAGE_KEY);
