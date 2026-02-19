@@ -24,6 +24,7 @@ const infoModalTitle = document.getElementById('infoModalTitle');
 const infoModalContent = document.getElementById('infoModalContent');
 const infoModalClose = document.getElementById('infoModalClose');
 const infoModalButtons = Array.from(document.querySelectorAll('[data-info-modal]'));
+const buyCoffeeButton = document.getElementById('buyCoffeeButton');
 
 const canvas = document.getElementById('aquariumCanvas');
 const panelRoot = document.getElementById('panelRoot');
@@ -182,27 +183,109 @@ document.body.appendChild(filterToast);
 const infoModalCopy = {
   howToPlay: {
     title: 'How to Play',
-    body: [
-      'Lorem ipsum fishum: Start Sim ile tanka gir, balıkları izle ve boş alana tıklayarak yem bırak.',
-      'Lorem ipsum aquariumum: Sağ panelden hız, duraklatma ve diğer ayarlarla simülasyonu yönet.',
-      'Lorem ipsum chillum: Şimdilik bu metin geçici ama okunabilir kalsın diye biraz uzun yazıldı.'
-    ]
+    body: `This simulation is interaction-driven. The tank responds to your actions — and to your inaction.
+
+Feeding the Fish
+
+Click anywhere inside the aquarium to drop food.
+
+Hungry fish will detect food from a distance and swim toward it. Very hungry fish react even more urgently. Well-fed fish ignore it.
+
+Feeding sustains life — but it also affects water quality. Overfeeding without filtration will gradually reduce cleanliness. Clean water supports wellbeing. Poor water creates long-term consequences.
+
+Selecting and Observing
+
+Click directly on a fish to inspect it.
+
+You can:
+
+View its life stage, hunger level, growth and wellbeing.
+
+See its history (parents, children, lifespan, cause of death).
+
+Rename it.
+
+Track reproduction and pregnancy states.
+
+Every fish carries its own timeline. The inspector reveals only part of the underlying system.
+
+Reproduction & Eggs
+
+When environmental and biological conditions align, adult fish may reproduce.
+
+Pregnancy progresses over time. Eggs are laid and incubate within the tank. Once ready, they hatch — introducing new fish that inherit traits from their parents.
+
+Population growth changes the balance of the ecosystem. More fish means more consumption, more waste, more system pressure.
+
+Water & Cleanliness
+
+Cleanliness gradually declines as fish eat, grow and live.
+
+When enough care has been shown (by feeding consistently), the Water Filter becomes available.
+You must:
+
+Unlock it through interaction.
+
+Install it (installation takes time).
+
+Turn it on.
+
+Maintain it periodically.
+
+The filter does not run forever. Its efficiency decreases. If ignored, water quality will suffer.
+
+Speed & Time
+
+You control simulation speed.
+
+Increasing speed accelerates:
+
+Aging
+
+Hunger cycles
+
+Reproduction
+
+Water decay
+
+Filter wear
+
+Time never stops progressing logically. Faster time means faster consequences.
+
+Death & Removal
+
+Fish can die from:
+
+Old age
+
+Starvation
+
+Dead fish sink. You may remove them from the tank.
+Their history remains part of the simulation memory.`
   },
   about: {
     title: 'About',
-    body: [
-      'Aquchi, odaklanma sırasında arka planda akan sakin bir akvaryum deneyimi gibi düşünülmüştür.',
-      'Bu alan şimdilik placeholder metin içeriyor; ileride oyun detayları, sürüm notları ve küçük ipuçları gelecek.',
-      'Lorem ipsum bubblum: Deniz köpüğü kadar anlamsız ama okunabilir bir demo yazısı.'
-    ]
-  },
-  coffee: {
-    title: 'Buy me a coffee',
-    body: [
-      'Kahve linki yakında burada olacak. Şimdilik sadece buton akışını test etmek için sahte içerik gösteriyoruz.',
-      'Lorem ipsum caffeine: Simülasyonunu başlat, devam et, sonra keyfi bir kahve molası hayal et.',
-      'Bu metin kaydırılabilir modal davranışını göstermek için bilerek birkaç satır daha uzun tutuldu.'
-    ]
+    body: `This is not a decorative aquarium.
+
+It is a living, time-driven ecosystem where every fish exists within a network of invisible variables, thresholds and cascading consequences.
+
+Each fish has its own life cycle. It grows, consumes energy, feels hunger, reacts to water conditions and interacts with other fish. Hunger does not simply “increase” — it shifts behavior. Movement patterns change. Risk tolerance changes. Wellbeing slowly responds to long-term conditions.
+
+Feeding creates more than just a meal. It alters water quality. Water quality influences stress. Stress influences reproduction and survival. The system remembers what has happened.
+
+Reproduction is not guaranteed. It depends on maturity, health, environment and timing. Eggs inherit traits. New life enters the tank carrying the statistical echo of its parents. Lineages form. Histories accumulate.
+
+Death is not random decoration. Fish can die from old age. They can die from neglect. Their life span is measured in aquarium time, and their history remains recorded.
+
+Water itself is a dynamic layer. Cleanliness degrades with activity. Filtration is not cosmetic — it is unlocked through care, installed over time, maintained periodically and powered intentionally. A neglected filter slowly loses efficiency. An inactive filter changes the fate of the entire tank.
+
+Time in this world is canonical. When you speed up the simulation, you accelerate life, decay and consequence together. When you leave, the system continues logically. When you return, nothing was frozen — it evolved.
+
+There are no visible formulas, but behind every visible change lies a structured set of relationships. Multiple internal states influence each other continuously. Small actions compound.
+
+This simulation is not about winning.
+
+It is about managing a closed system where balance is fragile, memory matters, and every intervention shifts the trajectory of life inside the glass.`
   }
 };
 
@@ -211,7 +294,11 @@ function openInfoModal(key) {
   if (!modalData || !infoModalBackdrop || !infoModalTitle || !infoModalContent) return;
 
   infoModalTitle.textContent = modalData.title;
-  infoModalContent.innerHTML = modalData.body.map((line) => `<p>${line}</p>`).join('');
+  const paragraphs = modalData.body
+    .split('\n\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  infoModalContent.innerHTML = paragraphs.map((line) => `<p>${line}</p>`).join('');
   infoModalBackdrop.hidden = false;
 }
 
@@ -564,6 +651,10 @@ infoModalButtons.forEach((button) => {
 infoModalClose?.addEventListener('click', closeInfoModal);
 infoModalBackdrop?.addEventListener('click', (event) => {
   if (event.target === infoModalBackdrop) closeInfoModal();
+});
+
+buyCoffeeButton?.addEventListener('click', () => {
+  window.open('https://buymeacoffee.com/dizgioyunu', '_blank', 'noopener,noreferrer');
 });
 
 startSimButton?.addEventListener('click', () => {
