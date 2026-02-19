@@ -6,6 +6,10 @@
  */
 
 export const CONFIG = Object.freeze({
+  sim: {
+    baseLifeScale: 0.5
+  },
+
   FEMALE_NAME_POOL: [
     'Alice', 'Amelia', 'Aria', 'Ava', 'Bella', 'Chloe', 'Clara', 'Daisy', 'Eleanor', 'Ella',
     'Emily', 'Emma', 'Eva', 'Grace', 'Hannah', 'Harper', 'Hazel', 'Ivy', 'Isla', 'Lily',
