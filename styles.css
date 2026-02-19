@@ -72,6 +72,11 @@ body::before {
   margin: 12px 0 16px;
 }
 
+.start-actions {
+  display: grid;
+  gap: 10px;
+}
+
 .start-btn {
   width: 100%;
   border: 1px solid rgba(177, 231, 255, 0.44);
@@ -89,64 +94,80 @@ body::before {
   filter: brightness(1.06);
 }
 
-.about-placeholder {
-  margin-top: 15px;
-  border-top: 1px solid rgba(157, 210, 255, 0.2);
-  padding-top: 12px;
+.start-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+  filter: none;
 }
 
-.about-placeholder h2 {
-  margin: 0;
-}
-
-.about-placeholder p {
-  margin: 6px 0 0;
-  color: var(--text-soft);
-  font-size: 0.86rem;
-}
-
-.saved-start-panel {
-  margin-top: 12px;
-  border-top: 1px solid rgba(157, 210, 255, 0.2);
-  padding-top: 12px;
-}
-
-.saved-start-panel h2 {
-  margin: 0;
-  font-size: 0.95rem;
+.start-btn:disabled:hover {
+  transform: none;
+  filter: none;
 }
 
 .saved-start-meta {
-  margin: 6px 0 0;
+  margin: 16px 0 0;
+  border-top: 1px solid rgba(157, 210, 255, 0.2);
+  padding-top: 12px;
   color: var(--text-soft);
   font-size: 0.84rem;
 }
 
-.saved-start-actions {
-  margin-top: 10px;
+.info-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 10px;
+  place-items: center;
+  padding: 16px;
+  background: rgba(2, 8, 14, 0.72);
+}
+
+.info-modal {
+  width: min(680px, 100%);
+  max-height: min(78vh, 720px);
+  border: 1px solid rgba(168, 223, 255, 0.28);
+  border-radius: 12px;
+  background: rgba(8, 24, 42, 0.95);
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+}
+
+.info-modal-header {
+  display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-bottom: 1px solid rgba(173, 207, 235, 0.2);
 }
 
-.saved-start-btn {
-  border: 1px solid rgba(177, 231, 255, 0.44);
-  border-radius: 10px;
-  padding: 9px 12px;
-  font-size: 0.88rem;
-  cursor: pointer;
-  background: linear-gradient(180deg, rgba(47, 132, 201, 0.86), rgba(24, 82, 134, 0.92));
+.info-modal-header h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.info-modal-close {
+  border: 1px solid rgba(177, 231, 255, 0.4);
+  border-radius: 8px;
+  padding: 4px 8px;
+  background: rgba(25, 66, 99, 0.9);
   color: var(--text-main);
+  cursor: pointer;
 }
 
-.saved-start-link {
-  border: 0;
-  background: none;
-  color: var(--accent);
-  cursor: pointer;
-  font-size: 0.84rem;
-  padding: 4px 6px;
+.info-modal-content {
+  padding: 14px;
+  overflow-y: auto;
+  color: var(--text-soft);
+  line-height: 1.5;
+  font-size: 0.94rem;
+}
+
+.info-modal-content p {
+  margin: 0 0 12px;
 }
 
 

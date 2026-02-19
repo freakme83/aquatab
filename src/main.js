@@ -17,7 +17,14 @@ const appRoot = document.getElementById('appRoot');
 const startFishSlider = document.querySelector('[data-start-control="initialFishCount"]');
 const startFishValue = document.querySelector('[data-start-value="initialFishCount"]');
 const startSimButton = document.getElementById('startSimButton');
-const startCard = startScreen?.querySelector('.start-card');
+const continueSimButton = document.getElementById('continueSimButton');
+const savedStartMeta = document.querySelector('[data-saved-start-meta]');
+const infoModalBackdrop = document.getElementById('infoModalBackdrop');
+const infoModalTitle = document.getElementById('infoModalTitle');
+const infoModalContent = document.getElementById('infoModalContent');
+const infoModalClose = document.getElementById('infoModalClose');
+const infoModalButtons = Array.from(document.querySelectorAll('[data-info-modal]'));
+const buyCoffeeButton = document.getElementById('buyCoffeeButton');
 
 const canvas = document.getElementById('aquariumCanvas');
 const panelRoot = document.getElementById('panelRoot');
@@ -60,16 +67,6 @@ function computeCleanlinessTrend(simTimeSec, hygiene01) {
   if (smoothedHygieneDeltaPerMin <= -0.018) return 'Dropping fast';
   if (smoothedHygieneDeltaPerMin <= -0.004) return 'Dropping';
   return 'Stable';
-}
-
-function computeWaterQuality(hygiene01, dirt01) {
-  const hygiene = Math.max(0, Math.min(1, hygiene01 ?? 1));
-  const dirt = Math.max(0, Math.min(1, dirt01 ?? 0));
-
-  if (hygiene >= 0.85 && dirt <= 0.10) return 'Great';
-  if (hygiene >= 0.70 && dirt <= 0.25) return 'OK';
-  if (hygiene >= 0.45 && dirt <= 0.45) return 'Poor';
-  return 'Critical';
 }
 
 function loadSavedWorldSnapshot() {
@@ -182,35 +179,149 @@ filterToast.style.zIndex = '30';
 filterToast.style.pointerEvents = 'none';
 document.body.appendChild(filterToast);
 
-const savedStartPanel = document.createElement('section');
-savedStartPanel.className = 'saved-start-panel';
-savedStartPanel.hidden = true;
-savedStartPanel.innerHTML = `
-  <h2>Saved simulation found</h2>
-  <p class="saved-start-meta" data-saved-start-meta>Last saved: unknown</p>
-  <div class="saved-start-actions">
-    <button type="button" class="saved-start-btn" data-saved-start-action="continue">Continue</button>
-    <button type="button" class="saved-start-link" data-saved-start-action="new">New sim</button>
-  </div>
-`;
-startCard?.appendChild(savedStartPanel);
 
-const savedStartMeta = savedStartPanel.querySelector('[data-saved-start-meta]');
-const savedStartContinueBtn = savedStartPanel.querySelector('[data-saved-start-action="continue"]');
-const savedStartNewBtn = savedStartPanel.querySelector('[data-saved-start-action="new"]');
+const infoModalCopy = {
+  howToPlay: {
+    title: 'How to Play',
+    body: `This simulation is interaction-driven. The tank responds to your actions — and to your inaction.
+
+Feeding the Fish
+
+Click anywhere inside the aquarium to drop food.
+
+Hungry fish will detect food from a distance and swim toward it. Very hungry fish react even more urgently. Well-fed fish ignore it.
+
+Feeding sustains life — but it also affects water quality. Overfeeding without filtration will gradually reduce cleanliness. Clean water supports wellbeing. Poor water creates long-term consequences.
+
+Selecting and Observing
+
+Click directly on a fish to inspect it.
+
+You can:
+
+View its life stage, hunger level, growth and wellbeing.
+
+See its history (parents, children, lifespan, cause of death).
+
+Rename it.
+
+Track reproduction and pregnancy states.
+
+Every fish carries its own timeline. The inspector reveals only part of the underlying system.
+
+Reproduction & Eggs
+
+When environmental and biological conditions align, adult fish may reproduce.
+
+Pregnancy progresses over time. Eggs are laid and incubate within the tank. Once ready, they hatch — introducing new fish that inherit traits from their parents.
+
+Population growth changes the balance of the ecosystem. More fish means more consumption, more waste, more system pressure.
+
+Water & Cleanliness
+
+Cleanliness gradually declines as fish eat, grow and live.
+
+When enough care has been shown (by feeding consistently), the Water Filter becomes available.
+You must:
+
+Unlock it through interaction.
+
+Install it (installation takes time).
+
+Turn it on.
+
+Maintain it periodically.
+
+The filter does not run forever. Its efficiency decreases. If ignored, water quality will suffer.
+
+Speed & Time
+
+You control simulation speed.
+
+Increasing speed accelerates:
+
+Aging
+
+Hunger cycles
+
+Reproduction
+
+Water decay
+
+Filter wear
+
+Time never stops progressing logically. Faster time means faster consequences.
+
+Death & Removal
+
+Fish can die from:
+
+Old age
+
+Starvation
+
+Dead fish sink. You may remove them from the tank.
+Their history remains part of the simulation memory.`
+  },
+  about: {
+    title: 'About',
+    body: `This is not a decorative aquarium.
+
+It is a living, time-driven ecosystem where every fish exists within a network of invisible variables, thresholds and cascading consequences.
+
+Each fish has its own life cycle. It grows, consumes energy, feels hunger, reacts to water conditions and interacts with other fish. Hunger does not simply “increase” — it shifts behavior. Movement patterns change. Risk tolerance changes. Wellbeing slowly responds to long-term conditions.
+
+Feeding creates more than just a meal. It alters water quality. Water quality influences stress. Stress influences reproduction and survival. The system remembers what has happened.
+
+Reproduction is not guaranteed. It depends on maturity, health, environment and timing. Eggs inherit traits. New life enters the tank carrying the statistical echo of its parents. Lineages form. Histories accumulate.
+
+Death is not random decoration. Fish can die from old age. They can die from neglect. Their life span is measured in aquarium time, and their history remains recorded.
+
+Water itself is a dynamic layer. Cleanliness degrades with activity. Filtration is not cosmetic — it is unlocked through care, installed over time, maintained periodically and powered intentionally. A neglected filter slowly loses efficiency. An inactive filter changes the fate of the entire tank.
+
+Time in this world is canonical. When you speed up the simulation, you accelerate life, decay and consequence together. When you leave, the system continues logically. When you return, nothing was frozen — it evolved.
+
+There are no visible formulas, but behind every visible change lies a structured set of relationships. Multiple internal states influence each other continuously. Small actions compound.
+
+This simulation is not about winning.
+
+It is about managing a closed system where balance is fragile, memory matters, and every intervention shifts the trajectory of life inside the glass.`
+  }
+};
+
+function openInfoModal(key) {
+  const modalData = infoModalCopy[key];
+  if (!modalData || !infoModalBackdrop || !infoModalTitle || !infoModalContent) return;
+
+  infoModalTitle.textContent = modalData.title;
+  const paragraphs = modalData.body
+    .split('\n\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  infoModalContent.innerHTML = paragraphs.map((line) => `<p>${line}</p>`).join('');
+  infoModalBackdrop.hidden = false;
+}
+
+function closeInfoModal() {
+  if (!infoModalBackdrop) return;
+  infoModalBackdrop.hidden = true;
+}
 
 function refreshSavedStartPanel() {
   const payload = loadSavedWorldSnapshot();
   pendingSavePayload = payload;
 
-  if (!payload) {
-    savedStartPanel.hidden = true;
+  const hasSave = Boolean(payload);
+  if (continueSimButton) continueSimButton.disabled = !hasSave;
+
+  if (!savedStartMeta) return;
+  if (!hasSave) {
+    savedStartMeta.textContent = 'Saved simulation found: no';
     return;
   }
 
   const relative = formatRelativeSavedAt(payload.savedAtEpochMs);
-  if (savedStartMeta) savedStartMeta.textContent = `Last saved: ${relative}`;
-  savedStartPanel.hidden = false;
+  savedStartMeta.textContent = `Saved simulation found: yes (last saved ${relative})`;
 }
 
 let filterToastTimeoutId = null;
@@ -522,18 +633,28 @@ function startSimulation({ savedPayload = null } = {}) {
   syncDriversToVisibility();
 }
 
-savedStartContinueBtn?.addEventListener('click', () => {
-  if (!pendingSavePayload) {
-    refreshSavedStartPanel();
-  }
+continueSimButton?.addEventListener('click', () => {
+  if (!pendingSavePayload) refreshSavedStartPanel();
   if (!pendingSavePayload) return;
 
   startSimulation({ savedPayload: pendingSavePayload });
 });
 
-savedStartNewBtn?.addEventListener('click', () => {
-  localStorage.removeItem(SAVE_STORAGE_KEY);
-  refreshSavedStartPanel();
+infoModalButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    const key = button.getAttribute('data-info-modal');
+    if (!key) return;
+    openInfoModal(key);
+  });
+});
+
+infoModalClose?.addEventListener('click', closeInfoModal);
+infoModalBackdrop?.addEventListener('click', (event) => {
+  if (event.target === infoModalBackdrop) closeInfoModal();
+});
+
+buyCoffeeButton?.addEventListener('click', () => {
+  window.open('https://buymeacoffee.com/dizgioyunu', '_blank', 'noopener,noreferrer');
 });
 
 startSimButton?.addEventListener('click', () => {
