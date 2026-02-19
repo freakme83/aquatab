@@ -35,6 +35,7 @@ let renderer = null;
 let panel = null;
 let started = false;
 let canvasClickHandler = null;
+let ecosystemFailed = false;
 
 let pendingSavePayload = null;
 
@@ -104,7 +105,7 @@ function formatRelativeSavedAt(epochMs) {
 }
 
 function saveWorldSnapshot() {
-  if (!started || !world) return false;
+  if (!started || !world || ecosystemFailed) return false;
 
   try {
     const payload = {
@@ -178,6 +179,55 @@ filterToast.style.fontSize = '12px';
 filterToast.style.zIndex = '30';
 filterToast.style.pointerEvents = 'none';
 document.body.appendChild(filterToast);
+
+const ecosystemFailedOverlay = document.createElement('div');
+ecosystemFailedOverlay.hidden = true;
+ecosystemFailedOverlay.style.position = 'fixed';
+ecosystemFailedOverlay.style.inset = '0';
+ecosystemFailedOverlay.style.display = 'grid';
+ecosystemFailedOverlay.style.placeItems = 'center';
+ecosystemFailedOverlay.style.background = 'rgba(2, 7, 12, 0.8)';
+ecosystemFailedOverlay.style.backdropFilter = 'blur(2px)';
+ecosystemFailedOverlay.style.zIndex = '120';
+
+const ecosystemFailedCard = document.createElement('div');
+ecosystemFailedCard.style.width = 'min(420px, calc(100vw - 32px))';
+ecosystemFailedCard.style.padding = '18px';
+ecosystemFailedCard.style.borderRadius = '12px';
+ecosystemFailedCard.style.border = '1px solid rgba(255, 255, 255, 0.28)';
+ecosystemFailedCard.style.background = 'rgba(13, 20, 28, 0.95)';
+ecosystemFailedCard.style.boxShadow = '0 16px 34px rgba(0, 0, 0, 0.44)';
+
+const ecosystemFailedTitle = document.createElement('h2');
+ecosystemFailedTitle.textContent = 'Ecosystem Failed';
+ecosystemFailedTitle.style.margin = '0 0 8px';
+ecosystemFailedTitle.style.fontSize = '22px';
+ecosystemFailedTitle.style.color = '#eaf7ff';
+
+const ecosystemFailedBody = document.createElement('p');
+ecosystemFailedBody.textContent = 'All fish are gone. This run cannot be continued.';
+ecosystemFailedBody.style.margin = '0 0 16px';
+ecosystemFailedBody.style.color = 'rgba(232, 244, 255, 0.9)';
+
+const ecosystemFailedActions = document.createElement('div');
+ecosystemFailedActions.style.display = 'flex';
+ecosystemFailedActions.style.justifyContent = 'flex-end';
+
+const ecosystemFailedRestartButton = document.createElement('button');
+ecosystemFailedRestartButton.type = 'button';
+ecosystemFailedRestartButton.textContent = 'Restart';
+ecosystemFailedRestartButton.style.padding = '8px 12px';
+ecosystemFailedRestartButton.style.borderRadius = '999px';
+ecosystemFailedRestartButton.style.border = '1px solid rgba(255, 255, 255, 0.4)';
+ecosystemFailedRestartButton.style.background = 'rgba(23, 50, 82, 0.92)';
+ecosystemFailedRestartButton.style.color = '#eaf7ff';
+ecosystemFailedRestartButton.style.fontWeight = '600';
+ecosystemFailedRestartButton.style.cursor = 'pointer';
+
+ecosystemFailedActions.append(ecosystemFailedRestartButton);
+ecosystemFailedCard.append(ecosystemFailedTitle, ecosystemFailedBody, ecosystemFailedActions);
+ecosystemFailedOverlay.append(ecosystemFailedCard);
+document.body.appendChild(ecosystemFailedOverlay);
 
 
 const infoModalCopy = {
@@ -406,21 +456,43 @@ const VISIBLE_MAX_STEP_SEC = 0.25;
 const HIDDEN_STEP_SEC = 0.25;
 const HIDDEN_TICK_MS = 1000;
 
+function checkEcosystemFailure() {
+  if (!started || !world || ecosystemFailed) return;
+  const aliveCount = world.fish.filter((fish) => fish.lifeState === 'ALIVE').length;
+  if (aliveCount === 0) triggerEcosystemFailed();
+}
+
+function triggerEcosystemFailed() {
+  if (!started || ecosystemFailed || !world) return;
+
+  ecosystemFailed = true;
+  world.paused = true;
+  stopRaf();
+  stopBackgroundSim();
+  stopAutosave();
+  hideCorpseAction();
+  localStorage.removeItem(SAVE_STORAGE_KEY);
+  ecosystemFailedOverlay.hidden = false;
+}
+
 function stepVisibleSim(rawDeltaSec) {
-  if (!world) return;
+  if (!world || ecosystemFailed) return;
   const dt = Math.min(VISIBLE_MAX_STEP_SEC, Math.max(0, rawDeltaSec));
   if (dt <= 0) return;
   world.update(dt);
+  checkEcosystemFailure();
 }
 
 function stepHiddenSim(rawDeltaSec) {
-  if (!world) return;
+  if (!world || ecosystemFailed) return;
   let remaining = Math.max(0, rawDeltaSec);
   if (remaining <= 0) return;
 
   while (remaining > 0) {
     const dt = Math.min(HIDDEN_STEP_SEC, remaining);
     world.update(dt);
+    checkEcosystemFailure();
+    if (ecosystemFailed) return;
     remaining -= dt;
   }
 }
@@ -434,6 +506,7 @@ function tick(now) {
   const renderDelta = Math.min(0.05, Math.max(0.000001, rawDelta));
 
   stepVisibleSim(rawDelta);
+  if (ecosystemFailed) return;
   renderer.render(now, renderDelta);
 
   panel.updateStats({
@@ -484,7 +557,7 @@ function stopRaf() {
 }
 
 function startBackgroundSim() {
-  if (!started || bgIntervalId != null) return;
+  if (!started || ecosystemFailed || bgIntervalId != null) return;
 
   let last = performance.now();
   bgIntervalId = setInterval(() => {
@@ -502,7 +575,7 @@ function stopBackgroundSim() {
 }
 
 function syncDriversToVisibility() {
-  if (!started) return;
+  if (!started || ecosystemFailed) return;
   if (document.visibilityState === 'hidden') {
     saveWorldSnapshot();
     stopRaf();
@@ -530,8 +603,10 @@ function restartToStartScreen() {
   stopBackgroundSim();
   stopAutosave();
   hideCorpseAction();
+  ecosystemFailedOverlay.hidden = true;
 
   started = false;
+  ecosystemFailed = false;
   pendingSavePayload = null;
   world = null;
   renderer = null;
@@ -558,6 +633,8 @@ function startSimulation({ savedPayload = null } = {}) {
   appRoot.hidden = false;
   startScreen.hidden = true;
   pendingSavePayload = null;
+  ecosystemFailed = false;
+  ecosystemFailedOverlay.hidden = true;
 
   const initialSize = measureCanvasSize();
   if (savedPayload?.saveVersion === SAVE_VERSION) {
@@ -659,6 +736,10 @@ buyCoffeeButton?.addEventListener('click', () => {
 
 startSimButton?.addEventListener('click', () => {
   startSimulation();
+});
+
+ecosystemFailedRestartButton.addEventListener('click', () => {
+  restartToStartScreen();
 });
 
 refreshSavedStartPanel();
