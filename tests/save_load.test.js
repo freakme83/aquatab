@@ -382,3 +382,59 @@ test('poop spawn type distribution uses weighted random bands', () => {
   withStubbedRandom(0.95, () => worldFloaty.spawnPoop(20, 20));
   assert.equal(worldFloaty.poop[0].type, 'floaty');
 });
+
+test('water filter tier and feed counters persist through save-load', () => {
+  const world = makeWorldForTest({ initialFishCount: 5 });
+  world.foodsConsumedCount = 37;
+  world.water.filterInstalled = true;
+  world.water.filterEnabled = true;
+  world.water.filter01 = 0.9;
+  world.water.filterTier = 2;
+
+  const loaded = roundTrip(world);
+
+  assert.equal(loaded.initialFishCount, 5);
+  assert.equal(loaded.foodsConsumedCount, 37);
+  assert.equal(loaded.water.filterTier, 2);
+  assert.equal(loaded.getFilterTierUnlockFeeds(2), 40);
+  assert.equal(loaded.getFilterTierUnlockFeeds(3), 60);
+});
+
+test('upgradeWaterFilter applies recovery kick and tier scaling improves cleanup', () => {
+  const world = makeWorldForTest({ initialFishCount: 4 });
+  world.water.filterInstalled = true;
+  world.water.filterEnabled = true;
+  world.water.filter01 = 1;
+  world.water.filterTier = 1;
+  world.water.dirt01 = 0.4;
+  world.water.hygiene01 = 0.5;
+  world.foodsConsumedCount = world.initialFishCount * 8;
+
+  const upgraded = world.upgradeWaterFilter();
+  assert.equal(upgraded, true);
+  assert.equal(world.water.filterTier, 2);
+  assert.equal(Number(world.water.dirt01.toFixed(3)), 0.35);
+  assert.equal(Number(world.water.hygiene01.toFixed(3)), 0.55);
+
+  const tier1World = makeWorldForTest({ initialFishCount: 4 });
+  tier1World.water.filterInstalled = true;
+  tier1World.water.filterEnabled = true;
+  tier1World.water.filter01 = 1;
+  tier1World.water.filterTier = 1;
+  tier1World.water.dirt01 = 0.3;
+  tier1World.water.hygiene01 = 0.6;
+
+  const tier2World = makeWorldForTest({ initialFishCount: 4 });
+  tier2World.water.filterInstalled = true;
+  tier2World.water.filterEnabled = true;
+  tier2World.water.filter01 = 1;
+  tier2World.water.filterTier = 2;
+  tier2World.water.dirt01 = 0.3;
+  tier2World.water.hygiene01 = 0.6;
+
+  tier1World.update(60);
+  tier2World.update(60);
+
+  assert.ok(tier2World.water.dirt01 < tier1World.water.dirt01, 'tier 2 should remove more dirt over time');
+  assert.ok(tier2World.water.hygiene01 > tier1World.water.hygiene01, 'tier 2 should recover hygiene faster');
+});

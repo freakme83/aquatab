@@ -22,7 +22,7 @@ export class Panel {
     if (!this.cleanlinessTrendStat && this.cleanlinessStat?.closest('.stat-row')) {
       const row = document.createElement('div');
       row.className = 'stat-row';
-      row.innerHTML = '<span>Trend</span><strong data-stat="cleanlinessTrend">Stable</strong>';
+      row.innerHTML = '<span>Water quality trend</span><strong data-stat="cleanlinessTrend">Stable</strong>';
       this.cleanlinessStat.closest('.stat-row').insertAdjacentElement('afterend', row);
       this.cleanlinessTrendStat = row.querySelector('[data-stat="cleanlinessTrend"]');
     }
@@ -50,6 +50,10 @@ export class Panel {
     this.filterStatus = this.root.querySelector('[data-filter-status]');
     this.filterHealthRow = this.root.querySelector('[data-filter-health-row]');
     this.filterHealth = this.root.querySelector('[data-filter-health]');
+    this.filterTierRow = this.root.querySelector('[data-filter-tier-row]');
+    this.filterTier = this.root.querySelector('[data-filter-tier]');
+    this.filterTierProgressRow = this.root.querySelector('[data-filter-tier-progress-row]');
+    this.filterTierProgress = this.root.querySelector('[data-filter-tier-progress]');
     this.filterToggleRow = this.root.querySelector('[data-filter-toggle-row]');
 
     this.installFilterButton = this.root.querySelector('[data-control="installFilter"]');
@@ -59,6 +63,7 @@ export class Panel {
     this.restartConfirmYes = this.root.querySelector('[data-control="restartConfirmYes"]');
     this.restartConfirmNo = this.root.querySelector('[data-control="restartConfirmNo"]');
     this.toggleFilterPowerButton = this.root.querySelector('[data-control="toggleFilterPower"]');
+    this.upgradeFilterButton = this.root.querySelector('[data-control="upgradeFilter"]');
 
     this.speedValue = this.root.querySelector('[data-value="simSpeed"]');
     this.fishInspector = this.root.querySelector('[data-fish-inspector]');
@@ -133,6 +138,10 @@ export class Panel {
 
     this.toggleFilterPowerButton?.addEventListener('click', () => {
       this.handlers.onFilterTogglePower?.();
+    });
+
+    this.upgradeFilterButton?.addEventListener('click', () => {
+      this.handlers.onFilterUpgrade?.();
     });
   }
 
@@ -218,6 +227,9 @@ export class Panel {
     filterInstalled,
     filterEnabled,
     filter01,
+    filterTier,
+    filterNextTierUnlockFeeds,
+    foodsNeededForNextTier,
     installProgress01,
     maintenanceProgress01,
     maintenanceCooldownSec,
@@ -285,17 +297,67 @@ export class Panel {
       this.installFilterButton.disabled = !canInstall;
     }
 
+    const health01 = Math.max(0, Math.min(1, filter01 ?? 0));
+    const depletedThreshold01 = Math.max(0, Math.min(1, filterDepletedThreshold01 ?? 0.1));
+    const warningThreshold01 = Math.min(1, depletedThreshold01 + 0.2);
+
     if (this.filterStatusRow) this.filterStatusRow.hidden = !filterInstalled;
-    if (this.filterStatus) this.filterStatus.textContent = filterEnabled ? 'ON' : 'OFF';
+    if (this.filterStatus) {
+      let statusLabel = 'OFF';
+      let statusColor = '#cfd9e3';
+      if (filterEnabled) {
+        if (health01 <= depletedThreshold01) {
+          statusLabel = 'DEPLETED';
+          statusColor = '#ef6b6b';
+        } else if (health01 <= warningThreshold01) {
+          statusLabel = 'MAINTENANCE DUE';
+          statusColor = '#f1a04f';
+        } else {
+          statusLabel = 'ON';
+          statusColor = '#84e89a';
+        }
+      }
+      this.filterStatus.textContent = statusLabel;
+      this.filterStatus.style.color = statusColor;
+    }
 
     if (this.filterHealthRow) this.filterHealthRow.hidden = !filterInstalled;
-    if (this.filterHealth) this.filterHealth.textContent = `${Math.round(Math.max(0, filter01 ?? 0) * 100)}%`;
-
+    if (this.filterHealth) {
+      this.filterHealth.textContent = `${Math.round(health01 * 100)}%`;
+      this.filterHealth.style.color = health01 <= depletedThreshold01
+        ? '#ef6b6b'
+        : (health01 <= warningThreshold01 ? '#f1a04f' : '');
+    }
 
     if (this.filterToggleRow) this.filterToggleRow.hidden = !filterInstalled;
     if (this.toggleFilterPowerButton) {
       this.toggleFilterPowerButton.hidden = !filterInstalled;
       this.toggleFilterPowerButton.textContent = filterEnabled ? 'Turn OFF' : 'Turn ON';
+    }
+
+    const tier = Math.max(0, Math.min(3, Math.floor(filterTier ?? 0)));
+    const nextUnlock = Math.max(0, Math.floor(filterNextTierUnlockFeeds ?? 0));
+    const neededFeeds = Math.max(0, Math.floor(foodsNeededForNextTier ?? 0));
+    const showUpgrade = filterInstalled && tier < 3;
+    const canUpgrade = showUpgrade && neededFeeds <= 0 && !isInstalling && !isMaintaining && filterEnabled;
+
+    if (this.filterTierRow) this.filterTierRow.hidden = !filterInstalled;
+    if (this.filterTier) this.filterTier.textContent = `Tier ${Math.max(1, tier)}/3`;
+
+    if (this.filterTierProgressRow) this.filterTierProgressRow.hidden = !filterInstalled || tier >= 3;
+    if (this.filterTierProgress) {
+      if (!filterInstalled || tier >= 3) {
+        this.filterTierProgress.textContent = '';
+      } else if (canUpgrade) {
+        this.filterTierProgress.textContent = 'Upgrade available';
+      } else {
+        this.filterTierProgress.textContent = `${neededFeeds} feeds left (${consumed}/${nextUnlock})`;
+      }
+    }
+
+    if (this.upgradeFilterButton) {
+      this.upgradeFilterButton.hidden = !showUpgrade;
+      this.upgradeFilterButton.disabled = !canUpgrade;
     }
 
     if (this.maintainFilterButton) {

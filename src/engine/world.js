@@ -55,6 +55,10 @@ const FILTER_WEAR_BASE_PER_SEC = Math.max(0, WATER_CONFIG.wearBasePerSec ?? 0);
 const FILTER_WEAR_BIOLOAD_FACTOR = Math.max(0, WATER_CONFIG.wearBioloadFactor ?? 0);
 const FILTER_WEAR_DIRT_FACTOR = Math.max(0, WATER_CONFIG.wearDirtFactor ?? 0);
 const FILTER_BIOLOAD_MITIGATION_FACTOR = Math.max(0, WATER_CONFIG.bioloadMitigationFactor ?? 0);
+const FILTER_TIER_DIRT_REMOVAL_STEP = Math.max(0, WATER_CONFIG.filterTierDirtRemovalStep ?? 0.25);
+const FILTER_TIER_BIOLOAD_STEP = Math.max(0, WATER_CONFIG.filterTierBioloadStep ?? 0.15);
+const FILTER_TIER_WEAR_STEP = Math.max(0, WATER_CONFIG.filterTierWearStep ?? 0.08);
+const HYGIENE_RECOVERY_PER_SEC = Math.max(0, WATER_CONFIG.hygieneRecoveryPerSec ?? 0.00006);
 const FILTER_DEPLETED_THRESHOLD_01 = clamp(WATER_CONFIG.filterDepletedThreshold01 ?? 0.1, 0, 1);
 const FILTER_INSTALL_DURATION_SEC = Math.max(0.001, WATER_CONFIG.installDurationSec ?? 12);
 const FILTER_MAINTENANCE_DURATION_SEC = Math.max(0.001, WATER_CONFIG.maintenanceDurationSec ?? 12);
@@ -77,7 +81,8 @@ export const WATER_SAVE_KEYS = [
   'maintenanceCooldownSec',
   'filterUnlocked',
   'filterEnabled',
-  'effectiveFilter01'
+  'effectiveFilter01',
+  'filterTier'
 ];
 export const FOOD_SAVE_KEYS = ['id', 'x', 'y', 'amount', 'ttl', 'vy'];
 export const POOP_SAVE_KEYS = ['id', 'x', 'y', 'ttlSec', 'maxTtlSec', 'vx', 'vy', 'type', 'canBeEaten', 'nutrition'];
@@ -210,6 +215,8 @@ function deserializeWater(data, defaults) {
   out.filterUnlocked = Boolean(out.filterUnlocked);
   out.filterEnabled = Boolean(out.filterEnabled ?? true);
   out.effectiveFilter01 = clamp01(Number.isFinite(out.effectiveFilter01) ? out.effectiveFilter01 : 0);
+  out.filterTier = Math.max(0, Math.min(3, Math.floor(Number.isFinite(out.filterTier) ? out.filterTier : (out.filterInstalled ? 1 : 0))));
+  if (out.filterInstalled && out.filterTier < 1) out.filterTier = 1;
   return out;
 }
 
@@ -639,6 +646,8 @@ export class World {
       saveVersion: WORLD_SAVE_VERSION,
       simTimeSec: Number.isFinite(this.simTimeSec) ? this.simTimeSec : 0,
       speedMultiplier: Number.isFinite(this.speedMultiplier) ? this.speedMultiplier : 1,
+      initialFishCount: this.initialFishCount,
+      foodsConsumedCount: this.foodsConsumedCount,
       water: serializeWater(this.water),
       fish: this.fish.map((entry) => entry.toJSON()),
       fishArchive: [...this.fishArchiveById.values()].map((entry) => entry.toJSON()),
@@ -654,6 +663,8 @@ export class World {
 
     const swimHeight = this.#swimHeight();
     this.simTimeSec = Math.max(0, Number.isFinite(source.simTimeSec) ? source.simTimeSec : 0);
+    this.initialFishCount = Math.max(1, Math.min(6, Math.round(Number.isFinite(source.initialFishCount) ? source.initialFishCount : this.initialFishCount)));
+    this.foodsConsumedCount = Math.max(0, Math.floor(Number.isFinite(source.foodsConsumedCount) ? source.foodsConsumedCount : this.foodsConsumedCount));
     // Compatibility note: older saves included `realTimeSec` as a parallel clock.
     // We intentionally ignore it and keep `simTimeSec` as the only canonical sim time.
     this.speedMultiplier = Math.max(0.5, Math.min(3, Number.isFinite(source.speedMultiplier) ? source.speedMultiplier : this.speedMultiplier));
@@ -713,8 +724,9 @@ export class World {
     this.matePairNextTryAt = new Map();
     this.scheduledPoopSpawns = [];
     this.expiredFoodSinceLastWaterUpdate = 0;
-    this.filterUnlocked = Boolean(this.water.filterUnlocked || this.filterUnlocked);
     this.filterUnlockThreshold = Math.max(1, this.initialFishCount * 4);
+    this.filterUnlocked = this.foodsConsumedCount >= this.filterUnlockThreshold || Boolean(this.water.filterUnlocked || this.filterUnlocked);
+    if (this.water.filterInstalled && this.water.filterTier < 1) this.water.filterTier = 1;
 
     return true;
   }
@@ -979,7 +991,8 @@ export class World {
       maintenanceCooldownSec: 0,
       filterUnlocked: this.filterUnlocked,
       filterEnabled: true,
-      effectiveFilter01: 0
+      effectiveFilter01: 0,
+      filterTier: 0
     };
   }
 
@@ -1003,6 +1016,29 @@ export class World {
     if (!water?.filterInstalled) return false;
     if (water.installProgress01 > 0 || water.maintenanceProgress01 > 0 || water.maintenanceCooldownSec > 0) return false;
     water.maintenanceProgress01 = 0.000001;
+    return true;
+  }
+
+  getFilterTierUnlockFeeds(tier) {
+    if (tier <= 1) return this.initialFishCount * 4;
+    if (tier === 2) return this.initialFishCount * 8;
+    if (tier >= 3) return this.initialFishCount * 12;
+    return this.initialFishCount * 4;
+  }
+
+  upgradeWaterFilter() {
+    const water = this.water;
+    if (!water?.filterInstalled || !water.filterEnabled) return false;
+    if (water.installProgress01 > 0 || water.maintenanceProgress01 > 0) return false;
+    if (water.filterTier >= 3) return false;
+
+    const nextTier = Math.max(2, water.filterTier + 1);
+    const unlockFeeds = this.getFilterTierUnlockFeeds(nextTier);
+    if (this.foodsConsumedCount < unlockFeeds) return false;
+
+    water.filterTier = nextTier;
+    water.dirt01 = clamp01(water.dirt01 - 0.05);
+    water.hygiene01 = clamp01(water.hygiene01 + 0.05);
     return true;
   }
 
@@ -1051,6 +1087,7 @@ export class World {
         water.filterInstalled = true;
         water.filterEnabled = true;
         water.filter01 = 1;
+        water.filterTier = Math.max(1, Math.floor(water.filterTier || 0));
         water.installProgress01 = 0;
       }
     }
@@ -1074,10 +1111,14 @@ export class World {
       && !isMaintaining
       && water.filter01 > FILTER_DEPLETED_THRESHOLD_01;
     const effectiveFilter01 = hasWorkingFilter ? water.filter01 : 0;
+    const filterTier = Math.max(0, Math.min(3, Math.floor(water.filterTier ?? 0)));
+    const dirtTierMultiplier = 1 + Math.max(0, filterTier - 1) * FILTER_TIER_DIRT_REMOVAL_STEP;
+    const bioloadTierMultiplier = 1 + Math.max(0, filterTier - 1) * FILTER_TIER_BIOLOAD_STEP;
+    const wearTierMultiplier = 1 + Math.max(0, filterTier - 1) * FILTER_TIER_WEAR_STEP;
     water.effectiveFilter01 = effectiveFilter01;
 
     const effectiveBioload = clamp(
-      bioload * (1 - effectiveFilter01 * FILTER_BIOLOAD_MITIGATION_FACTOR),
+      bioload * (1 - effectiveFilter01 * FILTER_BIOLOAD_MITIGATION_FACTOR * bioloadTierMultiplier),
       0,
       Math.max(0, bioload)
     );
@@ -1087,11 +1128,12 @@ export class World {
     const poopDirt = this.poop.length * POOP_DIRT_PER_SEC * dtSec;
     water.dirt01 = clamp(water.dirt01 + bioloadDirt + expiredFoodDirt + poopDirt, 0, 1);
 
-    const removedDirt = FILTER_DIRT_REMOVE_PER_SEC * effectiveFilter01 * dtSec;
+    const removedDirt = FILTER_DIRT_REMOVE_PER_SEC * effectiveFilter01 * dirtTierMultiplier * dtSec;
     water.dirt01 = clamp(water.dirt01 - removedDirt, 0, 1);
 
     if (water.filterInstalled) {
       const wearRate = FILTER_WEAR_BASE_PER_SEC
+        * wearTierMultiplier
         * (1 + FILTER_WEAR_BIOLOAD_FACTOR * bioload)
         * (1 + FILTER_WEAR_DIRT_FACTOR * water.dirt01);
       water.filter01 = clamp(water.filter01 - wearRate * dtSec, 0, 1);
@@ -1100,7 +1142,10 @@ export class World {
     const dirtMultiplier = 1 + (water.dirt01 ** WATER_DIRT_DECAY_POWER) * WATER_DIRT_DECAY_STRENGTH;
     const baselineDecay = WATER_BASELINE_DECAY_PER_SEC * effectiveBioload * dirtMultiplier * dtSec;
     const hygieneRecovery = WATER_BASELINE_DECAY_PER_SEC * Math.max(0, bioload - effectiveBioload) * dtSec;
-    water.hygiene01 = clamp(water.hygiene01 - baselineDecay + hygieneRecovery, 0, 1);
+    const filterRecovery = filterTier >= 2
+      ? HYGIENE_RECOVERY_PER_SEC * effectiveFilter01 * (1 - water.dirt01) * dtSec
+      : 0;
+    water.hygiene01 = clamp(water.hygiene01 - baselineDecay + hygieneRecovery + filterRecovery, 0, 1);
   }
 
   #seedGroundAlgae() {

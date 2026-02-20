@@ -348,8 +348,10 @@ export class Renderer {
 
     const sx = this.tankRect.width / this.world.bounds.width;
     const sy = this.tankRect.height / this.world.bounds.height;
+    const tier = Math.max(1, Math.min(3, Math.floor(water.filterTier ?? 1)));
     const width = Math.max(16, 28 * sx);
-    const height = Math.max(26, 52 * sy);
+    const tierHeightScale = 1 + (tier - 1) * 0.1;
+    const height = Math.max(26, 52 * sy * tierHeightScale);
 
     return {
       x: this.tankRect.x + this.tankRect.width - width - 10,
@@ -375,14 +377,33 @@ export class Renderer {
     ctx.fill();
     ctx.stroke();
 
-    const health = water.filter01 ?? 0;
-    const led = water.filterEnabled
-      ? (health > 0.6 ? 'rgba(96, 255, 140, 0.95)' : (health >= 0.2 ? 'rgba(255, 224, 99, 0.95)' : 'rgba(255, 82, 82, 0.95)'))
-      : 'rgba(170, 180, 188, 0.45)';
-    ctx.fillStyle = led;
-    ctx.beginPath();
-    ctx.arc(x + moduleW * 0.5, y + 8, 3.2, 0, TAU);
-    ctx.fill();
+    const tier = Math.max(1, Math.min(3, Math.floor(water.filterTier ?? 1)));
+    const health = Math.max(0, Math.min(1, water.filter01 ?? 0));
+    const depletedThreshold01 = Math.max(0, Math.min(1, this.world.filterDepletedThreshold01 ?? 0.1));
+    const warningThreshold01 = Math.min(1, depletedThreshold01 + 0.2);
+    const isBlinkOn = Math.floor(time / 500) % 2 === 0;
+
+    let ledColor = 'rgba(170, 180, 188, 0.45)';
+    if (water.filterEnabled) {
+      if (health <= depletedThreshold01) {
+        ledColor = 'rgba(255, 82, 82, 0.96)';
+      } else if (health <= warningThreshold01) {
+        ledColor = 'rgba(246, 163, 74, 0.96)';
+      } else if (isBlinkOn) {
+        ledColor = 'rgba(96, 255, 140, 0.95)';
+      } else {
+        ledColor = 'rgba(52, 120, 72, 0.45)';
+      }
+    }
+
+    const ledCount = Math.max(1, Math.min(3, tier));
+    for (let i = 0; i < ledCount; i += 1) {
+      const ratio = ledCount === 1 ? 0.5 : i / (ledCount - 1);
+      ctx.fillStyle = ledColor;
+      ctx.beginPath();
+      ctx.arc(x + moduleW * (0.3 + ratio * 0.4), y + 8, 2.4, 0, TAU);
+      ctx.fill();
+    }
 
     ctx.strokeStyle = 'rgba(145, 205, 236, 0.32)';
     ctx.beginPath();
