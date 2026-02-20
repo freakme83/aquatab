@@ -7,6 +7,8 @@
   --text-main: #e6eff8;
   --text-soft: #9fb6ca;
   --accent: #7dc8ff;
+
+  --species-ready-green: #84e89a;
 }
 
 * {
@@ -647,4 +649,37 @@ input[type='range'] {
   font-size: 0.68rem;
   letter-spacing: 0.08em;
   color: rgba(214, 235, 249, 0.88);
+}
+
+.species-row.is-locked {
+  opacity: 0.6;
+}
+
+.species-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.species-stepper button {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  padding: 0;
+}
+
+.species-stepper strong {
+  min-width: 16px;
+  text-align: center;
+}
+
+
+.species-btn--ready {
+  border-color: color-mix(in srgb, var(--species-ready-green) 58%, #cfeeff 42%);
+  background: linear-gradient(180deg, rgba(57, 119, 84, 0.95), rgba(46, 100, 72, 0.95));
+  color: #ebfff2;
+}
+
+.species-btn--ready:disabled {
+  opacity: 0.72;
 }

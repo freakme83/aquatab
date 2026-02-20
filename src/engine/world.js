@@ -4,7 +4,7 @@
  */
 
 import { Fish } from './fish.js';
-import { CONFIG } from '../config.js';
+import { CONFIG, DEFAULT_SPECIES_ID, SPECIES } from '../config.js';
 import { getMaxSimSpeedMultiplier, isDevMode } from '../dev.js';
 
 const MAX_TILT = CONFIG.world.maxTiltRad;
@@ -37,6 +37,10 @@ const GESTATION_SEC = REPRO_CONFIG.GESTATION_SEC ?? [300, 360];
 const EGG_INCUBATION_SEC = REPRO_CONFIG.EGG_INCUBATION_SEC ?? [120, 300];
 const MOTHER_COOLDOWN_SEC = REPRO_CONFIG.MOTHER_COOLDOWN_SEC ?? [600, 1080];
 const CLUTCH_SIZE = REPRO_CONFIG.CLUTCH_SIZE ?? [2, 4];
+const SPECIES_MAP = SPECIES ?? {};
+const LAB_MINNOW_SPECIES_ID = 'LAB_MINNOW';
+const AZURE_DART_SPECIES_ID = 'AZURE_DART';
+const AZURE_DART_UNLOCK_HYGIENE01 = 0.8;
 
 const FEMALE_NAME_POOL = Array.isArray(CONFIG.FEMALE_NAME_POOL) ? CONFIG.FEMALE_NAME_POOL : [];
 const MALE_NAME_POOL = Array.isArray(CONFIG.MALE_NAME_POOL) ? CONFIG.MALE_NAME_POOL : [];
@@ -96,7 +100,7 @@ export const WATER_SAVE_KEYS = [
   'filterTier'
 ];
 export const FOOD_SAVE_KEYS = ['id', 'x', 'y', 'amount', 'ttl', 'vy'];
-export const POOP_SAVE_KEYS = ['id', 'x', 'y', 'ttlSec', 'maxTtlSec', 'vx', 'vy', 'type', 'canBeEaten', 'nutrition'];
+export const POOP_SAVE_KEYS = ['id', 'x', 'y', 'ttlSec', 'maxTtlSec', 'vx', 'vy', 'type', 'canBeEaten', 'nutrition', 'bioloadFactor'];
 export const EGG_SAVE_KEYS = [
   'id',
   'x',
@@ -107,6 +111,7 @@ export const EGG_SAVE_KEYS = [
   'fatherId',
   'motherTraits',
   'fatherTraits',
+  'speciesId',
   'state',
   'canBeEaten',
   'nutrition'
@@ -174,7 +179,8 @@ function deserializePoop(data, bounds, swimHeight) {
     vy: Number.isFinite(source.vy) ? source.vy : (type === 'floaty' ? -POOP_BASE_DRIFT_SPEED : POOP_BASE_DRIFT_SPEED),
     type,
     canBeEaten: Boolean(source.canBeEaten ?? true),
-    nutrition: Math.max(0, Number.isFinite(source.nutrition) ? source.nutrition : 0.1)
+    nutrition: Math.max(0, Number.isFinite(source.nutrition) ? source.nutrition : 0.1),
+    bioloadFactor: Math.max(0, Number.isFinite(source.bioloadFactor) ? source.bioloadFactor : 1)
   };
 }
 
@@ -363,6 +369,23 @@ function randIntInclusive(range, fallbackMin = 0, fallbackMax = 0) {
   return Math.floor(rand(low, high + 1));
 }
 
+
+
+function getSpeciesConfig(speciesId) {
+  return SPECIES_MAP[speciesId] ?? SPECIES_MAP[DEFAULT_SPECIES_ID] ?? null;
+}
+
+function getSpeciesBioloadFactor(speciesId) {
+  return Math.max(0, getSpeciesConfig(speciesId)?.bioloadFactor ?? 1);
+}
+
+function getSpeciesPoopBioloadFactor(speciesId) {
+  return Math.max(0, getSpeciesConfig(speciesId)?.poopBioloadFactor ?? 1);
+}
+
+function getSpeciesReproductionScale(speciesId) {
+  return Math.max(0.05, getSpeciesConfig(speciesId)?.reproductionScale ?? 1);
+}
 function makeBubble(bounds) {
   return {
     x: rand(0, bounds.width),
@@ -434,6 +457,7 @@ export class World {
     // Global environment state (will grow over time).
     this.water = this.#createInitialWaterState();
     this.expiredFoodSinceLastWaterUpdate = 0;
+    this.pendingPoopDirt01 = 0;
 
     this.paused = false;
     this.speedMultiplier = 1;
@@ -583,9 +607,12 @@ export class World {
     return candidate;
   }
 
-  #createFish({ sex, initialAgeSec = 0, hungryStart = false, position = null, traits = null, name = null, bornInAquarium = false, motherId = null, fatherId = null } = {}) {
+  #createFish({ sex, speciesId = DEFAULT_SPECIES_ID, initialAgeSec = 0, hungryStart = false, position = null, traits = null, name = null, bornInAquarium = false, motherId = null, fatherId = null } = {}) {
     const sizeRange = GROWTH_CONFIG.sizeFactorRange;
     const growthRange = GROWTH_CONFIG.growthRateRange;
+
+    const species = getSpeciesConfig(speciesId);
+    const normalizedSpeciesId = species?.id ?? DEFAULT_SPECIES_ID;
 
     const sizeFactor = rand(sizeRange.min, sizeRange.max);
     const adultRadius = GROWTH_CONFIG.adultRadius * sizeFactor;
@@ -618,6 +645,7 @@ export class World {
 
     const fish = new Fish(this.bounds, {
       id: this.nextFishId++,
+      speciesId: normalizedSpeciesId,
       spawnTimeSec: this.simTimeSec - normalizedInitialAgeSec,
       sizeFactor,
       growthRate: rand(growthRange.min, growthRange.max),
@@ -821,6 +849,7 @@ export class World {
     this.matePairNextTryAt = new Map();
     this.scheduledPoopSpawns = [];
     this.expiredFoodSinceLastWaterUpdate = 0;
+    this.pendingPoopDirt01 = 0;
     this.filterUnlockThreshold = Math.max(1, this.initialFishCount * 4);
     this.filterUnlocked = this.foodsConsumedCount >= this.filterUnlockThreshold || Boolean(this.water.filterUnlocked || this.filterUnlocked);
     this.water.filterUnlocked = this.isFeatureUnlocked('waterFilter');
@@ -883,7 +912,7 @@ export class World {
   }
 
 
-  spawnPoop(x, y, ttlSec = POOP_DEFAULT_TTL_SEC) {
+  spawnPoop(x, y, ttlSec = POOP_DEFAULT_TTL_SEC, options = {}) {
     const clampedX = clamp(x, 0, this.bounds.width);
     const clampedY = clamp(y, 0, this.#swimHeight());
     const type = pickPoopTypeByWeight();
@@ -891,6 +920,17 @@ export class World {
     let initialVy = POOP_BASE_DRIFT_SPEED;
     if (type === 'floaty') initialVy = -POOP_BASE_DRIFT_SPEED;
     else if (type === 'neutral') initialVy = rand(-POOP_BASE_DRIFT_SPEED * 0.3, POOP_BASE_DRIFT_SPEED * 0.3);
+
+    const bioloadFactor = Math.max(0, Number.isFinite(options?.bioloadFactor) ? options.bioloadFactor : 1);
+    const isVisible = options?.visible !== false;
+
+    if (!isVisible) {
+      if (WATER_HYGIENE_DROP_PER_POOP_SPAWN > 0 && this.water) {
+        this.water.hygiene01 = clamp(this.water.hygiene01 - WATER_HYGIENE_DROP_PER_POOP_SPAWN * bioloadFactor, 0, 1);
+      }
+      this.pendingPoopDirt01 = (this.pendingPoopDirt01 ?? 0) + POOP_DIRT_PER_SEC * bioloadFactor;
+      return null;
+    }
 
     const poop = {
       id: this.nextPoopId++,
@@ -902,11 +942,12 @@ export class World {
       vy: initialVy,
       type,
       canBeEaten: true,
-      nutrition: 0.1
+      nutrition: 0.1,
+      bioloadFactor
     };
     this.poop.push(poop);
     if (WATER_HYGIENE_DROP_PER_POOP_SPAWN > 0 && this.water) {
-      this.water.hygiene01 = clamp(this.water.hygiene01 - WATER_HYGIENE_DROP_PER_POOP_SPAWN, 0, 1);
+      this.water.hygiene01 = clamp(this.water.hygiene01 - WATER_HYGIENE_DROP_PER_POOP_SPAWN * bioloadFactor, 0, 1);
     }
     return poop;
   }
@@ -948,6 +989,9 @@ export class World {
   // Future hook: edible target discovery.
   // For now, fish can only eat food. Later we may include eggs/poop for certain species or traits.
   getEdibleTargetsForFish(fish) {
+    if ((fish?.speciesId ?? DEFAULT_SPECIES_ID) === AZURE_DART_SPECIES_ID) {
+      return this.fruits;
+    }
     return this.food;
   }
 
@@ -1157,6 +1201,60 @@ export class World {
     return true;
   }
 
+
+
+  canAddAzureDart() {
+    if (isDevMode()) return true;
+    return (this.berryReedPlants?.length ?? 0) >= 1
+      && (this.water?.hygiene01 ?? 0) >= AZURE_DART_UNLOCK_HYGIENE01;
+  }
+
+  addAzureDartSchool(count = 4) {
+    if (!this.canAddAzureDart()) return false;
+    const n = Math.max(2, Math.min(4, Math.floor(count)));
+    let sexes = [];
+    if (n === 2) sexes = ['female', 'male'];
+    else if (n === 3) sexes = ['female', 'female', 'female', 'male'];
+    else sexes = ['female', 'female', 'male', 'male'];
+
+    for (const sex of sexes) {
+      const fish = this.#createFish({ speciesId: AZURE_DART_SPECIES_ID, sex, initialAgeSec: 0 });
+      fish.spawnTimeSec = this.simTimeSec;
+      fish.ageSecCached = 0;
+      this.fish.push(fish);
+    }
+    return true;
+  }
+
+  getFruitPosition(fruit) {
+    if (!fruit) return null;
+    const plant = this.berryReedPlants.find((entry) => entry.id === fruit.plantId);
+    if (!plant || !Array.isArray(plant.branches) || !plant.branches.length) return null;
+    const branchIndex = Math.max(0, Math.min(plant.branches.length - 1, Math.floor(fruit.branchIndex ?? 0)));
+    const branch = plant.branches[branchIndex];
+    const sway = Math.sin(this.simTimeSec * (plant.swayRate ?? 0.0012) + (plant.swayPhase ?? 0));
+    const stemX = plant.x + sway * 8;
+    const stemY = plant.bottomY - plant.height;
+    const branchBaseX = stemX + branch.side * (plant.height * branch.len * 0.45);
+    const branchBaseY = plant.bottomY - plant.height * branch.t;
+    const branchTipX = branchBaseX + branch.side * (plant.height * branch.len * 0.52);
+    const branchTipY = branchBaseY - plant.height * branch.len * 0.28;
+    const u = clamp(fruit.u ?? 0.9, 0, 1);
+    const v = Number.isFinite(fruit.v) ? fruit.v : 0;
+    return {
+      x: branchBaseX + (branchTipX - branchBaseX) * u,
+      y: branchBaseY + (branchTipY - branchBaseY) * u + v
+    };
+  }
+
+  consumeFruit(fruitId) {
+    const index = this.fruits.findIndex((entry) => entry.id === fruitId);
+    if (index < 0) return 0;
+    this.fruits.splice(index, 1);
+    this.foodsConsumedCount += 1;
+    return 1;
+  }
+
   getBerryReedFruitSpawnIntervalSec(hygiene01) {
     const h = clamp01(hygiene01);
     if (h < 0.4) return Infinity;
@@ -1206,6 +1304,7 @@ export class World {
   #updateWaterHygiene(dtSec) {
     const expiredFoodCount = this.expiredFoodSinceLastWaterUpdate;
     this.expiredFoodSinceLastWaterUpdate = 0;
+    this.pendingPoopDirt01 = 0;
 
     if (!Number.isFinite(dtSec) || dtSec <= 0) return;
 
@@ -1236,8 +1335,8 @@ export class World {
       }
     }
 
-    const fishCount = this.fish.length;
-    const bioload = fishCount / WATER_REFERENCE_FISH_COUNT;
+    const fishBioloadUnits = this.fish.reduce((sum, fish) => sum + getSpeciesBioloadFactor(fish.speciesId), 0);
+    const bioload = fishBioloadUnits / WATER_REFERENCE_FISH_COUNT;
     const water = this.water;
 
     water.filterUnlocked = this.isFeatureUnlocked('waterFilter');
@@ -1286,7 +1385,9 @@ export class World {
 
     const bioloadDirt = WATER_BIOLOAD_DIRT_PER_SEC * bioload * dtSec;
     const expiredFoodDirt = expiredFoodCount * WATER_DIRT_PER_EXPIRED_FOOD;
-    const poopDirt = this.poop.length * POOP_DIRT_PER_SEC * dtSec;
+    const poopDirtFromEntities = this.poop.reduce((sum, entry) => sum + POOP_DIRT_PER_SEC * Math.max(0, entry.bioloadFactor ?? 1), 0) * dtSec;
+    const poopDirt = poopDirtFromEntities + Math.max(0, this.pendingPoopDirt01 ?? 0) * dtSec;
+    this.pendingPoopDirt01 = 0;
     water.dirt01 = clamp(water.dirt01 + bioloadDirt + expiredFoodDirt + poopDirt, 0, 1);
 
     const removedDirt = FILTER_DIRT_REMOVE_PER_SEC * effectiveFilter01 * dirtTierMultiplier * dtSec;
@@ -1499,6 +1600,7 @@ export class World {
 
   #tryMatePair(a, b, nowSec) {
     if (a.sex === b.sex) return;
+    if ((a.speciesId ?? DEFAULT_SPECIES_ID) !== (b.speciesId ?? DEFAULT_SPECIES_ID)) return;
     if (!this.#isMateEligible(a, nowSec) || !this.#isMateEligible(b, nowSec)) return;
 
     const key = a.id < b.id ? `${a.id}|${b.id}` : `${b.id}|${a.id}`;
@@ -1522,12 +1624,13 @@ export class World {
     female.repro.state = 'GRAVID';
     female.repro.fatherId = male.id;
     female.repro.pregnancyStartSec = nowSec;
-    female.repro.dueAtSec = nowSec + randRange(GESTATION_SEC, 300, 360);
+    const reproScale = getSpeciesReproductionScale(female.speciesId);
+    female.repro.dueAtSec = nowSec + randRange(GESTATION_SEC, 300, 360) * reproScale;
     female.repro.layingStartedAtSec = null;
     female.repro.layTargetX = null;
     female.repro.layTargetY = null;
 
-    male.repro.cooldownUntilSec = nowSec + randRange(MATE_FATHER_COOLDOWN_SEC, 120, 240);
+    male.repro.cooldownUntilSec = nowSec + randRange(MATE_FATHER_COOLDOWN_SEC, 120, 240) * reproScale;
 
     female.history.mateCount += 1;
     male.history.mateCount += 1;
@@ -1553,21 +1656,37 @@ export class World {
     const father = this.getFishById(female.repro.fatherId) ?? null;
     const motherTraits = { ...(female.traits ?? {}) };
     const fatherTraits = father?.traits ? { ...father.traits } : { ...motherTraits };
-    const clutchCount = Math.max(1, randIntInclusive(CLUTCH_SIZE, 2, 4));
+    const speciesId = female.speciesId ?? DEFAULT_SPECIES_ID;
+    const species = getSpeciesConfig(speciesId);
+    const clutchSizes = speciesId === AZURE_DART_SPECIES_ID
+      ? [3, 4, 5]
+      : CLUTCH_SIZE;
+    const clutchCount = speciesId === AZURE_DART_SPECIES_ID
+      ? clutchSizes[Math.floor(rand(0, clutchSizes.length))]
+      : Math.max(1, randIntInclusive(clutchSizes, 2, 4));
+    const reproScale = getSpeciesReproductionScale(speciesId);
+    const baseLayY = Math.max(0, this.#swimHeight() - 14);
 
     for (let i = 0; i < clutchCount; i += 1) {
-      const x = clamp(female.position.x + rand(-6, 6), 0, this.bounds.width);
-      const y = clamp(female.position.y + rand(-4, 4), 0, this.#swimHeight());
+      let x = clamp(female.position.x + rand(-6, 6), 0, this.bounds.width);
+      let y = clamp(female.position.y + rand(-4, 4), 0, this.#swimHeight());
+      if (speciesId === AZURE_DART_SPECIES_ID && this.berryReedPlants.length) {
+        const plant = this.berryReedPlants[Math.floor(rand(0, this.berryReedPlants.length))];
+        x = clamp(plant.x + rand(-12, 12), 0, this.bounds.width);
+        y = clamp(plant.bottomY - rand(1, 8), baseLayY - 6, this.#swimHeight());
+      }
+
       this.eggs.push({
         id: this.nextEggId++,
         x,
         y,
         laidAtSec: nowSec,
-        hatchAtSec: nowSec + randRange(EGG_INCUBATION_SEC, 120, 300),
+        hatchAtSec: nowSec + randRange(EGG_INCUBATION_SEC, 120, 300) * reproScale,
         motherId: female.id,
         fatherId: female.repro.fatherId,
         motherTraits,
         fatherTraits,
+        speciesId,
         state: 'INCUBATING',
         canBeEaten: true,
         nutrition: 0.25
@@ -1575,7 +1694,7 @@ export class World {
     }
 
     female.repro.state = 'COOLDOWN';
-    female.repro.cooldownUntilSec = nowSec + randRange(MOTHER_COOLDOWN_SEC, 600, 1080);
+    female.repro.cooldownUntilSec = nowSec + randRange(MOTHER_COOLDOWN_SEC, 600, 1080) * reproScale;
     female.repro.dueAtSec = null;
     female.repro.fatherId = null;
     female.repro.layTargetX = null;
@@ -1607,8 +1726,14 @@ export class World {
 
       if (fish.repro.state === 'GRAVID' && nowSec >= (fish.repro.dueAtSec ?? Infinity)) {
         fish.repro.state = 'LAYING';
-        fish.repro.layTargetX = clamp(fish.position.x + rand(-20, 20), 0, this.bounds.width);
-        fish.repro.layTargetY = layTargetY;
+        if (fish.speciesId === AZURE_DART_SPECIES_ID && this.berryReedPlants.length) {
+          const plant = this.berryReedPlants[Math.floor(rand(0, this.berryReedPlants.length))];
+          fish.repro.layTargetX = clamp(plant.x + rand(-12, 12), 0, this.bounds.width);
+          fish.repro.layTargetY = clamp(plant.bottomY - rand(1, 6), Math.max(0, layTargetY - 6), this.#swimHeight());
+        } else {
+          fish.repro.layTargetX = clamp(fish.position.x + rand(-20, 20), 0, this.bounds.width);
+          fish.repro.layTargetY = layTargetY;
+        }
         fish.repro.layingStartedAtSec = nowSec;
       }
 
@@ -1737,7 +1862,9 @@ export class World {
 
       const fish = this.getFishById(entry.fishId);
       if (fish && fish.lifeState === 'ALIVE') {
-        this.spawnPoop(fish.position.x, fish.position.y);
+        const factor = getSpeciesPoopBioloadFactor(fish.speciesId);
+        const visible = fish.speciesId !== AZURE_DART_SPECIES_ID;
+        this.spawnPoop(fish.position.x, fish.position.y, POOP_DEFAULT_TTL_SEC, { bioloadFactor: factor, visible });
       }
       this.scheduledPoopSpawns.splice(i, 1);
     }
@@ -1784,6 +1911,7 @@ export class World {
         );
 
         const baby = this.#createFish({
+          speciesId: egg.speciesId ?? this.getFishById(egg.motherId)?.speciesId ?? DEFAULT_SPECIES_ID,
           initialAgeSec: 0,
           position: { x: spawnX, y: spawnY },
           traits: babyTraits,
