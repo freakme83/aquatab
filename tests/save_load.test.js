@@ -537,3 +537,130 @@ test('grantAllUnlockPrerequisites bumps key unlock counters safely', () => {
     assert.ok(world.foodsConsumedCount >= world.getFilterTierUnlockFeeds(3));
   });
 });
+
+test('legacy fish saves without speciesId default to LAB_MINNOW', () => {
+  const world = makeWorldForTest();
+  const snap = world.toJSON();
+  delete snap.fish[0].speciesId;
+
+  const loaded = World.fromJSON({ saveVersion: 1, worldState: snap }, {
+    width: world.bounds.width,
+    height: world.bounds.height,
+    initialFishCount: world.initialFishCount
+  });
+
+  assert.equal(loaded.fish[0].speciesId, 'LAB_MINNOW');
+});
+
+test('speciesId persists and azure dart survives save/load', () => {
+  const world = makeWorldForTest();
+  world.birthsCount = 10;
+  world.water.hygiene01 = 1;
+  world.addBerryReedPlant();
+  assert.equal(world.addAzureDartSchool(), true);
+  assert.equal(world.addAzureDartSchool(), true);
+  assert.equal(world.addAzureDartSchool(), true);
+  assert.equal(world.addAzureDartSchool(), true);
+
+  const loaded = roundTrip(world);
+  const azure = loaded.fish.filter((f) => f.speciesId === 'AZURE_DART');
+  assert.ok(azure.length >= 4);
+  assert.equal(loaded.fish.some((f) => f.speciesId === 'LAB_MINNOW'), true);
+});
+
+test('cross-species reproduction does not occur', () => {
+  const world = makeWorldForTest();
+  const female = world.fish[0];
+  const male = world.fish[1];
+  female.speciesId = 'LAB_MINNOW';
+  male.speciesId = 'AZURE_DART';
+  female.sex = 'female';
+  male.sex = 'male';
+  female.position = { x: 120, y: 120 };
+  male.position = { x: 121, y: 121 };
+  forceFishAliveAdultFed(female);
+  forceFishAliveAdultFed(male);
+  world.water.hygiene01 = 1;
+
+  withStubbedRandom(0, () => {
+    for (let i = 0; i < 8; i += 1) world.update(1);
+  });
+
+  assert.notEqual(female.repro.state, 'GRAVID');
+  assert.equal(world.eggs.length, 0);
+});
+
+test('azure dart add button spawns one fish per click and caps at four total', () => {
+  const world = makeWorldForTest();
+  world.birthsCount = 10;
+  world.water.hygiene01 = 1;
+  world.addBerryReedPlant();
+
+  assert.equal(world.getAzureDartCount(), 0);
+  assert.equal(world.addAzureDartSchool(), true);
+  assert.equal(world.getAzureDartCount(), 1);
+  assert.equal(world.addAzureDartSchool(), true);
+  assert.equal(world.getAzureDartCount(), 2);
+  assert.equal(world.addAzureDartSchool(), true);
+  assert.equal(world.getAzureDartCount(), 3);
+  assert.equal(world.addAzureDartSchool(), true);
+  assert.equal(world.getAzureDartCount(), 4);
+  assert.equal(world.canAddAzureDart(), false);
+  assert.equal(world.addAzureDartSchool(), false);
+});
+
+
+test('dev mode bypass unlocks azure dart prerequisites', () => {
+  withMockedDevMode(true, () => {
+    const world = makeWorldForTest();
+    world.water.hygiene01 = 0.2;
+    world.berryReedPlants = [];
+
+    assert.equal(world.canAddAzureDart(), true);
+  });
+});
+
+
+test('azure dart spawn uses blue-dominant color trait range', () => {
+  const world = makeWorldForTest();
+  world.birthsCount = 10;
+  world.water.hygiene01 = 1;
+  world.addBerryReedPlant();
+  assert.equal(world.addAzureDartSchool(), true);
+  const azure = world.fish.find((f) => f.speciesId === 'AZURE_DART');
+  assert.ok(azure);
+  assert.ok(azure.traits.colorHue >= 190 && azure.traits.colorHue <= 232);
+  assert.equal(typeof azure.traits.colorPatternSeed, 'number');
+});
+
+
+test('berry reed unlock stays available after threshold dip', () => {
+  const world = makeWorldForTest();
+  world.birthsCount = 5;
+  world.water.hygiene01 = 0.85;
+  assert.equal(world.canAddBerryReedPlant(), true);
+
+  world.water.hygiene01 = 0.2;
+  assert.equal(world.canAddBerryReedPlant(), true);
+});
+
+test('azure dart unlock stays available after threshold dip while under cap', () => {
+  const world = makeWorldForTest();
+  world.birthsCount = 5;
+  world.water.hygiene01 = 0.9;
+  world.addBerryReedPlant();
+  assert.equal(world.canAddAzureDart(), true);
+
+  world.water.hygiene01 = 0.2;
+  assert.equal(world.canAddAzureDart(), true);
+});
+
+
+test('species tab clear-selection path is safe via toggleFishSelection(null)', () => {
+  const world = makeWorldForTest();
+  const fishId = world.fish[1]?.id ?? world.fish[0].id;
+  world.selectFish(fishId);
+  assert.equal(world.selectedFishId, fishId);
+  world.toggleFishSelection(null);
+  assert.equal(world.selectedFishId, null);
+});
