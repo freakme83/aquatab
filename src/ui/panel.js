@@ -12,6 +12,7 @@ export class Panel {
     this.nameDraftByFishId = new Map();
     this.currentInspectorSelectedFishId = null;
     this.currentInspectorDetailTab = 'info';
+    this.currentInspectorSpeciesTab = 'LAB_MINNOW';
     this.lastInspectorSignature = null;
 
     this.tabButtons = [...this.root.querySelectorAll('.tab-button')];
@@ -64,6 +65,11 @@ export class Panel {
     this.berryState = this.root.querySelector('[data-berry-state]');
     this.berryReqBirths = this.root.querySelector('[data-berry-req-births]');
     this.berryReqCleanliness = this.root.querySelector('[data-berry-req-cleanliness]');
+    this.addAzureDartButton = this.root.querySelector('[data-control="addAzureDart"]');
+    this.azureDartState = this.root.querySelector('[data-azure-state]');
+    this.azureDartReqBerry = this.root.querySelector('[data-azure-req-berry]');
+    this.azureDartReqCleanliness = this.root.querySelector('[data-azure-req-cleanliness]');
+    this.azureDartRow = this.root.querySelector('[data-azure-dart-row]');
 
     this.installFilterButton = this.root.querySelector('[data-control="installFilter"]');
     this.maintainFilterButton = this.root.querySelector('[data-control="maintainFilter"]');
@@ -175,6 +181,10 @@ export class Panel {
       this.handlers.onAddBerryReed?.();
     });
 
+    this.addAzureDartButton?.addEventListener('click', () => {
+      this.handlers.onAddAzureDart?.();
+    });
+
     this.grantUnlockPrereqsButton?.addEventListener('click', () => {
       this.handlers.onGrantUnlockPrereqs?.();
     });
@@ -222,6 +232,15 @@ export class Panel {
     }, true);
 
     this.fishInspector.addEventListener('click', (event) => {
+      const speciesTabButton = event.target.closest('[data-inspector-species-tab]');
+      if (speciesTabButton) {
+        const nextSpecies = speciesTabButton.dataset.inspectorSpeciesTab === 'AZURE_DART' ? 'AZURE_DART' : 'LAB_MINNOW';
+        this.currentInspectorSpeciesTab = nextSpecies;
+        this.currentInspectorSelectedFishId = null;
+        this.lastInspectorSignature = null;
+        return;
+      }
+
       const detailTabButton = event.target.closest('[data-fish-detail-tab]');
       if (detailTabButton) {
         this.currentInspectorDetailTab = detailTabButton.dataset.fishDetailTab === 'history' ? 'history' : 'info';
@@ -268,6 +287,13 @@ export class Panel {
     if (this.restartConfirm) this.restartConfirm.hidden = true;
   }
 
+
+
+  #setSpeciesButtonReady(button, canAdd) {
+    if (!button) return;
+    button.classList.toggle('species-btn--ready', Boolean(canAdd));
+  }
+
   updateStats({
     simTimeSec,
     fishCount,
@@ -290,7 +316,9 @@ export class Panel {
     berryReedUnlockBirths,
     berryReedUnlockCleanlinessPct,
     canAddBerryReed,
-    berryReedPlantCount
+    berryReedPlantCount,
+    canAddAzureDart,
+    azureDartCount
   }) {
     this.updateDevSection();
     this.refreshSpeedControl();
@@ -452,6 +480,7 @@ export class Panel {
         this.addBerryReedButton.disabled = !canAddBerryReed;
         this.addBerryReedButton.textContent = 'Berry Reed';
       }
+      this.#setSpeciesButtonReady(this.addBerryReedButton, canAddBerryReed && !alreadyAdded);
     }
 
     if (this.berryState) {
@@ -459,6 +488,30 @@ export class Panel {
       this.berryState.style.color = alreadyAdded
         ? '#84e89a'
         : (canAddBerryReed ? '#cfeeff' : '');
+    }
+
+
+    const azureUnlocked = Boolean(canAddAzureDart);
+    const hasBerry = (berryReedPlantCount ?? 0) >= 1;
+    const devBypass = isDevMode();
+    if (this.azureDartReqBerry) {
+      this.azureDartReqBerry.textContent = (hasBerry || devBypass) ? 'Requires: Berry Reed added ✓' : 'Requires: Berry Reed added';
+    }
+    if (this.azureDartReqCleanliness) {
+      this.azureDartReqCleanliness.textContent = (roundedCleanlinessPct >= 80 || devBypass)
+        ? 'Requires: Cleanliness 80%+ ✓'
+        : `Requires: Cleanliness 80%+ (currently ${roundedCleanlinessPct}%)`;
+    }
+    if (this.azureDartState) {
+      this.azureDartState.textContent = azureDartCount >= 4 ? 'Added' : (azureUnlocked ? 'Ready' : 'Locked');
+      this.azureDartState.style.color = azureDartCount >= 4
+        ? '#84e89a'
+        : (azureUnlocked ? '#cfeeff' : '');
+    }
+    if (this.azureDartRow) this.azureDartRow.classList.toggle('is-locked', !azureUnlocked);
+    if (this.addAzureDartButton) {
+      this.addAzureDartButton.disabled = !azureUnlocked;
+      this.#setSpeciesButtonReady(this.addAzureDartButton, azureUnlocked);
     }
   }
 
@@ -478,7 +531,13 @@ export class Panel {
       return a.id - b.id;
     });
 
-    const selectedFish = sorted.find((fish) => fish.id === selectedFishId) ?? null;
+    const selectedFishAnySpecies = sorted.find((fish) => fish.id === selectedFishId) ?? null;
+    if (selectedFishAnySpecies?.speciesId === 'AZURE_DART' || selectedFishAnySpecies?.speciesId === 'LAB_MINNOW') {
+      this.currentInspectorSpeciesTab = selectedFishAnySpecies.speciesId;
+    }
+
+    const filtered = sorted.filter((fish) => (fish.speciesId ?? 'LAB_MINNOW') === this.currentInspectorSpeciesTab);
+    const selectedFish = filtered.find((fish) => fish.id === selectedFishId) ?? null;
     const selectedLiveAgeSec = selectedFish ? Math.floor(selectedFish.ageSeconds(simTimeSec)) : -1;
     const selectedHungerPct = selectedFish ? Math.round((selectedFish.hunger01 ?? 0) * 100) : -1;
     const selectedWellbeingPct = selectedFish ? Math.round((selectedFish.wellbeing01 ?? 0) * 100) : -1;
@@ -487,7 +546,7 @@ export class Panel {
       ? `${selectedFish.history?.mealsEaten ?? 0}|${selectedFish.history?.mateCount ?? 0}|${selectedFish.history?.childrenIds?.length ?? 0}|${selectedFish.history?.deathSimTimeSec ?? ''}|${selectedFish.repro?.state ?? ''}|${selectedFish.deathReason ?? ''}`
       : 'none';
 
-    const signature = sorted
+    const signature = filtered
       .map((fish) => `${fish.id}|${fish.name ?? ''}|${fish.lifeState}|${fish.hungerState}|${fish.lifeStage ?? ''}|${fish.repro?.state ?? ''}`)
       .join(';')
       + `::selected=${selectedFishId ?? 'none'}`
@@ -496,12 +555,13 @@ export class Panel {
       + `::wellbeing=${selectedWellbeingPct}`
       + `::growth=${selectedGrowthPct}`
       + `::history=${selectedHistorySnapshot}`
-      + `::detailTab=${this.currentInspectorDetailTab}`;
+      + `::detailTab=${this.currentInspectorDetailTab}`
+      + `::speciesTab=${this.currentInspectorSpeciesTab}`;
 
     if (signature === this.lastInspectorSignature) return;
     this.lastInspectorSignature = signature;
 
-    const listHtml = sorted
+    const listHtml = filtered
       .map((fish) => {
         const selectedClass = fish.id === selectedFishId ? ' selected' : '';
         const deadClass = fish.lifeState !== 'ALIVE' ? ' fishRow--dead' : '';
@@ -521,8 +581,18 @@ export class Panel {
       ? this.#fishDetailsMarkup(selectedFish, simTimeSec)
       : '<p class="fish-empty">Select a fish.</p>';
 
+    const labActive = this.currentInspectorSpeciesTab === 'LAB_MINNOW';
+    const azureActive = this.currentInspectorSpeciesTab === 'AZURE_DART';
+    const speciesTabsHtml = `
+      <div class="inspector-species-tabs" role="tablist" aria-label="Fish species">
+        <button type="button" class="inspector-species-tab${labActive ? ' active' : ''}" data-inspector-species-tab="LAB_MINNOW" role="tab" aria-selected="${labActive}">Lab Minnow</button>
+        <button type="button" class="inspector-species-tab${azureActive ? ' active' : ''}" data-inspector-species-tab="AZURE_DART" role="tab" aria-selected="${azureActive}">Azure Dart</button>
+      </div>
+    `;
+
     this.fishInspector.innerHTML = `
-      <div class="fish-list">${listHtml}</div>
+      ${speciesTabsHtml}
+      <div class="fish-list">${listHtml || '<p class="fish-empty">No fish in this species tab.</p>'}</div>
       <div class="fish-detail">${detailHtml}</div>
     `;
 
@@ -552,9 +622,11 @@ export class Panel {
       ? '<div class="status-line status--pregnant">pregnant</div>'
       : '';
 
+    const speciesLabel = fish.speciesId === 'AZURE_DART' ? 'Azure Dart' : 'Lab Minnow';
     const infoRows = `
       <label class="control-group fish-name-group"><span>Name</span><input type="text" maxlength="24" value="${this.#escapeAttribute(draftName)}" data-fish-name-input placeholder="Fish name" /></label>
       <div class="stat-row"><span>Fish ID</span><strong>${fish.id}</strong></div>
+      <div class="stat-row"><span>Species</span><strong>${speciesLabel}</strong></div>
       <div class="stat-row"><span>Sex</span><strong>${fish.sex}</strong></div>
       <div class="stat-row"><span>Life Stage</span><strong>${typeof fish.lifeStageLabel === 'function' ? fish.lifeStageLabel() : (fish.lifeStage ?? '')}</strong></div>
       <div class="stat-row"><span>Hunger</span><strong>${fish.hungerState} (${Math.round(fish.hunger01 * 100)}%)</strong></div>
