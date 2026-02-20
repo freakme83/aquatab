@@ -259,7 +259,7 @@ export const SPECIES = Object.freeze({
     id: 'AZURE_DART',
     displayName: 'Azure Dart',
     diet: ['fruit'],
-    adultSizeScale: 0.45,
+    adultSizeScale: 0.54,
     speedScale: 2,
     lifespanScale: 0.5,
     reproductionScale: 0.5,

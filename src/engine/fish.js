@@ -138,6 +138,11 @@ function getSpeciesDiet(speciesId) {
   return Array.isArray(species?.diet) ? species.diet : ['pellet'];
 }
 
+function randomColorHueForSpecies(speciesId) {
+  if (speciesId === 'AZURE_DART') return rand(198, 228);
+  return rand(8, 42);
+}
+
 export class Fish {
   constructor(bounds, options = {}) {
     this.bounds = bounds;
@@ -153,11 +158,12 @@ export class Fish {
     const growthRange = GROWTH_CONFIG.growthRateRange;
 
     const baseTraits = {
-      colorHue: options.colorHue ?? rand(8, 42),
+      colorHue: options.colorHue ?? randomColorHueForSpecies(this.speciesId),
       sizeFactor: options.sizeFactor ?? rand(sizeRange.min, sizeRange.max),
       growthRate: options.growthRate ?? rand(growthRange.min, growthRange.max),
       lifespanSec: null,
-      speedFactor: options.speedFactor ?? rand(0.42, 0.68)
+      speedFactor: options.speedFactor ?? rand(0.42, 0.68),
+      colorPatternSeed: options.colorPatternSeed ?? rand(0, 1)
     };
 
     const lifeMean = AGE_CONFIG.lifespanMeanSec * (this.species?.lifespanScale ?? 1);

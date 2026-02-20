@@ -619,3 +619,16 @@ test('dev mode bypass unlocks azure dart prerequisites', () => {
     assert.equal(world.canAddAzureDart(), true);
   });
 });
+
+
+test('azure dart spawn uses blue-dominant color trait range', () => {
+  const world = makeWorldForTest();
+  world.birthsCount = 10;
+  world.water.hygiene01 = 1;
+  world.addBerryReedPlant();
+  assert.equal(world.addAzureDartSchool(), true);
+  const azure = world.fish.find((f) => f.speciesId === 'AZURE_DART');
+  assert.ok(azure);
+  assert.ok(azure.traits.colorHue >= 190 && azure.traits.colorHue <= 232);
+  assert.equal(typeof azure.traits.colorPatternSeed, 'number');
+});
