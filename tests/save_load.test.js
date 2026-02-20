@@ -601,3 +601,14 @@ test('azure dart add-school special count rule N=3 spawns four fish', () => {
   assert.equal(added.filter((f) => f.sex === 'female').length, 3);
   assert.equal(added.filter((f) => f.sex === 'male').length, 1);
 });
+
+
+test('dev mode bypass unlocks azure dart prerequisites', () => {
+  withMockedDevMode(true, () => {
+    const world = makeWorldForTest();
+    world.water.hygiene01 = 0.2;
+    world.berryReedPlants = [];
+
+    assert.equal(world.canAddAzureDart(), true);
+  });
+});

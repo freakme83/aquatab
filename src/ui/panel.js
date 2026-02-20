@@ -291,6 +291,13 @@ export class Panel {
     if (this.restartConfirm) this.restartConfirm.hidden = true;
   }
 
+
+
+  #setSpeciesButtonReady(button, canAdd) {
+    if (!button) return;
+    button.classList.toggle('species-btn--ready', Boolean(canAdd));
+  }
+
   updateStats({
     simTimeSec,
     fishCount,
@@ -476,6 +483,7 @@ export class Panel {
         this.addBerryReedButton.disabled = !canAddBerryReed;
         this.addBerryReedButton.textContent = 'Berry Reed';
       }
+      this.#setSpeciesButtonReady(this.addBerryReedButton, canAddBerryReed && !alreadyAdded);
     }
 
     if (this.berryState) {
@@ -488,11 +496,12 @@ export class Panel {
 
     const azureUnlocked = Boolean(canAddAzureDart);
     const hasBerry = (berryReedPlantCount ?? 0) >= 1;
+    const devBypass = isDevMode();
     if (this.azureDartReqBerry) {
-      this.azureDartReqBerry.textContent = hasBerry ? 'Requires: Berry Reed added ✓' : 'Requires: Berry Reed added';
+      this.azureDartReqBerry.textContent = (hasBerry || devBypass) ? 'Requires: Berry Reed added ✓' : 'Requires: Berry Reed added';
     }
     if (this.azureDartReqCleanliness) {
-      this.azureDartReqCleanliness.textContent = roundedCleanlinessPct >= 80
+      this.azureDartReqCleanliness.textContent = (roundedCleanlinessPct >= 80 || devBypass)
         ? 'Requires: Cleanliness 80%+ ✓'
         : `Requires: Cleanliness 80%+ (currently ${roundedCleanlinessPct}%)`;
     }
@@ -501,7 +510,10 @@ export class Panel {
       this.azureDartState.style.color = azureUnlocked ? '#cfeeff' : '';
     }
     if (this.azureDartRow) this.azureDartRow.classList.toggle('is-locked', !azureUnlocked);
-    if (this.addAzureDartButton) this.addAzureDartButton.disabled = !azureUnlocked;
+    if (this.addAzureDartButton) {
+      this.addAzureDartButton.disabled = !azureUnlocked;
+      this.#setSpeciesButtonReady(this.addAzureDartButton, azureUnlocked);
+    }
     if (this.azureDartMinusButton) this.azureDartMinusButton.disabled = !azureUnlocked;
     if (this.azureDartPlusButton) this.azureDartPlusButton.disabled = !azureUnlocked;
     if (this.azureDartCount) this.azureDartCount.textContent = String(this.azureDartCountValue);

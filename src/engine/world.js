@@ -1204,6 +1204,7 @@ export class World {
 
 
   canAddAzureDart() {
+    if (isDevMode()) return true;
     return (this.berryReedPlants?.length ?? 0) >= 1
       && (this.water?.hygiene01 ?? 0) >= AZURE_DART_UNLOCK_HYGIENE01;
   }
