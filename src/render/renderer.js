@@ -246,38 +246,9 @@ export class Renderer {
       }
     }
 
-    const plantById = new Map(plants.map((entry) => [entry.id, entry]));
-
     for (const fruit of fruits) {
-      const plant = plantById.get(fruit.plantId);
-      if (!plant) continue;
-
-      const branchList = Array.isArray(plant.branches) ? plant.branches : [];
-      if (!branchList.length) continue;
-      const branch = branchList[Math.max(0, Math.min(branchList.length - 1, Math.floor(fruit.branchIndex ?? 0)))];
-      const t = Math.max(0.1, Math.min(0.95, branch?.t ?? 0.5));
-      const dir = branch?.side === -1 ? -1 : 1;
-      const len = Math.max(0.08, Math.min(0.5, branch?.len ?? 0.26));
-
-      const baseX = this.tankRect.x + plant.x * sx;
-      const baseY = this.tankRect.y + plant.bottomY * sy;
-      const h = plant.height * sy;
-      const sway = Math.sin(time * (plant.swayRate ?? 0.0012) + (plant.swayPhase ?? 0)) * (2.4 * sx);
-
-      const stemY = baseY - h * t;
-      const stemX = baseX + sway * t;
-      const tipX = stemX + dir * h * len * 0.32;
-      const tipY = stemY - h * len * 0.08;
-      const x = tipX + dir * 1.2 * sx;
-      const y = tipY + 1.8 * sy;
-
-      ctx.strokeStyle = 'hsla(123deg 34% 56% / 0.72)';
-      ctx.lineWidth = Math.max(0.8, 1.1 * sx);
-      ctx.beginPath();
-      ctx.moveTo(tipX, tipY);
-      ctx.lineTo(x, y);
-      ctx.stroke();
-
+      const x = this.tankRect.x + fruit.x * sx;
+      const y = this.tankRect.y + fruit.y * sy;
       const r = Math.max(1, (fruit.radius ?? 2.2) * ((sx + sy) * 0.5));
       ctx.fillStyle = 'hsla(332deg 58% 66% / 0.9)';
       ctx.beginPath();

@@ -250,10 +250,6 @@ function serializeBerryReedFruit(fruit) {
 function deserializeBerryReedFruit(data, bounds, plantById) {
   const source = data && typeof data === 'object' ? data : {};
   const plant = plantById.get(source.plantId) ?? null;
-  const maxBranchIndex = Math.max(0, (plant?.branches?.length ?? 1) - 1);
-  const branchIndex = Number.isFinite(source.branchIndex)
-    ? clamp(Math.floor(source.branchIndex), 0, maxBranchIndex)
-    : 0;
   const x = Number.isFinite(source.x) ? source.x : (plant?.x ?? bounds.width * 0.5);
   const y = Number.isFinite(source.y) ? source.y : (plant?.bottomY ?? bounds.height * 0.7);
   const spawnedAtSec = Number.isFinite(source.spawnedAtSec) ? source.spawnedAtSec : 0;
@@ -263,7 +259,7 @@ function deserializeBerryReedFruit(data, bounds, plantById) {
   return {
     id: Number.isFinite(source.id) ? source.id : 0,
     plantId: Number.isFinite(source.plantId) ? source.plantId : 0,
-    branchIndex,
+    branchIndex: Number.isFinite(source.branchIndex) ? Math.max(0, Math.floor(source.branchIndex)) : 0,
     x: clamp(x, 0, bounds.width),
     y: clamp(y, 0, bounds.height),
     radius: clamp(Number.isFinite(source.radius) ? source.radius : 2.4, 1.2, 4),
@@ -429,7 +425,6 @@ export class World {
     this.fruits = [];
     this.nextBerryReedPlantId = 1;
     this.nextFruitId = 1;
-    this.berryReedSpawnX01 = clamp(rand(0.38, 0.62), 0.2, 0.8);
 
     // Global environment state (will grow over time).
     this.water = this.#createInitialWaterState();
@@ -736,8 +731,7 @@ export class World {
       food: this.food.map((entry) => serializeFood(entry)),
       poop: this.poop.map((entry) => serializePoop(entry)),
       berryReedPlants: this.berryReedPlants.map((entry) => serializeBerryReedPlant(entry)),
-      fruits: this.fruits.map((entry) => serializeBerryReedFruit(entry)),
-      berryReedSpawnX01: this.berryReedSpawnX01
+      fruits: this.fruits.map((entry) => serializeBerryReedFruit(entry))
     };
   }
 
@@ -805,10 +799,6 @@ export class World {
     this.nextBerryReedPlantId = Math.max(1, ...this.berryReedPlants.map((entry) => Math.floor(entry.id || 0) + 1));
     this.nextFruitId = Math.max(1, ...this.fruits.map((entry) => Math.floor(entry.id || 0) + 1));
 
-    const spawnFromSave = Number.isFinite(source.berryReedSpawnX01) ? source.berryReedSpawnX01 : null;
-    const spawnFromPlant = this.berryReedPlants[0] ? (this.berryReedPlants[0].x / Math.max(1, this.bounds.width)) : null;
-    this.berryReedSpawnX01 = clamp(Number.isFinite(spawnFromSave) ? spawnFromSave : (Number.isFinite(spawnFromPlant) ? spawnFromPlant : this.berryReedSpawnX01), 0.2, 0.8);
-
     this.fishById = new Map();
     for (const fish of this.fish) this.fishById.set(fish.id, fish);
     if (!this.fishArchiveById.has(this.selectedFishId)) {
@@ -868,15 +858,8 @@ export class World {
     }
 
     for (const fruit of this.fruits) {
-      const plant = this.berryReedPlants.find((entry) => entry.id === fruit.plantId);
-      if (!plant) {
-        fruit.x = clamp(fruit.x, 0, width);
-        fruit.y = clamp(fruit.y, 0, height);
-        continue;
-      }
-      const anchor = this.#getBerryFruitAnchorPosition(plant, fruit.branchIndex);
-      fruit.x = anchor.x;
-      fruit.y = anchor.y;
+      fruit.x = clamp(fruit.x, 0, width);
+      fruit.y = clamp(fruit.y, 0, height);
     }
 
     this.#seedGroundAlgae();
@@ -1157,7 +1140,8 @@ export class World {
     if (!this.canAddBerryReedPlant()) return false;
     if (this.berryReedPlants.length >= BERRY_REED_MAX_COUNT) return false;
 
-    const x = clamp(this.bounds.width * this.berryReedSpawnX01, 14, Math.max(14, this.bounds.width - 14));
+    const centerOffset = rand(-this.bounds.width * 0.12, this.bounds.width * 0.12);
+    const x = clamp(this.bounds.width * 0.5 + centerOffset, 14, Math.max(14, this.bounds.width - 14));
     const plant = {
       id: this.nextBerryReedPlantId++,
       x,
@@ -1841,31 +1825,6 @@ export class World {
     }));
   }
 
-  #getBerryFruitAnchorPosition(plant, branchIndex) {
-    const branches = Array.isArray(plant?.branches) ? plant.branches : [];
-    const safeIndex = Math.max(0, Math.min(branches.length - 1, Math.floor(branchIndex ?? 0)));
-    const branch = branches[safeIndex];
-    if (!branch) {
-      return {
-        x: clamp(plant?.x ?? this.bounds.width * 0.5, 0, this.bounds.width),
-        y: clamp((plant?.bottomY ?? this.bounds.height) - (plant?.height ?? this.bounds.height * 0.2), 0, this.bounds.height)
-      };
-    }
-
-    const t = clamp(Number.isFinite(branch.t) ? branch.t : 0.5, 0.1, 0.95);
-    const dir = branch.side === -1 ? -1 : 1;
-    const len = clamp(Number.isFinite(branch.len) ? branch.len : 0.26, 0.08, 0.5);
-    const stemY = (plant.bottomY ?? this.bounds.height) - (plant.height ?? this.bounds.height * 0.24) * t;
-    const stemX = plant.x ?? this.bounds.width * 0.5;
-    const tipX = stemX + dir * (plant.height ?? this.bounds.height * 0.24) * len * 0.32;
-    const tipY = stemY - (plant.height ?? this.bounds.height * 0.24) * len * 0.08;
-
-    return {
-      x: clamp(tipX + dir * 1.2, 0, this.bounds.width),
-      y: clamp(tipY + 1.6, 0, this.bounds.height)
-    };
-  }
-
   #spawnBerryFruit(plant) {
     if (!plant || !Array.isArray(plant.branches) || plant.branches.length === 0) return false;
     const fruitsOnPlant = this.fruits.filter((entry) => entry.plantId === plant.id).length;
@@ -1873,14 +1832,16 @@ export class World {
     if (this.fruits.length >= BERRY_REED_MAX_FRUITS) return false;
 
     const branchIndex = Math.floor(rand(0, plant.branches.length));
-    const anchor = this.#getBerryFruitAnchorPosition(plant, branchIndex);
+    const branch = plant.branches[branchIndex];
+    const stemY = plant.bottomY - plant.height * branch.t;
+    const stemX = plant.x + branch.side * plant.height * branch.len;
 
     this.fruits.push({
       id: this.nextFruitId++,
       plantId: plant.id,
       branchIndex,
-      x: anchor.x,
-      y: anchor.y,
+      x: clamp(stemX, 0, this.bounds.width),
+      y: clamp(stemY, 0, this.bounds.height),
       radius: rand(1.8, 3),
       spawnedAtSec: this.simTimeSec,
       expiresAtSec: this.simTimeSec + BERRY_REED_FRUIT_TTL_SEC
@@ -1898,18 +1859,7 @@ export class World {
 
     for (let i = this.fruits.length - 1; i >= 0; i -= 1) {
       const fruit = this.fruits[i];
-      if (!fruit || this.simTimeSec >= (fruit.expiresAtSec ?? 0)) {
-        this.fruits.splice(i, 1);
-        continue;
-      }
-      const plant = this.berryReedPlants.find((entry) => entry.id === fruit.plantId);
-      if (!plant) {
-        this.fruits.splice(i, 1);
-        continue;
-      }
-      const anchor = this.#getBerryFruitAnchorPosition(plant, fruit.branchIndex);
-      fruit.x = anchor.x;
-      fruit.y = anchor.y;
+      if (!fruit || this.simTimeSec >= (fruit.expiresAtSec ?? 0)) this.fruits.splice(i, 1);
     }
 
     for (const plant of this.berryReedPlants) {
