@@ -6,7 +6,7 @@
 import { World } from './engine/world.js';
 import { Renderer } from './render/renderer.js';
 import { Panel } from './ui/panel.js';
-import { onDevModeChanged, toggleDevMode } from './dev.js';
+import { isDevMode, onDevModeChanged, toggleDevMode } from './dev.js';
 
 const DEFAULT_INITIAL_FISH_COUNT = 4;
 const SAVE_STORAGE_KEY = 'aquatab_save_v1';
@@ -699,7 +699,29 @@ function startSimulation({ savedPayload = null } = {}) {
     onFilterMaintain: () => world.maintainWaterFilter?.(),
     onFilterTogglePower: () => world.toggleWaterFilterEnabled?.(),
     onFilterUpgrade: () => world.upgradeWaterFilter?.(),
-    onAddBerryReed: () => world.addBerryReedPlant?.(),
+    onAddBerryReed: () => {
+      const result = world.addBerryReedPlant?.() ?? { ok: false, reason: 'WORLD_NOT_READY' };
+      if (result.ok) {
+        showFilterToast('Berry Reed added');
+        return result;
+      }
+
+      if (result.reason === 'MAX_COUNT') showFilterToast('Berry Reed already added');
+      else if (result.reason === 'LOCKED') showFilterToast('Berry Reed locked');
+      else if (result.reason === 'WORLD_NOT_READY') showFilterToast('Not ready yet');
+
+      if (isDevMode()) {
+        console.warn('[BerryReed]', result.reason, {
+          birthsCount: world.birthsCount,
+          hygiene01: world.water?.hygiene01,
+          plantCount: world.berryReedPlants?.length ?? 0,
+          maxCount: world.getBerryReedMaxCount?.() ?? 1,
+          bounds: world.bounds
+        });
+      }
+
+      return result;
+    },
     onAddAzureDart: () => world.addAzureDartSchool?.(),
     onGrantUnlockPrereqs: () => world.grantAllUnlockPrerequisites?.(),
     onRestartConfirm: () => restartToStartScreen()

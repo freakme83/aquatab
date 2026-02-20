@@ -178,8 +178,14 @@ export class Panel {
       if (this.speciesContent) this.speciesContent.hidden = !nextOpen;
     });
 
-    this.addBerryReedButton?.addEventListener('click', () => {
-      this.handlers.onAddBerryReed?.();
+    this.addBerryReedButton?.addEventListener('pointerup', (event) => {
+      event.preventDefault();
+      const result = this.handlers.onAddBerryReed?.();
+      return result;
+    });
+
+    this.addAzureDartButton?.addEventListener('click', () => {
+      this.handlers.onAddAzureDart?.();
     });
 
     this.addAzureDartButton?.addEventListener('click', () => {

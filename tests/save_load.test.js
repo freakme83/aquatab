@@ -206,7 +206,7 @@ test('births count and berry reed entities persist through save/load', () => {
   const world = makeWorldForTest();
   world.birthsCount = 5;
   world.water.hygiene01 = 0.92;
-  assert.equal(world.addBerryReedPlant(), true);
+  assert.equal(world.addBerryReedPlant().ok, true);
   const plant = world.berryReedPlants[0];
   world.fruits.push({
     id: world.nextFruitId++,

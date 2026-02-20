@@ -1208,15 +1208,12 @@ export class World {
   }
 
   addBerryReedPlant() {
-    const warnDev = (reason) => {
-      if (isDevMode()) console.warn(`[dev] addBerryReedPlant blocked: ${reason}`);
-      return false;
-    };
+    const fail = (reason) => ({ ok: false, reason });
 
-    if (!this.canAddBerryReedPlant()) return warnDev('locked');
-    if (this.berryReedPlants.length >= BERRY_REED_MAX_COUNT) return warnDev('cap reached');
+    if (!this.canAddBerryReedPlant()) return fail('LOCKED');
+    if (this.berryReedPlants.length >= BERRY_REED_MAX_COUNT) return fail('MAX_COUNT');
     if (!Number.isFinite(this.bounds?.width) || !Number.isFinite(this.bounds?.height) || this.bounds.width < 20 || this.bounds.height < 20) {
-      return warnDev('world bounds not ready');
+      return fail('WORLD_NOT_READY');
     }
 
     const centerOffset = rand(-this.bounds.width * 0.12, this.bounds.width * 0.12);
@@ -1233,10 +1230,14 @@ export class World {
     };
 
     this.berryReedPlants.push(plant);
-    return true;
+    return { ok: true };
   }
 
 
+
+  getBerryReedMaxCount() {
+    return BERRY_REED_MAX_COUNT;
+  }
 
   getAzureDartCount() {
     return this.fish.filter((fish) => fish.speciesId === AZURE_DART_SPECIES_ID && fish.lifeState === 'ALIVE').length;
