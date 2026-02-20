@@ -654,3 +654,13 @@ test('azure dart unlock stays available after threshold dip while under cap', ()
   world.water.hygiene01 = 0.2;
   assert.equal(world.canAddAzureDart(), true);
 });
+
+
+test('species tab clear-selection path is safe via toggleFishSelection(null)', () => {
+  const world = makeWorldForTest();
+  const fishId = world.fish[1]?.id ?? world.fish[0].id;
+  world.selectFish(fishId);
+  assert.equal(world.selectedFishId, fishId);
+  world.toggleFishSelection(null);
+  assert.equal(world.selectedFishId, null);
+});

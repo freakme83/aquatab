@@ -1020,6 +1020,10 @@ export class World {
   }
 
   toggleFishSelection(fishId) {
+    if (fishId == null) {
+      this.selectedFishId = null;
+      return null;
+    }
     if (this.selectedFishId === fishId) {
       this.selectedFishId = null;
       return null;
@@ -1204,8 +1208,16 @@ export class World {
   }
 
   addBerryReedPlant() {
-    if (!this.canAddBerryReedPlant()) return false;
-    if (this.berryReedPlants.length >= BERRY_REED_MAX_COUNT) return false;
+    const warnDev = (reason) => {
+      if (isDevMode()) console.warn(`[dev] addBerryReedPlant blocked: ${reason}`);
+      return false;
+    };
+
+    if (!this.canAddBerryReedPlant()) return warnDev('locked');
+    if (this.berryReedPlants.length >= BERRY_REED_MAX_COUNT) return warnDev('cap reached');
+    if (!Number.isFinite(this.bounds?.width) || !Number.isFinite(this.bounds?.height) || this.bounds.width < 20 || this.bounds.height < 20) {
+      return warnDev('world bounds not ready');
+    }
 
     const centerOffset = rand(-this.bounds.width * 0.12, this.bounds.width * 0.12);
     const x = clamp(this.bounds.width * 0.5 + centerOffset, 14, Math.max(14, this.bounds.width - 14));

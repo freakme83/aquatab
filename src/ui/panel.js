@@ -14,6 +14,7 @@ export class Panel {
     this.currentInspectorDetailTab = 'info';
     this.currentInspectorSpeciesTab = 'LAB_MINNOW';
     this.lastInspectorSignature = null;
+    this.lastObservedSelectedFishId = null;
 
     this.tabButtons = [...this.root.querySelectorAll('.tab-button')];
     this.tabContents = [...this.root.querySelectorAll('.tab-content')];
@@ -237,7 +238,9 @@ export class Panel {
         const nextSpecies = speciesTabButton.dataset.inspectorSpeciesTab === 'AZURE_DART' ? 'AZURE_DART' : 'LAB_MINNOW';
         this.currentInspectorSpeciesTab = nextSpecies;
         this.currentInspectorSelectedFishId = null;
+        this.handlers.onFishSelect?.(null);
         this.lastInspectorSignature = null;
+        this.lastObservedSelectedFishId = null;
         return;
       }
 
@@ -245,6 +248,7 @@ export class Panel {
       if (detailTabButton) {
         this.currentInspectorDetailTab = detailTabButton.dataset.fishDetailTab === 'history' ? 'history' : 'info';
         this.lastInspectorSignature = null;
+    this.lastObservedSelectedFishId = null;
         return;
       }
 
@@ -532,9 +536,11 @@ export class Panel {
     });
 
     const selectedFishAnySpecies = sorted.find((fish) => fish.id === selectedFishId) ?? null;
-    if (selectedFishAnySpecies?.speciesId === 'AZURE_DART' || selectedFishAnySpecies?.speciesId === 'LAB_MINNOW') {
+    const selectedChanged = selectedFishId !== this.lastObservedSelectedFishId;
+    if (selectedChanged && (selectedFishAnySpecies?.speciesId === 'AZURE_DART' || selectedFishAnySpecies?.speciesId === 'LAB_MINNOW')) {
       this.currentInspectorSpeciesTab = selectedFishAnySpecies.speciesId;
     }
+    this.lastObservedSelectedFishId = selectedFishId ?? null;
 
     const filtered = sorted.filter((fish) => (fish.speciesId ?? 'LAB_MINNOW') === this.currentInspectorSpeciesTab);
     const selectedFish = filtered.find((fish) => fish.id === selectedFishId) ?? null;
