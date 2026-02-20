@@ -557,7 +557,10 @@ test('speciesId persists and azure dart survives save/load', () => {
   world.birthsCount = 10;
   world.water.hygiene01 = 1;
   world.addBerryReedPlant();
-  assert.equal(world.addAzureDartSchool(4), true);
+  assert.equal(world.addAzureDartSchool(), true);
+  assert.equal(world.addAzureDartSchool(), true);
+  assert.equal(world.addAzureDartSchool(), true);
+  assert.equal(world.addAzureDartSchool(), true);
 
   const loaded = roundTrip(world);
   const azure = loaded.fish.filter((f) => f.speciesId === 'AZURE_DART');
@@ -587,19 +590,23 @@ test('cross-species reproduction does not occur', () => {
   assert.equal(world.eggs.length, 0);
 });
 
-test('azure dart add-school special count rule N=3 spawns four fish', () => {
+test('azure dart add button spawns one fish per click and caps at four total', () => {
   const world = makeWorldForTest();
   world.birthsCount = 10;
   world.water.hygiene01 = 1;
   world.addBerryReedPlant();
-  const before = world.fish.length;
 
-  assert.equal(world.addAzureDartSchool(3), true);
-  const added = world.fish.slice(before);
-  assert.equal(added.length, 4);
-  assert.equal(added.filter((f) => f.speciesId === 'AZURE_DART').length, 4);
-  assert.equal(added.filter((f) => f.sex === 'female').length, 3);
-  assert.equal(added.filter((f) => f.sex === 'male').length, 1);
+  assert.equal(world.getAzureDartCount(), 0);
+  assert.equal(world.addAzureDartSchool(), true);
+  assert.equal(world.getAzureDartCount(), 1);
+  assert.equal(world.addAzureDartSchool(), true);
+  assert.equal(world.getAzureDartCount(), 2);
+  assert.equal(world.addAzureDartSchool(), true);
+  assert.equal(world.getAzureDartCount(), 3);
+  assert.equal(world.addAzureDartSchool(), true);
+  assert.equal(world.getAzureDartCount(), 4);
+  assert.equal(world.canAddAzureDart(), false);
+  assert.equal(world.addAzureDartSchool(), false);
 });
 
 

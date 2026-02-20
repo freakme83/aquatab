@@ -1074,8 +1074,9 @@ export class Fish {
     const align = { x: (ax / am) * (schooling.alignment ?? 0.3), y: (ay / am) * (schooling.alignment ?? 0.3) };
     const separate = { x: sx * (schooling.separation ?? 1.1), y: sy * (schooling.separation ?? 1.1) };
 
-    let outX = (cohesion.x + align.x + separate.x) * this.schoolingBias * soloMul;
-    let outY = (cohesion.y + align.y + separate.y) * this.schoolingBias * soloMul;
+    const groupIntensity = count >= 3 ? 1.3 : 0.9;
+    let outX = (cohesion.x + align.x + separate.x) * this.schoolingBias * soloMul * groupIntensity;
+    let outY = (cohesion.y + align.y + separate.y) * this.schoolingBias * soloMul * groupIntensity;
     const maxInfluence = Math.max(0.1, schooling.maxInfluence ?? 2);
     const mag = Math.hypot(outX, outY);
     if (mag > maxInfluence) {

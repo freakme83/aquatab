@@ -65,14 +65,10 @@ export class Panel {
     this.berryReqBirths = this.root.querySelector('[data-berry-req-births]');
     this.berryReqCleanliness = this.root.querySelector('[data-berry-req-cleanliness]');
     this.addAzureDartButton = this.root.querySelector('[data-control="addAzureDart"]');
-    this.azureDartMinusButton = this.root.querySelector('[data-control="azureDartMinus"]');
-    this.azureDartPlusButton = this.root.querySelector('[data-control="azureDartPlus"]');
-    this.azureDartCount = this.root.querySelector('[data-azure-count]');
     this.azureDartState = this.root.querySelector('[data-azure-state]');
     this.azureDartReqBerry = this.root.querySelector('[data-azure-req-berry]');
     this.azureDartReqCleanliness = this.root.querySelector('[data-azure-req-cleanliness]');
     this.azureDartRow = this.root.querySelector('[data-azure-dart-row]');
-    this.azureDartCountValue = 4;
 
     this.installFilterButton = this.root.querySelector('[data-control="installFilter"]');
     this.maintainFilterButton = this.root.querySelector('[data-control="maintainFilter"]');
@@ -185,17 +181,7 @@ export class Panel {
     });
 
     this.addAzureDartButton?.addEventListener('click', () => {
-      this.handlers.onAddAzureDart?.(this.azureDartCountValue);
-    });
-
-    this.azureDartMinusButton?.addEventListener('click', () => {
-      this.azureDartCountValue = Math.max(2, this.azureDartCountValue - 1);
-      if (this.azureDartCount) this.azureDartCount.textContent = String(this.azureDartCountValue);
-    });
-
-    this.azureDartPlusButton?.addEventListener('click', () => {
-      this.azureDartCountValue = Math.min(4, this.azureDartCountValue + 1);
-      if (this.azureDartCount) this.azureDartCount.textContent = String(this.azureDartCountValue);
+      this.handlers.onAddAzureDart?.();
     });
 
     this.grantUnlockPrereqsButton?.addEventListener('click', () => {
@@ -321,7 +307,8 @@ export class Panel {
     berryReedUnlockCleanlinessPct,
     canAddBerryReed,
     berryReedPlantCount,
-    canAddAzureDart
+    canAddAzureDart,
+    azureDartCount
   }) {
     this.updateDevSection();
     this.refreshSpeedControl();
@@ -506,17 +493,16 @@ export class Panel {
         : `Requires: Cleanliness 80%+ (currently ${roundedCleanlinessPct}%)`;
     }
     if (this.azureDartState) {
-      this.azureDartState.textContent = azureUnlocked ? 'Ready' : 'Locked';
-      this.azureDartState.style.color = azureUnlocked ? '#cfeeff' : '';
+      this.azureDartState.textContent = azureDartCount >= 4 ? 'Added' : (azureUnlocked ? 'Ready' : 'Locked');
+      this.azureDartState.style.color = azureDartCount >= 4
+        ? '#84e89a'
+        : (azureUnlocked ? '#cfeeff' : '');
     }
     if (this.azureDartRow) this.azureDartRow.classList.toggle('is-locked', !azureUnlocked);
     if (this.addAzureDartButton) {
       this.addAzureDartButton.disabled = !azureUnlocked;
       this.#setSpeciesButtonReady(this.addAzureDartButton, azureUnlocked);
     }
-    if (this.azureDartMinusButton) this.azureDartMinusButton.disabled = !azureUnlocked;
-    if (this.azureDartPlusButton) this.azureDartPlusButton.disabled = !azureUnlocked;
-    if (this.azureDartCount) this.azureDartCount.textContent = String(this.azureDartCountValue);
   }
 
   updateFishInspector(fishList, selectedFishId, simTimeSec) {

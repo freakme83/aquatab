@@ -41,6 +41,7 @@ const SPECIES_MAP = SPECIES ?? {};
 const LAB_MINNOW_SPECIES_ID = 'LAB_MINNOW';
 const AZURE_DART_SPECIES_ID = 'AZURE_DART';
 const AZURE_DART_UNLOCK_HYGIENE01 = 0.8;
+const AZURE_DART_MAX_PLAYER_COUNT = 4;
 
 const FEMALE_NAME_POOL = Array.isArray(CONFIG.FEMALE_NAME_POOL) ? CONFIG.FEMALE_NAME_POOL : [];
 const MALE_NAME_POOL = Array.isArray(CONFIG.MALE_NAME_POOL) ? CONFIG.MALE_NAME_POOL : [];
@@ -1203,26 +1204,30 @@ export class World {
 
 
 
+  getAzureDartCount() {
+    return this.fish.filter((fish) => fish.speciesId === AZURE_DART_SPECIES_ID).length;
+  }
+
   canAddAzureDart() {
+    const underCap = this.getAzureDartCount() < AZURE_DART_MAX_PLAYER_COUNT;
+    if (!underCap) return false;
     if (isDevMode()) return true;
     return (this.berryReedPlants?.length ?? 0) >= 1
       && (this.water?.hygiene01 ?? 0) >= AZURE_DART_UNLOCK_HYGIENE01;
   }
 
-  addAzureDartSchool(count = 4) {
+  addAzureDartSchool() {
     if (!this.canAddAzureDart()) return false;
-    const n = Math.max(2, Math.min(4, Math.floor(count)));
-    let sexes = [];
-    if (n === 2) sexes = ['female', 'male'];
-    else if (n === 3) sexes = ['female', 'female', 'female', 'male'];
-    else sexes = ['female', 'female', 'male', 'male'];
 
-    for (const sex of sexes) {
-      const fish = this.#createFish({ speciesId: AZURE_DART_SPECIES_ID, sex, initialAgeSec: 0 });
-      fish.spawnTimeSec = this.simTimeSec;
-      fish.ageSecCached = 0;
-      this.fish.push(fish);
-    }
+    const femaleCount = this.fish.filter((fish) => fish.speciesId === AZURE_DART_SPECIES_ID && fish.sex === 'female').length;
+    const maleCount = this.fish.filter((fish) => fish.speciesId === AZURE_DART_SPECIES_ID && fish.sex === 'male').length;
+    const sex = femaleCount <= maleCount ? 'female' : 'male';
+
+    const fish = this.#createFish({ speciesId: AZURE_DART_SPECIES_ID, sex, initialAgeSec: 0 });
+    fish.spawnTimeSec = this.simTimeSec;
+    fish.ageSecCached = 0;
+    this.fish.push(fish);
+
     return true;
   }
 

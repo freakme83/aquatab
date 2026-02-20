@@ -546,7 +546,8 @@ function tick(now) {
     berryReedUnlockCleanlinessPct: 80,
     canAddBerryReed: world.canAddBerryReedPlant?.() ?? false,
     berryReedPlantCount: world.berryReedPlants?.length ?? 0,
-    canAddAzureDart: world.canAddAzureDart?.() ?? false
+    canAddAzureDart: world.canAddAzureDart?.() ?? false,
+    azureDartCount: world.getAzureDartCount?.() ?? 0
   });
   panel.updateFishInspector(world.getFishInspectorList?.() ?? world.fish, world.selectedFishId, world.simTimeSec);
   updateCorpseActionButton();
@@ -699,7 +700,7 @@ function startSimulation({ savedPayload = null } = {}) {
     onFilterTogglePower: () => world.toggleWaterFilterEnabled?.(),
     onFilterUpgrade: () => world.upgradeWaterFilter?.(),
     onAddBerryReed: () => world.addBerryReedPlant?.(),
-    onAddAzureDart: (count) => world.addAzureDartSchool?.(count),
+    onAddAzureDart: () => world.addAzureDartSchool?.(),
     onGrantUnlockPrereqs: () => world.grantAllUnlockPrerequisites?.(),
     onRestartConfirm: () => restartToStartScreen()
   };
