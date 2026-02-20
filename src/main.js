@@ -524,6 +524,9 @@ function tick(now) {
     filterInstalled: world.water.filterInstalled,
     filterEnabled: world.water.filterEnabled,
     filter01: world.water.filter01,
+    filterTier: world.water.filterTier,
+    filterNextTierUnlockFeeds: world.getFilterTierUnlockFeeds?.((world.water.filterTier ?? 0) + 1) ?? 0,
+    foodsNeededForNextTier: Math.max(0, (world.getFilterTierUnlockFeeds?.((world.water.filterTier ?? 0) + 1) ?? 0) - world.foodsConsumedCount),
     installProgress01: world.water.installProgress01,
     maintenanceProgress01: world.water.maintenanceProgress01,
     maintenanceCooldownSec: world.water.maintenanceCooldownSec,
@@ -666,6 +669,7 @@ function startSimulation({ savedPayload = null } = {}) {
     onFilterInstall: () => world.installWaterFilter?.(),
     onFilterMaintain: () => world.maintainWaterFilter?.(),
     onFilterTogglePower: () => world.toggleWaterFilterEnabled?.(),
+    onFilterUpgrade: () => world.upgradeWaterFilter?.(),
     onRestartConfirm: () => restartToStartScreen()
   };
   if (!panel) {
