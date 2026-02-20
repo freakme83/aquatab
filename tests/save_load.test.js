@@ -535,3 +535,43 @@ test('grantAllUnlockPrerequisites bumps key unlock counters safely', () => {
     assert.ok(world.foodsConsumedCount >= world.getFilterTierUnlockFeeds(3));
   });
 });
+
+
+test('berry reed uses stable global spawn anchor and fruit remains branch-attached metadata', () => {
+  const world = makeWorldForTest();
+  world.birthsCount = 6;
+  world.water.hygiene01 = 0.95;
+
+  const spawnX01 = world.berryReedSpawnX01;
+  assert.equal(world.addBerryReedPlant(), true);
+  const plant = world.berryReedPlants[0];
+  assert.ok(Math.abs((plant.x / world.bounds.width) - spawnX01) < 0.001);
+
+  const spawned = world.fruits[0] ?? null;
+  if (spawned) {
+    assert.equal(typeof spawned.branchIndex, 'number');
+    assert.ok(spawned.branchIndex >= 0);
+  }
+
+  const loaded = roundTrip(world);
+  assert.equal(loaded.berryReedSpawnX01, spawnX01);
+});
+
+test('fish edible targets ignore berry fruits and keep normal food targeting', () => {
+  const world = makeWorldForTest();
+  world.spawnFood(120, 120, 1, 120);
+  world.fruits.push({
+    id: 1,
+    plantId: 99,
+    branchIndex: 0,
+    x: 200,
+    y: 200,
+    radius: 2,
+    spawnedAtSec: 1,
+    expiresAtSec: 100
+  });
+
+  const edible = world.getEdibleTargetsForFish(world.fish[0]);
+  assert.equal(edible.length, 1);
+  assert.equal(edible[0].id, world.food[0].id);
+});
