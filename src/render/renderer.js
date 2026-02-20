@@ -247,8 +247,29 @@ export class Renderer {
     }
 
     for (const fruit of fruits) {
-      const x = this.tankRect.x + fruit.x * sx;
-      const y = this.tankRect.y + fruit.y * sy;
+      const plant = plants.find((entry) => entry.id === fruit.plantId);
+      if (!plant) continue;
+
+      const branchIndex = Math.max(0, Math.min((plant.branches?.length ?? 1) - 1, Math.floor(fruit.branchIndex ?? 0)));
+      const branch = plant.branches?.[branchIndex];
+      if (!branch) continue;
+
+      const h = plant.height * sy;
+      const baseX = this.tankRect.x + plant.x * sx;
+      const baseY = this.tankRect.y + plant.bottomY * sy;
+      const sway = Math.sin(time * (plant.swayRate ?? 0.0012) + (plant.swayPhase ?? 0)) * (2.4 * sx);
+      const t = Math.max(0.1, Math.min(0.95, branch.t ?? 0.5));
+      const dir = branch.side === -1 ? -1 : 1;
+      const len = Math.max(0.08, Math.min(0.5, branch.len ?? 0.26));
+
+      const stemY = baseY - h * t;
+      const stemX = baseX + sway * t;
+      const tipX = stemX + dir * h * len * 0.32;
+      const tipY = stemY - h * len * 0.08;
+      const attachT = Math.max(0.35, Math.min(1, fruit.attachT ?? 1));
+
+      const x = stemX + (tipX - stemX) * attachT;
+      const y = stemY + (tipY - stemY) * attachT;
       const r = Math.max(1, (fruit.radius ?? 2.2) * ((sx + sy) * 0.5));
       ctx.fillStyle = 'hsla(332deg 58% 66% / 0.9)';
       ctx.beginPath();

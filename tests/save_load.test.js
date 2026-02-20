@@ -212,11 +212,11 @@ test('births count and berry reed entities persist through save/load', () => {
     id: world.nextFruitId++,
     plantId: plant.id,
     branchIndex: 0,
-    x: plant.x,
-    y: plant.bottomY - plant.height * 0.4,
+    attachT: 0.9,
     radius: 2.2,
     spawnedAtSec: 10,
-    expiresAtSec: 80
+    expiresAtSec: 80,
+    canBeEaten: false
   });
 
   const json = world.toJSON();
@@ -228,6 +228,8 @@ test('births count and berry reed entities persist through save/load', () => {
   assert.equal(loaded.berryReedPlants.length, 1);
   assert.equal(loaded.fruits.length, 1);
   assert.equal(loaded.berryReedPlants[0].id, plant.id);
+  assert.equal(loaded.fruits[0].canBeEaten, false);
+  assert.equal(loaded.fruits[0].attachT, 0.9);
 });
 
 test('name uniqueness and next-id counters remain valid after load', () => {

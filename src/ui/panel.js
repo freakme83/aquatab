@@ -174,10 +174,6 @@ export class Panel {
     this.addBerryReedButton?.addEventListener('click', () => {
       this.handlers.onAddBerryReed?.();
     });
-
-    this.grantUnlockPrereqsButton?.addEventListener('click', () => {
-      this.handlers.onGrantUnlockPrereqs?.();
-    });
   }
 
   #bindDeckToggle() {
