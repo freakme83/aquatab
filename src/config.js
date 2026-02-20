@@ -225,3 +225,64 @@ export const CONFIG = Object.freeze({
 
   }
 });
+
+export const SPECIES = Object.freeze({
+  LAB_MINNOW: Object.freeze({
+    id: 'LAB_MINNOW',
+    displayName: 'Lab Minnow',
+    diet: ['pellet'],
+    adultSizeScale: 1,
+    speedScale: 1,
+    lifespanScale: 1,
+    reproductionScale: 1,
+    clutchSizes: [2, 4],
+    schooling: Object.freeze({
+      enabled: false,
+      biasMin: 0,
+      biasMax: 0,
+      soloWindowSec: [0, 0],
+      soloCooldownSec: [0, 0],
+      cohesion: 0,
+      separation: 0,
+      alignment: 0,
+      neighborRadius: 0,
+      separationRadius: 0,
+      maxInfluence: 0
+    }),
+    turnRateScale: 1,
+    desiredTurnRateScale: 1,
+    bioloadFactor: 1,
+    poopBioloadFactor: 1,
+    renderStyle: 'LAB_MINNOW'
+  }),
+  AZURE_DART: Object.freeze({
+    id: 'AZURE_DART',
+    displayName: 'Azure Dart',
+    diet: ['fruit'],
+    adultSizeScale: 0.25,
+    speedScale: 2,
+    lifespanScale: 0.5,
+    reproductionScale: 0.5,
+    clutchSizes: [3, 4, 5],
+    schooling: Object.freeze({
+      enabled: true,
+      biasMin: 0.3,
+      biasMax: 0.9,
+      soloWindowSec: [3, 8],
+      soloCooldownSec: [8, 16],
+      cohesion: 0.85,
+      separation: 1.15,
+      alignment: 0.32,
+      neighborRadius: 105,
+      separationRadius: 28,
+      maxInfluence: 2.2
+    }),
+    turnRateScale: 1.8,
+    desiredTurnRateScale: 1.7,
+    bioloadFactor: 0.35,
+    poopBioloadFactor: 0.25,
+    renderStyle: 'AZURE_DART'
+  })
+});
+
+export const DEFAULT_SPECIES_ID = 'LAB_MINNOW';

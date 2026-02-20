@@ -648,3 +648,25 @@ input[type='range'] {
   letter-spacing: 0.08em;
   color: rgba(214, 235, 249, 0.88);
 }
+
+.species-row.is-locked {
+  opacity: 0.6;
+}
+
+.species-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.species-stepper button {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  padding: 0;
+}
+
+.species-stepper strong {
+  min-width: 16px;
+  text-align: center;
+}

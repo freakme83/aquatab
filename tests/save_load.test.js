@@ -537,3 +537,67 @@ test('grantAllUnlockPrerequisites bumps key unlock counters safely', () => {
     assert.ok(world.foodsConsumedCount >= world.getFilterTierUnlockFeeds(3));
   });
 });
+
+test('legacy fish saves without speciesId default to LAB_MINNOW', () => {
+  const world = makeWorldForTest();
+  const snap = world.toJSON();
+  delete snap.fish[0].speciesId;
+
+  const loaded = World.fromJSON({ saveVersion: 1, worldState: snap }, {
+    width: world.bounds.width,
+    height: world.bounds.height,
+    initialFishCount: world.initialFishCount
+  });
+
+  assert.equal(loaded.fish[0].speciesId, 'LAB_MINNOW');
+});
+
+test('speciesId persists and azure dart survives save/load', () => {
+  const world = makeWorldForTest();
+  world.birthsCount = 10;
+  world.water.hygiene01 = 1;
+  world.addBerryReedPlant();
+  assert.equal(world.addAzureDartSchool(4), true);
+
+  const loaded = roundTrip(world);
+  const azure = loaded.fish.filter((f) => f.speciesId === 'AZURE_DART');
+  assert.ok(azure.length >= 4);
+  assert.equal(loaded.fish.some((f) => f.speciesId === 'LAB_MINNOW'), true);
+});
+
+test('cross-species reproduction does not occur', () => {
+  const world = makeWorldForTest();
+  const female = world.fish[0];
+  const male = world.fish[1];
+  female.speciesId = 'LAB_MINNOW';
+  male.speciesId = 'AZURE_DART';
+  female.sex = 'female';
+  male.sex = 'male';
+  female.position = { x: 120, y: 120 };
+  male.position = { x: 121, y: 121 };
+  forceFishAliveAdultFed(female);
+  forceFishAliveAdultFed(male);
+  world.water.hygiene01 = 1;
+
+  withStubbedRandom(0, () => {
+    for (let i = 0; i < 8; i += 1) world.update(1);
+  });
+
+  assert.notEqual(female.repro.state, 'GRAVID');
+  assert.equal(world.eggs.length, 0);
+});
+
+test('azure dart add-school special count rule N=3 spawns four fish', () => {
+  const world = makeWorldForTest();
+  world.birthsCount = 10;
+  world.water.hygiene01 = 1;
+  world.addBerryReedPlant();
+  const before = world.fish.length;
+
+  assert.equal(world.addAzureDartSchool(3), true);
+  const added = world.fish.slice(before);
+  assert.equal(added.length, 4);
+  assert.equal(added.filter((f) => f.speciesId === 'AZURE_DART').length, 4);
+  assert.equal(added.filter((f) => f.sex === 'female').length, 3);
+  assert.equal(added.filter((f) => f.sex === 'male').length, 1);
+});
