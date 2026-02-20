@@ -713,14 +713,6 @@ export class Renderer {
       }
     }
 
-    if (isHovering && fish.lifeState === 'ALIVE') {
-      const hoverPulse = 0.09 + (Math.sin(time * 0.006 + fish.id) * 0.5 + 0.5) * 0.08;
-      ctx.beginPath();
-      ctx.fillStyle = `rgba(206, 238, 255, ${hoverPulse})`;
-      ctx.ellipse(0, 0, bodyLength * 0.58, bodyHeight * 0.58, 0, 0, TAU);
-      ctx.fill();
-    }
-
     if (fish.id === this.world.selectedFishId) {
       ctx.strokeStyle = 'rgba(152, 230, 255, 0.8)';
       ctx.lineWidth = 1.1;
