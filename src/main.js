@@ -6,6 +6,7 @@
 import { World } from './engine/world.js';
 import { Renderer } from './render/renderer.js';
 import { Panel } from './ui/panel.js';
+import { onDevModeChanged, toggleDevMode } from './dev.js';
 
 const DEFAULT_INITIAL_FISH_COUNT = 4;
 const SAVE_STORAGE_KEY = 'aquatab_save_v1';
@@ -382,7 +383,16 @@ function showFilterToast(textValue) {
   filterToastTimeoutId = setTimeout(() => {
     filterToast.hidden = true;
     filterToastTimeoutId = null;
-  }, 1000);
+  }, 2000);
+}
+
+
+function refreshDevModeUI() {
+  if (!panel) return;
+  panel.sync({
+    speedMultiplier: world?.speedMultiplier ?? 1,
+    paused: world?.paused ?? false
+  });
 }
 
 function worldToClientPoint(worldX, worldY) {
@@ -518,7 +528,7 @@ function tick(now) {
     fishCount: world.fish.length,
     cleanliness01: world.water.hygiene01,
     cleanlinessTrend: computeCleanlinessTrend(world.simTimeSec, world.water.hygiene01),
-    filterUnlocked: world.filterUnlocked,
+    filterUnlocked: world.isFeatureUnlocked?.('waterFilter') ?? world.filterUnlocked,
     foodsConsumedCount: world.foodsConsumedCount,
     filterUnlockThreshold: world.filterUnlockThreshold,
     filterInstalled: world.water.filterInstalled,
@@ -606,6 +616,18 @@ window.addEventListener('beforeunload', () => {
   saveWorldSnapshot();
 });
 
+document.addEventListener('keydown', (event) => {
+  if (!event.ctrlKey || !event.shiftKey || event.code !== 'KeyD') return;
+  event.preventDefault();
+  const enabled = toggleDevMode();
+  showFilterToast(`Dev mode ${enabled ? 'ON' : 'OFF'}`);
+});
+
+onDevModeChanged(() => {
+  if (world) world.setSpeedMultiplier(world.speedMultiplier);
+  refreshDevModeUI();
+});
+
 
 function restartToStartScreen() {
   if (!started) return;
@@ -676,6 +698,7 @@ function startSimulation({ savedPayload = null } = {}) {
     onFilterTogglePower: () => world.toggleWaterFilterEnabled?.(),
     onFilterUpgrade: () => world.upgradeWaterFilter?.(),
     onAddBerryReed: () => world.addBerryReedPlant?.(),
+    onGrantUnlockPrereqs: () => world.grantAllUnlockPrerequisites?.(),
     onRestartConfirm: () => restartToStartScreen()
   };
   if (!panel) {

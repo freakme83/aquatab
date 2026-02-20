@@ -633,3 +633,18 @@ input[type='range'] {
   width: 0;
   background: linear-gradient(90deg, #58ace8, #96dbff);
 }
+
+.dev-panel {
+  margin-top: 10px;
+  border: 1px dashed rgba(169, 206, 233, 0.25);
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(20, 38, 56, 0.2);
+}
+
+.dev-panel__label {
+  margin: 0 0 6px;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  color: rgba(214, 235, 249, 0.88);
+}

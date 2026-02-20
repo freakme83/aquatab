@@ -484,3 +484,54 @@ test('upgradeWaterFilter applies recovery kick and tier scaling improves cleanup
   assert.ok(tier2World.water.dirt01 < tier1World.water.dirt01, 'tier 2 should remove more dirt over time');
   assert.ok(tier2World.water.hygiene01 > tier1World.water.hygiene01, 'tier 2 should recover hygiene faster');
 });
+
+function withMockedDevMode(enabled, fn) {
+  const originalWindow = globalThis.window;
+  const storage = new Map([['aquatab_dev_mode', enabled ? '1' : '0']]);
+  globalThis.window = {
+    localStorage: {
+      getItem: (key) => storage.get(key) ?? null,
+      setItem: (key, value) => storage.set(key, String(value))
+    },
+    dispatchEvent: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {}
+  };
+
+  try {
+    return fn();
+  } finally {
+    globalThis.window = originalWindow;
+  }
+}
+
+test('dev mode bypasses feature unlock gates and grants extended speed range', () => {
+  withMockedDevMode(true, () => {
+    const world = makeWorldForTest();
+    world.birthsCount = 0;
+    world.water.hygiene01 = 0.2;
+    world.foodsConsumedCount = 0;
+    world.filterUnlocked = false;
+
+    assert.equal(world.canAddBerryReedPlant(), true);
+    assert.equal(world.installWaterFilter(), true);
+
+    world.setSpeedMultiplier(16);
+    assert.equal(world.speedMultiplier, 16);
+  });
+});
+
+test('grantAllUnlockPrerequisites bumps key unlock counters safely', () => {
+  withMockedDevMode(true, () => {
+    const world = makeWorldForTest();
+    world.birthsCount = 1;
+    world.foodsConsumedCount = 0;
+    world.water.hygiene01 = 0.5;
+
+    world.grantAllUnlockPrerequisites();
+
+    assert.ok(world.birthsCount >= 4);
+    assert.ok(world.water.hygiene01 >= 0.95);
+    assert.ok(world.foodsConsumedCount >= world.getFilterTierUnlockFeeds(3));
+  });
+});
