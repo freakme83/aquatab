@@ -405,19 +405,48 @@ export class Renderer {
   #drawPollutionTint(ctx) {
     const { x, y, width, height } = this.tankRect;
     const dirt01 = Math.max(0, Math.min(1, this.world.water?.dirt01 ?? 0));
+    if (dirt01 <= 0.001) return;
+
+    const ease = (value) => value * value * (3 - 2 * value);
     const start = Math.max(0, Math.min(1, CONFIG.world.water.POLLUTION_TINT_START ?? 0.9));
     const span = Math.max(0.0001, 1 - start);
 
     let t = Math.max(0, Math.min(1, (dirt01 - start) / span));
-    t = t * t * (3 - 2 * t);
+    t = ease(t);
 
     const maxAlpha = Math.max(0, Math.min(1, CONFIG.world.water.POLLUTION_TINT_MAX_ALPHA ?? 0.18));
     const alpha = t * maxAlpha;
-    if (alpha <= 0.001) return;
+    const murkMaxAlpha = Math.max(0, Math.min(1, CONFIG.world.water.POLLUTION_MURK_MAX_ALPHA ?? 0.18));
+    const murkAlpha = ease(dirt01) * murkMaxAlpha;
+
+    const settleColor = CONFIG.world.water.POLLUTION_SETTLE_COLOR ?? '74, 98, 76';
+    const settleMaxAlpha = Math.max(0, Math.min(1, CONFIG.world.water.POLLUTION_SETTLE_MAX_ALPHA ?? 0.26));
+    const settleCurve = ease(Math.max(0, Math.min(1, (dirt01 - 0.35) / 0.65)));
+    const settleAlphaBottom = settleCurve * settleMaxAlpha;
+
+    if (alpha <= 0.001 && murkAlpha <= 0.001 && settleAlphaBottom <= 0.001) return;
+
+    if (murkAlpha > 0.001) {
+      ctx.fillStyle = `rgba(22, 34, 30, ${murkAlpha})`;
+      ctx.fillRect(x, y, width, height);
+    }
 
     const tintColor = CONFIG.world.water.POLLUTION_TINT_COLOR ?? '86, 108, 78';
-    ctx.fillStyle = `rgba(${tintColor}, ${alpha})`;
-    ctx.fillRect(x, y, width, height);
+    if (alpha > 0.001) {
+      ctx.fillStyle = `rgba(${tintColor}, ${alpha})`;
+      ctx.fillRect(x, y, width, height);
+    }
+
+    if (settleAlphaBottom > 0.001) {
+      const settleTopAlpha = settleAlphaBottom * 0.08;
+      const settleGradient = ctx.createLinearGradient(0, y, 0, y + height);
+      settleGradient.addColorStop(0, `rgba(${settleColor}, 0)`);
+      settleGradient.addColorStop(0.45, `rgba(${settleColor}, ${settleTopAlpha})`);
+      settleGradient.addColorStop(0.78, `rgba(${settleColor}, ${settleAlphaBottom * 0.58})`);
+      settleGradient.addColorStop(1, `rgba(${settleColor}, ${settleAlphaBottom})`);
+      ctx.fillStyle = settleGradient;
+      ctx.fillRect(x, y, width, height);
+    }
   }
 
   #drawWaterParticles(ctx, delta) {
