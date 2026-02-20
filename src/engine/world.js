@@ -69,6 +69,15 @@ const CORPSE_DIRT_STEP_SEC = 60;
 const CORPSE_DIRT_INITIAL01 = 0.07;
 const CORPSE_DIRT_STEP01 = 0.01;
 const CORPSE_DIRT_MAX01 = 0.12;
+const BERRY_REED_UNLOCK_BIRTHS = 4;
+const BERRY_REED_UNLOCK_HYGIENE01 = 0.8;
+const BERRY_REED_MAX_COUNT = 1;
+const BERRY_REED_FRUIT_INTERVAL_MIN_SEC = 16;
+const BERRY_REED_FRUIT_INTERVAL_MAX_SEC = 48;
+const BERRY_REED_FRUIT_INTERVAL_JITTER_SEC = 4;
+const BERRY_REED_FRUIT_TTL_SEC = 90;
+const BERRY_REED_MAX_FRUITS = 20;
+const BERRY_REED_MAX_FRUITS_PER_PLANT = 6;
 
 const WORLD_SAVE_VERSION = 1;
 export const WATER_SAVE_KEYS = [
@@ -100,6 +109,9 @@ export const EGG_SAVE_KEYS = [
   'canBeEaten',
   'nutrition'
 ];
+export const BERRY_REED_BRANCH_SAVE_KEYS = ['t', 'side', 'len'];
+export const BERRY_REED_PLANT_SAVE_KEYS = ['id', 'x', 'bottomY', 'height', 'swayPhase', 'swayRate', 'branches', 'nextFruitAtSec'];
+export const BERRY_REED_FRUIT_SAVE_KEYS = ['id', 'plantId', 'branchIndex', 'attachT', 'radius', 'spawnedAtSec', 'expiresAtSec', 'canBeEaten'];
 
 function deepCopyPlain(value) {
   if (Array.isArray(value)) return value.map((entry) => deepCopyPlain(entry));
@@ -196,6 +208,59 @@ function deserializeEgg(data, bounds, swimHeight) {
 
 function serializeWater(water) {
   return pickSavedKeys(water, WATER_SAVE_KEYS);
+}
+
+function serializeBerryReedPlant(plant) {
+  const source = pickSavedKeys(plant, BERRY_REED_PLANT_SAVE_KEYS);
+  source.branches = Array.isArray(plant?.branches)
+    ? plant.branches.map((branch) => pickSavedKeys(branch, BERRY_REED_BRANCH_SAVE_KEYS))
+    : [];
+  return source;
+}
+
+function deserializeBerryReedPlant(data, bounds) {
+  const source = data && typeof data === 'object' ? data : {};
+  const branchSource = Array.isArray(source.branches) ? source.branches : [];
+  const minBottomY = Math.max(0, bounds.height - 14);
+  const maxBottomY = Math.max(minBottomY, bounds.height - 1);
+  return {
+    id: Number.isFinite(source.id) ? source.id : 0,
+    x: clamp(Number.isFinite(source.x) ? source.x : bounds.width * 0.5, 10, Math.max(10, bounds.width - 10)),
+    bottomY: clamp(Number.isFinite(source.bottomY) ? source.bottomY : bounds.height - 4, minBottomY, maxBottomY),
+    height: clamp(Number.isFinite(source.height) ? source.height : bounds.height * 0.24, bounds.height * 0.14, bounds.height * 0.35),
+    swayPhase: Number.isFinite(source.swayPhase) ? source.swayPhase : rand(0, Math.PI * 2),
+    swayRate: clamp(Number.isFinite(source.swayRate) ? source.swayRate : rand(0.0008, 0.0016), 0.0002, 0.004),
+    branches: branchSource
+      .slice(0, 6)
+      .map((branch) => ({
+        t: clamp(Number.isFinite(branch?.t) ? branch.t : rand(0.2, 0.92), 0.1, 0.95),
+        side: branch?.side === -1 ? -1 : 1,
+        len: clamp(Number.isFinite(branch?.len) ? branch.len : rand(0.18, 0.4), 0.08, 0.5)
+      })),
+    nextFruitAtSec: Number.isFinite(source.nextFruitAtSec) ? source.nextFruitAtSec : Infinity
+  };
+}
+
+function serializeBerryReedFruit(fruit) {
+  return pickSavedKeys(fruit, BERRY_REED_FRUIT_SAVE_KEYS);
+}
+
+function deserializeBerryReedFruit(data, bounds, plantById) {
+  const source = data && typeof data === 'object' ? data : {};
+  const spawnedAtSec = Number.isFinite(source.spawnedAtSec) ? source.spawnedAtSec : 0;
+  const expiresAtSec = Number.isFinite(source.expiresAtSec)
+    ? source.expiresAtSec
+    : spawnedAtSec + BERRY_REED_FRUIT_TTL_SEC;
+  return {
+    id: Number.isFinite(source.id) ? source.id : 0,
+    plantId: Number.isFinite(source.plantId) ? source.plantId : 0,
+    branchIndex: Number.isFinite(source.branchIndex) ? Math.max(0, Math.floor(source.branchIndex)) : 0,
+    attachT: clamp(Number.isFinite(source.attachT) ? source.attachT : 1, 0.35, 1),
+    radius: clamp(Number.isFinite(source.radius) ? source.radius : 2.4, 1.2, 4),
+    spawnedAtSec,
+    expiresAtSec,
+    canBeEaten: false
+  };
 }
 
 function deserializeWater(data, defaults) {
@@ -338,6 +403,7 @@ export class World {
 
     this.initialFishCount = normalizedInitialFishCount;
     this.foodsConsumedCount = 0;
+    this.birthsCount = 0;
     this.filterUnlockThreshold = this.initialFishCount * 4;
     this.filterUnlocked = false;
     this.filterDepletedThreshold01 = FILTER_DEPLETED_THRESHOLD_01;
@@ -350,6 +416,10 @@ export class World {
     this.scheduledPoopSpawns = [];
     this.groundAlgae = [];
     this.fxParticles = [];
+    this.berryReedPlants = [];
+    this.fruits = [];
+    this.nextBerryReedPlantId = 1;
+    this.nextFruitId = 1;
 
     // Global environment state (will grow over time).
     this.water = this.#createInitialWaterState();
@@ -648,12 +718,15 @@ export class World {
       speedMultiplier: Number.isFinite(this.speedMultiplier) ? this.speedMultiplier : 1,
       initialFishCount: this.initialFishCount,
       foodsConsumedCount: this.foodsConsumedCount,
+      birthsCount: this.birthsCount,
       water: serializeWater(this.water),
       fish: this.fish.map((entry) => entry.toJSON()),
       fishArchive: [...this.fishArchiveById.values()].map((entry) => entry.toJSON()),
       eggs: this.eggs.map((entry) => serializeEgg(entry)),
       food: this.food.map((entry) => serializeFood(entry)),
-      poop: this.poop.map((entry) => serializePoop(entry))
+      poop: this.poop.map((entry) => serializePoop(entry)),
+      berryReedPlants: this.berryReedPlants.map((entry) => serializeBerryReedPlant(entry)),
+      fruits: this.fruits.map((entry) => serializeBerryReedFruit(entry))
     };
   }
 
@@ -665,6 +738,7 @@ export class World {
     this.simTimeSec = Math.max(0, Number.isFinite(source.simTimeSec) ? source.simTimeSec : 0);
     this.initialFishCount = Math.max(1, Math.min(6, Math.round(Number.isFinite(source.initialFishCount) ? source.initialFishCount : this.initialFishCount)));
     this.foodsConsumedCount = Math.max(0, Math.floor(Number.isFinite(source.foodsConsumedCount) ? source.foodsConsumedCount : this.foodsConsumedCount));
+    this.birthsCount = Math.max(0, Math.floor(Number.isFinite(source.birthsCount) ? source.birthsCount : 0));
     // Compatibility note: older saves included `realTimeSec` as a parallel clock.
     // We intentionally ignore it and keep `simTimeSec` as the only canonical sim time.
     this.speedMultiplier = Math.max(0.5, Math.min(3, Number.isFinite(source.speedMultiplier) ? source.speedMultiplier : this.speedMultiplier));
@@ -700,12 +774,25 @@ export class World {
       ? source.poop.map((entry) => deserializePoop(entry, this.bounds, swimHeight))
       : [];
 
+    this.berryReedPlants = Array.isArray(source.berryReedPlants)
+      ? source.berryReedPlants.map((entry) => deserializeBerryReedPlant(entry, this.bounds)).slice(0, BERRY_REED_MAX_COUNT)
+      : [];
+    const plantById = new Map(this.berryReedPlants.map((entry) => [entry.id, entry]));
+    this.fruits = Array.isArray(source.fruits)
+      ? source.fruits
+        .map((entry) => deserializeBerryReedFruit(entry, this.bounds, plantById))
+        .filter((entry) => plantById.has(entry.plantId))
+        .slice(0, BERRY_REED_MAX_FRUITS)
+      : [];
+
     this.water = deserializeWater(source.water, this.#createInitialWaterState());
 
     this.nextFishId = Math.max(1, ...[...this.fishArchiveById.values()].map((entry) => Math.floor(entry.id || 0) + 1));
     this.nextFoodId = Math.max(1, ...this.food.map((entry) => Math.floor(entry.id || 0) + 1));
     this.nextPoopId = Math.max(1, ...this.poop.map((entry) => Math.floor(entry.id || 0) + 1));
     this.nextEggId = Math.max(1, ...this.eggs.map((entry) => Math.floor(entry.id || 0) + 1));
+    this.nextBerryReedPlantId = Math.max(1, ...this.berryReedPlants.map((entry) => Math.floor(entry.id || 0) + 1));
+    this.nextFruitId = Math.max(1, ...this.fruits.map((entry) => Math.floor(entry.id || 0) + 1));
 
     this.fishById = new Map();
     for (const fish of this.fish) this.fishById.set(fish.id, fish);
@@ -756,6 +843,17 @@ export class World {
     for (const bubble of this.bubbles) {
       bubble.x = Math.min(Math.max(0, bubble.x), width);
       bubble.y = Math.min(Math.max(0, bubble.y), height + 40);
+    }
+
+    for (const plant of this.berryReedPlants) {
+      plant.x = clamp(plant.x, 10, Math.max(10, width - 10));
+      plant.bottomY = clamp(plant.bottomY, Math.max(0, height - 14), Math.max(0, height - 1));
+      plant.height = clamp(plant.height, height * 0.14, height * 0.35);
+    }
+
+    for (const fruit of this.fruits) {
+      fruit.attachT = clamp(Number.isFinite(fruit.attachT) ? fruit.attachT : 1, 0.35, 1);
+      fruit.canBeEaten = false;
     }
 
     this.#seedGroundAlgae();
@@ -975,6 +1073,7 @@ export class World {
     this.#updateFood(simDt, motionDt);
     this.#updatePoop(simDt, motionDt);
     this.#updateEggs(simDt);
+    this.#updateBerryReed(simDt);
     this.#updateWaterHygiene(simDt);
     this.#updateFxParticles(motionDt);
     this.#updateBubbles(motionDt);
@@ -1001,6 +1100,39 @@ export class World {
     if (!water?.filterUnlocked || water.filterInstalled || water.installProgress01 > 0) return false;
     water.installProgress01 = 0.000001;
     return true;
+  }
+
+  canAddBerryReedPlant() {
+    return this.birthsCount >= BERRY_REED_UNLOCK_BIRTHS
+      && (this.water?.hygiene01 ?? 0) >= BERRY_REED_UNLOCK_HYGIENE01;
+  }
+
+  addBerryReedPlant() {
+    if (!this.canAddBerryReedPlant()) return false;
+    if (this.berryReedPlants.length >= BERRY_REED_MAX_COUNT) return false;
+
+    const centerOffset = rand(-this.bounds.width * 0.12, this.bounds.width * 0.12);
+    const x = clamp(this.bounds.width * 0.5 + centerOffset, 14, Math.max(14, this.bounds.width - 14));
+    const plant = {
+      id: this.nextBerryReedPlantId++,
+      x,
+      bottomY: this.bounds.height - rand(2, 6),
+      height: rand(this.bounds.height * 0.2, this.bounds.height * 0.28),
+      swayPhase: rand(0, Math.PI * 2),
+      swayRate: rand(0.0009, 0.0017),
+      branches: this.#makeBerryReedBranches(),
+      nextFruitAtSec: this.simTimeSec + this.getBerryReedFruitSpawnIntervalSec(this.water?.hygiene01 ?? 1)
+    };
+
+    this.berryReedPlants.push(plant);
+    return true;
+  }
+
+  getBerryReedFruitSpawnIntervalSec(hygiene01) {
+    const h = clamp01(hygiene01);
+    if (h < 0.4) return Infinity;
+    const t = clamp01((h - 0.4) / 0.6);
+    return BERRY_REED_FRUIT_INTERVAL_MAX_SEC - (BERRY_REED_FRUIT_INTERVAL_MAX_SEC - BERRY_REED_FRUIT_INTERVAL_MIN_SEC) * t;
   }
 
 
@@ -1633,6 +1765,7 @@ export class World {
         baby.spawnTimeSec = this.simTimeSec;
         baby.ageSecCached = 0;
         this.fish.push(baby);
+        this.birthsCount += 1;
 
         const mother = this.getFishById(egg.motherId);
         if (mother) {
@@ -1652,6 +1785,69 @@ export class World {
       }
 
       this.eggs.splice(i, 1);
+    }
+  }
+
+  #makeBerryReedBranches() {
+    return Array.from({ length: 4 }, (_, index) => ({
+      t: 0.24 + index * 0.18 + rand(-0.04, 0.04),
+      side: index % 2 === 0 ? -1 : 1,
+      len: rand(0.2, 0.38)
+    }));
+  }
+
+  #spawnBerryFruit(plant) {
+    if (!plant || !Array.isArray(plant.branches) || plant.branches.length === 0) return false;
+    const fruitsOnPlant = this.fruits.filter((entry) => entry.plantId === plant.id).length;
+    if (fruitsOnPlant >= BERRY_REED_MAX_FRUITS_PER_PLANT) return false;
+    if (this.fruits.length >= BERRY_REED_MAX_FRUITS) return false;
+
+    const branchIndex = Math.floor(rand(0, plant.branches.length));
+
+    this.fruits.push({
+      id: this.nextFruitId++,
+      plantId: plant.id,
+      branchIndex,
+      attachT: rand(0.84, 1),
+      radius: rand(1.8, 3),
+      spawnedAtSec: this.simTimeSec,
+      expiresAtSec: this.simTimeSec + BERRY_REED_FRUIT_TTL_SEC,
+      canBeEaten: false
+    });
+
+    return true;
+  }
+
+  #updateBerryReed(dt) {
+    if (!Number.isFinite(dt) || dt <= 0) return;
+    if (!this.berryReedPlants.length) {
+      this.fruits = [];
+      return;
+    }
+
+    for (let i = this.fruits.length - 1; i >= 0; i -= 1) {
+      const fruit = this.fruits[i];
+      if (!fruit || this.simTimeSec >= (fruit.expiresAtSec ?? 0)) this.fruits.splice(i, 1);
+    }
+
+    for (const plant of this.berryReedPlants) {
+      if (!Number.isFinite(plant.nextFruitAtSec)) {
+        const resumedInterval = this.getBerryReedFruitSpawnIntervalSec(this.water?.hygiene01 ?? 1);
+        if (Number.isFinite(resumedInterval)) {
+          plant.nextFruitAtSec = this.simTimeSec + resumedInterval;
+        }
+      }
+      if (this.simTimeSec < (plant.nextFruitAtSec ?? Infinity)) continue;
+      const spawned = this.#spawnBerryFruit(plant);
+      const baseInterval = this.getBerryReedFruitSpawnIntervalSec(this.water?.hygiene01 ?? 1);
+      if (!Number.isFinite(baseInterval)) {
+        plant.nextFruitAtSec = Infinity;
+        continue;
+      }
+      const jitter = rand(-BERRY_REED_FRUIT_INTERVAL_JITTER_SEC, BERRY_REED_FRUIT_INTERVAL_JITTER_SEC);
+      const interval = Math.max(5, baseInterval + jitter);
+      plant.nextFruitAtSec = this.simTimeSec + interval;
+      if (!spawned && this.fruits.length >= BERRY_REED_MAX_FRUITS) break;
     }
   }
 

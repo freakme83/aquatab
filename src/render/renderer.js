@@ -99,6 +99,7 @@ export class Renderer {
     this.#drawCachedBackground(ctx);
     this.#drawPollutionTint(ctx);
     this.#drawWaterPlants(ctx, time);
+    this.#drawBerryReed(ctx, time);
     this.#drawGroundAlgae(ctx, time);
     this.#drawPlayEffects(ctx, time);
     this.#drawWaterParticles(ctx, delta);
@@ -200,6 +201,80 @@ export class Renderer {
       ctx.moveTo(baseX - w * 0.28, baseY);
       ctx.bezierCurveTo(baseX - w * 0.8 + sway * 0.2, baseY - h * 0.34, baseX - w * 0.12 + sway * 0.6, baseY - h * 0.7, baseX + sway * 0.56, baseY - h * 0.93);
       ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  #drawBerryReed(ctx, time) {
+    const sx = this.tankRect.width / this.world.bounds.width;
+    const sy = this.tankRect.height / this.world.bounds.height;
+    const plants = this.world.berryReedPlants ?? [];
+    const fruits = this.world.fruits ?? [];
+    if (!plants.length) return;
+
+    ctx.save();
+    ctx.lineCap = 'round';
+
+    for (const plant of plants) {
+      const baseX = this.tankRect.x + plant.x * sx;
+      const baseY = this.tankRect.y + plant.bottomY * sy;
+      const h = plant.height * sy;
+      const sway = Math.sin(time * (plant.swayRate ?? 0.0012) + (plant.swayPhase ?? 0)) * (2.4 * sx);
+
+      ctx.strokeStyle = 'hsla(136deg 38% 42% / 0.9)';
+      ctx.lineWidth = Math.max(1.4, 2 * sx);
+      ctx.beginPath();
+      ctx.moveTo(baseX, baseY);
+      ctx.bezierCurveTo(baseX - 4 * sx + sway * 0.2, baseY - h * 0.34, baseX + 3 * sx + sway, baseY - h * 0.72, baseX + sway, baseY - h);
+      ctx.stroke();
+
+      for (const branch of plant.branches ?? []) {
+        const t = Math.max(0.1, Math.min(0.95, branch.t ?? 0.5));
+        const dir = branch.side === -1 ? -1 : 1;
+        const len = Math.max(0.08, Math.min(0.5, branch.len ?? 0.26));
+        const stemY = baseY - h * t;
+        const stemX = baseX + sway * t;
+        const tipX = stemX + dir * h * len * 0.32;
+        const tipY = stemY - h * len * 0.08;
+
+        ctx.lineWidth = Math.max(1.1, 1.5 * sx);
+        ctx.beginPath();
+        ctx.moveTo(stemX, stemY);
+        ctx.quadraticCurveTo(stemX + dir * 4 * sx, stemY - h * 0.03, tipX, tipY);
+        ctx.stroke();
+      }
+    }
+
+    for (const fruit of fruits) {
+      const plant = plants.find((entry) => entry.id === fruit.plantId);
+      if (!plant) continue;
+
+      const branchIndex = Math.max(0, Math.min((plant.branches?.length ?? 1) - 1, Math.floor(fruit.branchIndex ?? 0)));
+      const branch = plant.branches?.[branchIndex];
+      if (!branch) continue;
+
+      const h = plant.height * sy;
+      const baseX = this.tankRect.x + plant.x * sx;
+      const baseY = this.tankRect.y + plant.bottomY * sy;
+      const sway = Math.sin(time * (plant.swayRate ?? 0.0012) + (plant.swayPhase ?? 0)) * (2.4 * sx);
+      const t = Math.max(0.1, Math.min(0.95, branch.t ?? 0.5));
+      const dir = branch.side === -1 ? -1 : 1;
+      const len = Math.max(0.08, Math.min(0.5, branch.len ?? 0.26));
+
+      const stemY = baseY - h * t;
+      const stemX = baseX + sway * t;
+      const tipX = stemX + dir * h * len * 0.32;
+      const tipY = stemY - h * len * 0.08;
+      const attachT = Math.max(0.35, Math.min(1, fruit.attachT ?? 1));
+
+      const x = stemX + (tipX - stemX) * attachT;
+      const y = stemY + (tipY - stemY) * attachT;
+      const r = Math.max(1, (fruit.radius ?? 2.2) * ((sx + sy) * 0.5));
+      ctx.fillStyle = 'hsla(332deg 58% 66% / 0.9)';
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, TAU);
+      ctx.fill();
     }
 
     ctx.restore();

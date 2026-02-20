@@ -530,7 +530,12 @@ function tick(now) {
     installProgress01: world.water.installProgress01,
     maintenanceProgress01: world.water.maintenanceProgress01,
     maintenanceCooldownSec: world.water.maintenanceCooldownSec,
-    filterDepletedThreshold01: world.filterDepletedThreshold01
+    filterDepletedThreshold01: world.filterDepletedThreshold01,
+    birthsCount: world.birthsCount,
+    berryReedUnlockBirths: 4,
+    berryReedUnlockCleanlinessPct: 80,
+    canAddBerryReed: world.canAddBerryReedPlant?.() ?? false,
+    berryReedPlantCount: world.berryReedPlants?.length ?? 0
   });
   panel.updateFishInspector(world.getFishInspectorList?.() ?? world.fish, world.selectedFishId, world.simTimeSec);
   updateCorpseActionButton();
@@ -670,6 +675,7 @@ function startSimulation({ savedPayload = null } = {}) {
     onFilterMaintain: () => world.maintainWaterFilter?.(),
     onFilterTogglePower: () => world.toggleWaterFilterEnabled?.(),
     onFilterUpgrade: () => world.upgradeWaterFilter?.(),
+    onAddBerryReed: () => world.addBerryReedPlant?.(),
     onRestartConfirm: () => restartToStartScreen()
   };
   if (!panel) {
