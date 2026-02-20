@@ -5,6 +5,7 @@
 
 import { Fish } from './fish.js';
 import { CONFIG } from '../config.js';
+import { getMaxSimSpeedMultiplier, isDevMode } from '../dev.js';
 
 const MAX_TILT = CONFIG.world.maxTiltRad;
 const rand = (min, max) => min + Math.random() * (max - min);
@@ -741,7 +742,7 @@ export class World {
     this.birthsCount = Math.max(0, Math.floor(Number.isFinite(source.birthsCount) ? source.birthsCount : 0));
     // Compatibility note: older saves included `realTimeSec` as a parallel clock.
     // We intentionally ignore it and keep `simTimeSec` as the only canonical sim time.
-    this.speedMultiplier = Math.max(0.5, Math.min(3, Number.isFinite(source.speedMultiplier) ? source.speedMultiplier : this.speedMultiplier));
+    this.speedMultiplier = Math.max(MIN_SIM_SPEED_MULTIPLIER, Math.min(getMaxSimSpeedMultiplier(), Number.isFinite(source.speedMultiplier) ? source.speedMultiplier : this.speedMultiplier));
     const fishArchiveSource = Array.isArray(source.fishArchive) ? source.fishArchive : source.fish;
     const fishArchive = Array.isArray(fishArchiveSource)
       ? fishArchiveSource.map((entry) => Fish.fromJSON(entry, this.bounds))
@@ -813,6 +814,7 @@ export class World {
     this.expiredFoodSinceLastWaterUpdate = 0;
     this.filterUnlockThreshold = Math.max(1, this.initialFishCount * 4);
     this.filterUnlocked = this.foodsConsumedCount >= this.filterUnlockThreshold || Boolean(this.water.filterUnlocked || this.filterUnlocked);
+    this.water.filterUnlocked = this.isFeatureUnlocked('waterFilter');
     if (this.water.filterInstalled && this.water.filterTier < 1) this.water.filterTier = 1;
 
     return true;
@@ -1034,8 +1036,23 @@ export class World {
   setSpeedMultiplier(value) {
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) return this.speedMultiplier;
-    this.speedMultiplier = Math.max(0.5, Math.min(3, parsed));
+    this.speedMultiplier = Math.max(MIN_SIM_SPEED_MULTIPLIER, Math.min(getMaxSimSpeedMultiplier(), parsed));
     return this.speedMultiplier;
+  }
+
+  isFeatureUnlocked(featureId) {
+    if (isDevMode()) return true;
+
+    if (featureId === 'waterFilter') {
+      return this.foodsConsumedCount >= this.filterUnlockThreshold || Boolean(this.filterUnlocked || this.water?.filterUnlocked);
+    }
+
+    if (featureId === 'berryReed') {
+      return this.birthsCount >= BERRY_REED_UNLOCK_BIRTHS
+        && (this.water?.hygiene01 ?? 0) >= BERRY_REED_UNLOCK_HYGIENE01;
+    }
+
+    return false;
   }
 
   togglePause() {
@@ -1097,7 +1114,7 @@ export class World {
 
   installWaterFilter() {
     const water = this.water;
-    if (!water?.filterUnlocked || water.filterInstalled || water.installProgress01 > 0) return false;
+    if (!this.isFeatureUnlocked('waterFilter') || water.filterInstalled || water.installProgress01 > 0) return false;
     water.installProgress01 = 0.000001;
     return true;
   }
@@ -1166,7 +1183,7 @@ export class World {
 
     const nextTier = Math.max(2, water.filterTier + 1);
     const unlockFeeds = this.getFilterTierUnlockFeeds(nextTier);
-    if (this.foodsConsumedCount < unlockFeeds) return false;
+    if (!isDevMode() && this.foodsConsumedCount < unlockFeeds) return false;
 
     water.filterTier = nextTier;
     water.dirt01 = clamp01(water.dirt01 - 0.05);
@@ -1211,7 +1228,7 @@ export class World {
     const bioload = fishCount / WATER_REFERENCE_FISH_COUNT;
     const water = this.water;
 
-    water.filterUnlocked = this.filterUnlocked;
+    water.filterUnlocked = this.isFeatureUnlocked('waterFilter');
 
     if (water.installProgress01 > 0 && !water.filterInstalled) {
       water.installProgress01 = clamp(water.installProgress01 + dtSec / FILTER_INSTALL_DURATION_SEC, 0, 1);
