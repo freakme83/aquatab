@@ -529,7 +529,7 @@ function tick(now) {
     maintenanceCooldownSec: world.water.maintenanceCooldownSec,
     filterDepletedThreshold01: world.filterDepletedThreshold01
   });
-  panel.updateFishInspector(world.fish, world.selectedFishId, world.simTimeSec);
+  panel.updateFishInspector(world.getFishInspectorList?.() ?? world.fish, world.selectedFishId, world.simTimeSec);
   updateCorpseActionButton();
 
   const timing = world.debugTiming;
@@ -659,6 +659,7 @@ function startSimulation({ savedPayload = null } = {}) {
     onSpeedChange: (value) => world.setSpeedMultiplier(value),
     onPauseToggle: () => world.togglePause(),
     onFishSelect: (fishId) => world.toggleFishSelection(fishId),
+    onFishFocus: (fishId) => world.selectFish(fishId),
     onFishRename: (fishId, name) => world.renameFish(fishId, name),
     onFishDiscard: (fishId) => world.discardFish(fishId),
     onGetFishById: (fishId) => world.getFishById?.(fishId),

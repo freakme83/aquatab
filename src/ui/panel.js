@@ -185,6 +185,13 @@ export class Panel {
         return;
       }
 
+      const linkFishButton = event.target.closest('[data-history-fish-id]');
+      if (linkFishButton) {
+        const targetFishId = Number(linkFishButton.dataset.historyFishId);
+        if (Number.isFinite(targetFishId)) this.handlers.onFishFocus?.(targetFishId);
+        return;
+      }
+
       const discardButton = event.target.closest('[data-fish-discard]');
       if (!discardButton || this.currentInspectorSelectedFishId == null) return;
       this.handlers.onFishDiscard?.(this.currentInspectorSelectedFishId);
@@ -315,10 +322,6 @@ export class Panel {
     });
 
     const selectedFish = sorted.find((fish) => fish.id === selectedFishId) ?? null;
-    if ((selectedFish?.id ?? null) !== this.currentInspectorSelectedFishId) {
-      this.currentInspectorDetailTab = 'info';
-    }
-
     const selectedLiveAgeSec = selectedFish ? Math.floor(selectedFish.ageSeconds(simTimeSec)) : -1;
     const selectedHungerPct = selectedFish ? Math.round((selectedFish.hunger01 ?? 0) * 100) : -1;
     const selectedWellbeingPct = selectedFish ? Math.round((selectedFish.wellbeing01 ?? 0) * 100) : -1;
@@ -405,25 +408,20 @@ export class Panel {
     `;
 
     const history = fish.history ?? {};
-    const motherValue = history.motherId != null ? this.resolveFishLabelById(history.motherId) : '—';
-    const fatherValue = history.fatherId != null ? this.resolveFishLabelById(history.fatherId) : '—';
+    const motherValue = this.#historyFishReference(history.motherId);
+    const fatherValue = this.#historyFishReference(history.fatherId);
     const lifetimeValue = this.#formatMMSS(typeof fish.getLifeTimeSec === 'function' ? fish.getLifeTimeSec(simTimeSec) : 0);
-    const childrenIds = Array.isArray(history.childrenIds) ? history.childrenIds : [];
-    const childLabels = childrenIds.map((id) => this.resolveFishLabelById(id));
-    const childrenSummary = childLabels.length > 0 ? childLabels.join(', ') : '—';
-    const childrenMarkup = childLabels.length > 0
-      ? childLabels.map((label) => `<div class="history-child-item">${this.#escapeHtml(label)}</div>`).join('')
-      : '<div class="history-child-item">—</div>';
+    const [childrenSummary, childrenMarkup] = this.#historyFishReferenceList(history.childrenIds);
 
     const historyRows = `
-      <div class="stat-row"><span>Mother</span><strong>${this.#escapeHtml(motherValue)}</strong></div>
-      <div class="stat-row"><span>Father</span><strong>${this.#escapeHtml(fatherValue)}</strong></div>
+      <div class="stat-row"><span>Mother</span><strong>${motherValue}</strong></div>
+      <div class="stat-row"><span>Father</span><strong>${fatherValue}</strong></div>
       <div class="stat-row"><span>Born in aquarium</span><strong>${history.bornInAquarium ? 'Yes' : 'No'}</strong></div>
       <div class="stat-row"><span>Life duration</span><strong>${lifetimeValue}</strong></div>
       <div class="stat-row"><span>Died</span><strong>${this.#deathReasonLabel(fish)}</strong></div>
       <div class="stat-row"><span>Meals eaten</span><strong>${Math.max(0, Math.floor(history.mealsEaten ?? 0))}</strong></div>
       <div class="stat-row"><span>Times mated</span><strong>${Math.max(0, Math.floor(history.mateCount ?? 0))}</strong></div>
-      <div class="stat-row"><span>Children</span><strong>${this.#escapeHtml(childrenSummary)}</strong></div>
+      <div class="stat-row"><span>Children</span><strong>${childrenSummary}</strong></div>
       <div class="history-children-list">${childrenMarkup}</div>
     `;
 
@@ -450,6 +448,26 @@ export class Panel {
     return resolvedName || String(id);
   }
 
+
+
+  #historyFishReference(id) {
+    if (id == null) return '—';
+    const label = this.resolveFishLabelById(id);
+    const fishId = Number(id);
+    if (!Number.isFinite(fishId)) return this.#escapeHtml(label);
+    return `<button type="button" class="history-fish-link" data-history-fish-id="${fishId}">${this.#escapeHtml(label)}</button>`;
+  }
+
+  #historyFishReferenceList(ids) {
+    const normalized = Array.isArray(ids) ? ids : [];
+    if (normalized.length === 0) return ['—', '<div class="history-child-item">—</div>'];
+
+    const summary = normalized.map((id) => this.#historyFishReference(id)).join(', ');
+    const listMarkup = normalized
+      .map((id) => `<div class="history-child-item">${this.#historyFishReference(id)}</div>`)
+      .join('');
+    return [summary, listMarkup];
+  }
 
   #deathReasonLabel(fish) {
     if (!fish || fish.lifeState !== 'DEAD') return '—';

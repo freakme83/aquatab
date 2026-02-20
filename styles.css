@@ -520,6 +520,21 @@ input[type='range'] {
   font-weight: 600;
 }
 
+
+.history-fish-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: #9edfff;
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}
+
+.history-fish-link:hover {
+  color: #c9efff;
+}
+
 .history-children-list {
   margin-top: 4px;
   display: grid;
