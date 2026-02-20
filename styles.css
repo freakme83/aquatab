@@ -608,6 +608,19 @@ input[type='range'] {
   line-height: 1.35;
 }
 
+.species-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.species-row strong {
+  font-size: 0.76rem;
+  color: var(--text-soft);
+}
+
 .progress-track {
   height: 8px;
   border-radius: 999px;

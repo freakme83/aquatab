@@ -55,6 +55,13 @@ export class Panel {
     this.filterTierProgressRow = this.root.querySelector('[data-filter-tier-progress-row]');
     this.filterTierProgress = this.root.querySelector('[data-filter-tier-progress]');
     this.filterToggleRow = this.root.querySelector('[data-filter-toggle-row]');
+    this.speciesAccordion = this.root.querySelector('[data-species-accordion]');
+    this.speciesAccordionToggle = this.root.querySelector('[data-control="toggleSpeciesAccordion"]');
+    this.speciesContent = this.root.querySelector('[data-species-content]');
+    this.addBerryReedButton = this.root.querySelector('[data-control="addBerryReed"]');
+    this.berryState = this.root.querySelector('[data-berry-state]');
+    this.berryReqBirths = this.root.querySelector('[data-berry-req-births]');
+    this.berryReqCleanliness = this.root.querySelector('[data-berry-req-cleanliness]');
 
     this.installFilterButton = this.root.querySelector('[data-control="installFilter"]');
     this.maintainFilterButton = this.root.querySelector('[data-control="maintainFilter"]');
@@ -142,6 +149,17 @@ export class Panel {
 
     this.upgradeFilterButton?.addEventListener('click', () => {
       this.handlers.onFilterUpgrade?.();
+    });
+
+    this.speciesAccordionToggle?.addEventListener('click', () => {
+      const nextOpen = this.speciesAccordion?.dataset.open !== 'true';
+      if (this.speciesAccordion) this.speciesAccordion.dataset.open = String(nextOpen);
+      this.speciesAccordionToggle?.setAttribute('aria-expanded', String(nextOpen));
+      if (this.speciesContent) this.speciesContent.hidden = !nextOpen;
+    });
+
+    this.addBerryReedButton?.addEventListener('click', () => {
+      this.handlers.onAddBerryReed?.();
     });
   }
 
@@ -233,7 +251,12 @@ export class Panel {
     installProgress01,
     maintenanceProgress01,
     maintenanceCooldownSec,
-    filterDepletedThreshold01
+    filterDepletedThreshold01,
+    birthsCount,
+    berryReedUnlockBirths,
+    berryReedUnlockCleanlinessPct,
+    canAddBerryReed,
+    berryReedPlantCount
   }) {
     if (this.simTimeStat) {
       const totalSec = Math.max(0, Math.floor(simTimeSec ?? 0));
@@ -364,6 +387,41 @@ export class Panel {
       const canMaintain = filterInstalled && !isInstalling && !isMaintaining && (maintenanceCooldownSec ?? 0) <= 0;
       this.maintainFilterButton.hidden = !filterInstalled;
       this.maintainFilterButton.disabled = !canMaintain;
+    }
+
+    const roundedCleanlinessPct = Math.round((cleanliness01 ?? 1) * 100);
+    const requiredBirths = Math.max(1, Math.floor(berryReedUnlockBirths ?? 4));
+    const birthProgress = Math.max(0, Math.floor(birthsCount ?? 0));
+    const requiredCleanlinessPct = Math.max(1, Math.min(100, Math.floor(berryReedUnlockCleanlinessPct ?? 80)));
+    const alreadyAdded = (berryReedPlantCount ?? 0) >= 1;
+
+    if (this.speciesAccordion) this.speciesAccordion.classList.toggle('is-dim', !canAddBerryReed && !alreadyAdded);
+
+    if (this.berryReqBirths) {
+      this.berryReqBirths.textContent = `Requires: ${requiredBirths} births (${Math.min(birthProgress, requiredBirths)}/${requiredBirths})`;
+    }
+
+    if (this.berryReqCleanliness) {
+      this.berryReqCleanliness.textContent = roundedCleanlinessPct >= requiredCleanlinessPct
+        ? `Requires: Cleanliness ${requiredCleanlinessPct}%+ ✓`
+        : `Requires: Cleanliness ${requiredCleanlinessPct}%+ (currently ${roundedCleanlinessPct}%)`;
+    }
+
+    if (this.addBerryReedButton) {
+      if (alreadyAdded) {
+        this.addBerryReedButton.disabled = true;
+        this.addBerryReedButton.textContent = 'Added ✓';
+      } else {
+        this.addBerryReedButton.disabled = !canAddBerryReed;
+        this.addBerryReedButton.textContent = 'Berry Reed';
+      }
+    }
+
+    if (this.berryState) {
+      this.berryState.textContent = alreadyAdded ? 'Added' : (canAddBerryReed ? 'Ready' : 'Locked');
+      this.berryState.style.color = alreadyAdded
+        ? '#84e89a'
+        : (canAddBerryReed ? '#cfeeff' : '');
     }
   }
 
