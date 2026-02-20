@@ -55,8 +55,8 @@ export const CONFIG = Object.freeze({
     MATE_MIN_HYGIENE: 0.60,
 
     // Gestation + eggs
-    GESTATION_SEC: [300, 360],
-    EGG_INCUBATION_SEC: [120, 300],
+    GESTATION_SEC: [450, 540],
+    EGG_INCUBATION_SEC: [180, 450],
     MOTHER_COOLDOWN_SEC: [600, 1080],
     CLUTCH_SIZE: [2, 4],
 
@@ -129,7 +129,7 @@ export const CONFIG = Object.freeze({
     deadSinkSpeed: 30,
 
     metabolism: {
-      costPerPixel: 0.00004
+      costPerPixel: 0.00002
     },
     hunger: {
       hungryThreshold: 0.35,
@@ -164,20 +164,20 @@ export const CONFIG = Object.freeze({
     // Life cycle & growth (age-driven growth + small per-fish randomness).
     age: {
       // Target average lifespan for the default fish type (realtime seconds).
-      lifespanMeanSec: 90 * 60,
+      lifespanMeanSec: 180 * 60,
       // +/- jitter around the mean lifespan.
-      lifespanJitterSec: 15 * 60,
+      lifespanJitterSec: 30 * 60,
 
       // Stage boundaries (base values) in realtime seconds from birth.
       // Each fish gets a small per-fish jitter so they don't all sync.
       stageBaseSec: {
-        babyEndSec: 10 * 60,
-        juvenileEndSec: 25 * 60
+        babyEndSec: 20 * 60,
+        juvenileEndSec: 50 * 60
       },
-      stageJitterSec: 3 * 60,
+      stageJitterSec: 6 * 60,
 
       // Old stage starts at this fraction of lifespan.
-      oldStartRatio: 0.85,
+      oldStartRatio: 0.9,
 
       // Cap for randomized initial spawn age at game start (20 minutes).
       INITIAL_MAX_AGE_SEC: 1200
