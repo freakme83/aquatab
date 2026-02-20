@@ -1,0 +1,9 @@
+# Generated favicon assets (delivered via build artifact zip, not source control)
+public/favicon-16.png
+public/favicon-32.png
+public/favicon.ico
+public/apple-touch-icon.png
+public/icon-512.png
+
+# Local build artifact
+favicon-pack.zip
