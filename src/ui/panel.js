@@ -188,6 +188,10 @@ export class Panel {
       this.handlers.onAddAzureDart?.();
     });
 
+    this.addAzureDartButton?.addEventListener('click', () => {
+      this.handlers.onAddAzureDart?.();
+    });
+
     this.grantUnlockPrereqsButton?.addEventListener('click', () => {
       this.handlers.onGrantUnlockPrereqs?.();
     });
