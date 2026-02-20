@@ -1021,8 +1021,8 @@ export class World {
 
   getFilterTierUnlockFeeds(tier) {
     if (tier <= 1) return this.initialFishCount * 4;
-    if (tier === 2) return this.initialFishCount * 4;
-    if (tier >= 3) return this.initialFishCount * 10;
+    if (tier === 2) return this.initialFishCount * 8;
+    if (tier >= 3) return this.initialFishCount * 12;
     return this.initialFishCount * 4;
   }
 

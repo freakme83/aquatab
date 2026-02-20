@@ -344,16 +344,14 @@ export class Panel {
     if (this.filterTierRow) this.filterTierRow.hidden = !filterInstalled;
     if (this.filterTier) this.filterTier.textContent = `Tier ${Math.max(1, tier)}/3`;
 
-    if (this.filterTierProgressRow) this.filterTierProgressRow.hidden = !filterInstalled;
+    if (this.filterTierProgressRow) this.filterTierProgressRow.hidden = !filterInstalled || tier >= 3;
     if (this.filterTierProgress) {
-      if (!filterInstalled) {
+      if (!filterInstalled || tier >= 3) {
         this.filterTierProgress.textContent = '';
-      } else if (tier >= 3) {
-        this.filterTierProgress.textContent = 'Max tier reached';
       } else if (canUpgrade) {
         this.filterTierProgress.textContent = 'Upgrade available';
       } else {
-        this.filterTierProgress.textContent = `Upgrade available at ${nextUnlock} feeds`;
+        this.filterTierProgress.textContent = `${neededFeeds} feeds left (${consumed}/${nextUnlock})`;
       }
     }
 

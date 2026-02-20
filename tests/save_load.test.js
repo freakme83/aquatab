@@ -396,8 +396,8 @@ test('water filter tier and feed counters persist through save-load', () => {
   assert.equal(loaded.initialFishCount, 5);
   assert.equal(loaded.foodsConsumedCount, 37);
   assert.equal(loaded.water.filterTier, 2);
-  assert.equal(loaded.getFilterTierUnlockFeeds(2), 20);
-  assert.equal(loaded.getFilterTierUnlockFeeds(3), 50);
+  assert.equal(loaded.getFilterTierUnlockFeeds(2), 40);
+  assert.equal(loaded.getFilterTierUnlockFeeds(3), 60);
 });
 
 test('upgradeWaterFilter applies recovery kick and tier scaling improves cleanup', () => {
@@ -408,7 +408,7 @@ test('upgradeWaterFilter applies recovery kick and tier scaling improves cleanup
   world.water.filterTier = 1;
   world.water.dirt01 = 0.4;
   world.water.hygiene01 = 0.5;
-  world.foodsConsumedCount = world.initialFishCount * 4;
+  world.foodsConsumedCount = world.initialFishCount * 8;
 
   const upgraded = world.upgradeWaterFilter();
   assert.equal(upgraded, true);
