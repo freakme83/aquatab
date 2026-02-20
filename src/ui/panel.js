@@ -297,12 +297,37 @@ export class Panel {
       this.installFilterButton.disabled = !canInstall;
     }
 
+    const health01 = Math.max(0, Math.min(1, filter01 ?? 0));
+    const depletedThreshold01 = Math.max(0, Math.min(1, filterDepletedThreshold01 ?? 0.1));
+    const warningThreshold01 = Math.min(1, depletedThreshold01 + 0.2);
+
     if (this.filterStatusRow) this.filterStatusRow.hidden = !filterInstalled;
-    if (this.filterStatus) this.filterStatus.textContent = filterEnabled ? 'ON' : 'OFF';
+    if (this.filterStatus) {
+      let statusLabel = 'OFF';
+      let statusColor = '#cfd9e3';
+      if (filterEnabled) {
+        if (health01 <= depletedThreshold01) {
+          statusLabel = 'DEPLETED';
+          statusColor = '#ef6b6b';
+        } else if (health01 <= warningThreshold01) {
+          statusLabel = 'MAINTENANCE DUE';
+          statusColor = '#f1a04f';
+        } else {
+          statusLabel = 'ON';
+          statusColor = '#84e89a';
+        }
+      }
+      this.filterStatus.textContent = statusLabel;
+      this.filterStatus.style.color = statusColor;
+    }
 
     if (this.filterHealthRow) this.filterHealthRow.hidden = !filterInstalled;
-    if (this.filterHealth) this.filterHealth.textContent = `${Math.round(Math.max(0, filter01 ?? 0) * 100)}%`;
-
+    if (this.filterHealth) {
+      this.filterHealth.textContent = `${Math.round(health01 * 100)}%`;
+      this.filterHealth.style.color = health01 <= depletedThreshold01
+        ? '#ef6b6b'
+        : (health01 <= warningThreshold01 ? '#f1a04f' : '');
+    }
 
     if (this.filterToggleRow) this.filterToggleRow.hidden = !filterInstalled;
     if (this.toggleFilterPowerButton) {
@@ -313,7 +338,8 @@ export class Panel {
     const tier = Math.max(0, Math.min(3, Math.floor(filterTier ?? 0)));
     const nextUnlock = Math.max(0, Math.floor(filterNextTierUnlockFeeds ?? 0));
     const neededFeeds = Math.max(0, Math.floor(foodsNeededForNextTier ?? 0));
-    const canUpgrade = filterInstalled && tier < 3 && neededFeeds <= 0;
+    const showUpgrade = filterInstalled && tier < 3;
+    const canUpgrade = showUpgrade && neededFeeds <= 0 && !isInstalling && !isMaintaining && filterEnabled;
 
     if (this.filterTierRow) this.filterTierRow.hidden = !filterInstalled;
     if (this.filterTier) this.filterTier.textContent = `Tier ${Math.max(1, tier)}/3`;
@@ -332,7 +358,7 @@ export class Panel {
     }
 
     if (this.upgradeFilterButton) {
-      this.upgradeFilterButton.hidden = !canUpgrade;
+      this.upgradeFilterButton.hidden = !showUpgrade;
       this.upgradeFilterButton.disabled = !canUpgrade;
     }
 
