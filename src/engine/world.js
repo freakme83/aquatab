@@ -79,6 +79,7 @@ const BERRY_REED_FRUIT_INTERVAL_JITTER_SEC = 4;
 const BERRY_REED_FRUIT_TTL_SEC = 90;
 const BERRY_REED_MAX_FRUITS = 20;
 const BERRY_REED_MAX_FRUITS_PER_PLANT = 6;
+const MIN_SIM_SPEED_MULTIPLIER = 0.5;
 
 const WORLD_SAVE_VERSION = 1;
 export const WATER_SAVE_KEYS = [
@@ -112,7 +113,7 @@ export const EGG_SAVE_KEYS = [
 ];
 export const BERRY_REED_BRANCH_SAVE_KEYS = ['t', 'side', 'len'];
 export const BERRY_REED_PLANT_SAVE_KEYS = ['id', 'x', 'bottomY', 'height', 'swayPhase', 'swayRate', 'branches', 'nextFruitAtSec'];
-export const BERRY_REED_FRUIT_SAVE_KEYS = ['id', 'plantId', 'branchIndex', 'attachT', 'radius', 'spawnedAtSec', 'expiresAtSec', 'canBeEaten'];
+export const BERRY_REED_FRUIT_SAVE_KEYS = ['id', 'plantId', 'branchIndex', 'x', 'y', 'radius', 'spawnedAtSec', 'expiresAtSec'];
 
 function deepCopyPlain(value) {
   if (Array.isArray(value)) return value.map((entry) => deepCopyPlain(entry));
@@ -248,6 +249,9 @@ function serializeBerryReedFruit(fruit) {
 
 function deserializeBerryReedFruit(data, bounds, plantById) {
   const source = data && typeof data === 'object' ? data : {};
+  const plant = plantById.get(source.plantId) ?? null;
+  const x = Number.isFinite(source.x) ? source.x : (plant?.x ?? bounds.width * 0.5);
+  const y = Number.isFinite(source.y) ? source.y : (plant?.bottomY ?? bounds.height * 0.7);
   const spawnedAtSec = Number.isFinite(source.spawnedAtSec) ? source.spawnedAtSec : 0;
   const expiresAtSec = Number.isFinite(source.expiresAtSec)
     ? source.expiresAtSec
@@ -256,11 +260,11 @@ function deserializeBerryReedFruit(data, bounds, plantById) {
     id: Number.isFinite(source.id) ? source.id : 0,
     plantId: Number.isFinite(source.plantId) ? source.plantId : 0,
     branchIndex: Number.isFinite(source.branchIndex) ? Math.max(0, Math.floor(source.branchIndex)) : 0,
-    attachT: clamp(Number.isFinite(source.attachT) ? source.attachT : 1, 0.35, 1),
+    x: clamp(x, 0, bounds.width),
+    y: clamp(y, 0, bounds.height),
     radius: clamp(Number.isFinite(source.radius) ? source.radius : 2.4, 1.2, 4),
     spawnedAtSec,
-    expiresAtSec,
-    canBeEaten: false
+    expiresAtSec
   };
 }
 
@@ -854,8 +858,8 @@ export class World {
     }
 
     for (const fruit of this.fruits) {
-      fruit.attachT = clamp(Number.isFinite(fruit.attachT) ? fruit.attachT : 1, 0.35, 1);
-      fruit.canBeEaten = false;
+      fruit.x = clamp(fruit.x, 0, width);
+      fruit.y = clamp(fruit.y, 0, height);
     }
 
     this.#seedGroundAlgae();
@@ -1120,8 +1124,16 @@ export class World {
   }
 
   canAddBerryReedPlant() {
-    return this.birthsCount >= BERRY_REED_UNLOCK_BIRTHS
-      && (this.water?.hygiene01 ?? 0) >= BERRY_REED_UNLOCK_HYGIENE01;
+    return this.isFeatureUnlocked('berryReed');
+  }
+
+  grantAllUnlockPrerequisites() {
+    this.birthsCount = Math.max(this.birthsCount, 999);
+    this.foodsConsumedCount = Math.max(this.foodsConsumedCount, this.getFilterTierUnlockFeeds(3));
+    if (this.water) {
+      this.water.hygiene01 = Math.max(this.water.hygiene01 ?? 0, 0.95);
+    }
+    this.filterUnlocked = this.foodsConsumedCount >= this.filterUnlockThreshold;
   }
 
   addBerryReedPlant() {
@@ -1820,16 +1832,19 @@ export class World {
     if (this.fruits.length >= BERRY_REED_MAX_FRUITS) return false;
 
     const branchIndex = Math.floor(rand(0, plant.branches.length));
+    const branch = plant.branches[branchIndex];
+    const stemY = plant.bottomY - plant.height * branch.t;
+    const stemX = plant.x + branch.side * plant.height * branch.len;
 
     this.fruits.push({
       id: this.nextFruitId++,
       plantId: plant.id,
       branchIndex,
-      attachT: rand(0.84, 1),
+      x: clamp(stemX, 0, this.bounds.width),
+      y: clamp(stemY, 0, this.bounds.height),
       radius: rand(1.8, 3),
       spawnedAtSec: this.simTimeSec,
-      expiresAtSec: this.simTimeSec + BERRY_REED_FRUIT_TTL_SEC,
-      canBeEaten: false
+      expiresAtSec: this.simTimeSec + BERRY_REED_FRUIT_TTL_SEC
     });
 
     return true;

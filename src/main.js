@@ -698,6 +698,7 @@ function startSimulation({ savedPayload = null } = {}) {
     onFilterTogglePower: () => world.toggleWaterFilterEnabled?.(),
     onFilterUpgrade: () => world.upgradeWaterFilter?.(),
     onAddBerryReed: () => world.addBerryReedPlant?.(),
+    onGrantUnlockPrereqs: () => world.grantAllUnlockPrerequisites?.(),
     onRestartConfirm: () => restartToStartScreen()
   };
   if (!panel) {
