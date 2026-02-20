@@ -662,7 +662,7 @@ export class Renderer {
     const light = baseLight * (rp.lightnessMult ?? 1);
 
     const sat = Math.max(18, Math.min(76, 52 * (rp.saturationMult ?? 1)));
-
+    const isAzureDart = fish.speciesId === 'AZURE_DART';
 
     ctx.save();
     ctx.translate(position.x, position.y);
@@ -672,8 +672,32 @@ export class Renderer {
     const bodyPath = new Path2D();
     bodyPath.ellipse(0, 0, bodyLength * 0.5, bodyHeight * 0.5, 0, 0, TAU);
 
-    ctx.fillStyle = isSkeleton ? 'hsl(36deg 8% 72%)' : (isDead ? 'hsl(0deg 0% 56%)' : `hsl(${fish.colorHue + tint}deg ${sat}% ${light}%)`);
-    ctx.fill(bodyPath);
+    if (isSkeleton) {
+      ctx.fillStyle = 'hsl(36deg 8% 72%)';
+      ctx.fill(bodyPath);
+    } else if (isDead) {
+      ctx.fillStyle = 'hsl(0deg 0% 56%)';
+      ctx.fill(bodyPath);
+    } else if (isAzureDart) {
+      const grad = ctx.createLinearGradient(-bodyLength * 0.5, 0, bodyLength * 0.5, 0);
+      grad.addColorStop(0, 'hsl(205deg 72% 66%)');
+      grad.addColorStop(0.55, 'hsl(212deg 82% 45%)');
+      grad.addColorStop(1, 'hsl(224deg 86% 22%)');
+      ctx.fillStyle = grad;
+      ctx.fill(bodyPath);
+      ctx.save();
+      ctx.globalAlpha = 0.88;
+      ctx.strokeStyle = 'rgba(245, 251, 255, 0.95)';
+      ctx.lineWidth = Math.max(1, bodyHeight * 0.2);
+      ctx.beginPath();
+      ctx.moveTo(-bodyLength * 0.35, 0);
+      ctx.lineTo(bodyLength * 0.42, 0);
+      ctx.stroke();
+      ctx.restore();
+    } else {
+      ctx.fillStyle = `hsl(${fish.colorHue + tint}deg ${sat}% ${light}%)`;
+      ctx.fill(bodyPath);
+    }
 
     const matingAnim = fish.matingAnim;
     if (matingAnim && fish.lifeState === 'ALIVE') {
@@ -709,11 +733,17 @@ export class Renderer {
     ctx.strokeStyle = 'rgba(205, 230, 245, 0.13)';
     ctx.stroke(bodyPath);
 
-    ctx.fillStyle = isSkeleton ? 'hsl(35deg 9% 54%)' : (isDead ? 'hsl(0deg 0% 42%)' : `hsl(${fish.colorHue + tint - 8}deg ${Math.max(12, sat - 12)}% ${light - 12}%)`);
+    ctx.fillStyle = isSkeleton ? 'hsl(35deg 9% 54%)' : (isDead ? 'hsl(0deg 0% 42%)' : (isAzureDart ? 'hsl(220deg 78% 24%)' : `hsl(${fish.colorHue + tint - 8}deg ${Math.max(12, sat - 12)}% ${light - 12}%)`));
     ctx.beginPath();
     ctx.moveTo(-bodyLength * 0.52, 0);
-    ctx.lineTo(-bodyLength * 0.84, bodyHeight * 0.35 + tailWag);
-    ctx.lineTo(-bodyLength * 0.84, -bodyHeight * 0.35 - tailWag);
+    if (isAzureDart) {
+      ctx.lineTo(-bodyLength * 0.86, bodyHeight * 0.22 + tailWag * 0.8);
+      ctx.lineTo(-bodyLength * 0.98, 0);
+      ctx.lineTo(-bodyLength * 0.86, -bodyHeight * 0.22 - tailWag * 0.8);
+    } else {
+      ctx.lineTo(-bodyLength * 0.84, bodyHeight * 0.35 + tailWag);
+      ctx.lineTo(-bodyLength * 0.84, -bodyHeight * 0.35 - tailWag);
+    }
     ctx.closePath();
     ctx.fill();
 
