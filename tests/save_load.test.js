@@ -484,3 +484,94 @@ test('upgradeWaterFilter applies recovery kick and tier scaling improves cleanup
   assert.ok(tier2World.water.dirt01 < tier1World.water.dirt01, 'tier 2 should remove more dirt over time');
   assert.ok(tier2World.water.hygiene01 > tier1World.water.hygiene01, 'tier 2 should recover hygiene faster');
 });
+
+function withMockedDevMode(enabled, fn) {
+  const originalWindow = globalThis.window;
+  const storage = new Map([['aquatab_dev_mode', enabled ? '1' : '0']]);
+  globalThis.window = {
+    localStorage: {
+      getItem: (key) => storage.get(key) ?? null,
+      setItem: (key, value) => storage.set(key, String(value))
+    },
+    dispatchEvent: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {}
+  };
+
+  try {
+    return fn();
+  } finally {
+    globalThis.window = originalWindow;
+  }
+}
+
+test('dev mode bypasses feature unlock gates and grants extended speed range', () => {
+  withMockedDevMode(true, () => {
+    const world = makeWorldForTest();
+    world.birthsCount = 0;
+    world.water.hygiene01 = 0.2;
+    world.foodsConsumedCount = 0;
+    world.filterUnlocked = false;
+
+    assert.equal(world.canAddBerryReedPlant(), true);
+    assert.equal(world.installWaterFilter(), true);
+
+    world.setSpeedMultiplier(16);
+    assert.equal(world.speedMultiplier, 16);
+  });
+});
+
+test('grantAllUnlockPrerequisites bumps key unlock counters safely', () => {
+  withMockedDevMode(true, () => {
+    const world = makeWorldForTest();
+    world.birthsCount = 1;
+    world.foodsConsumedCount = 0;
+    world.water.hygiene01 = 0.5;
+
+    world.grantAllUnlockPrerequisites();
+
+    assert.ok(world.birthsCount >= 4);
+    assert.ok(world.water.hygiene01 >= 0.95);
+    assert.ok(world.foodsConsumedCount >= world.getFilterTierUnlockFeeds(3));
+  });
+});
+
+
+test('berry reed uses stable global spawn anchor and fruit remains branch-attached metadata', () => {
+  const world = makeWorldForTest();
+  world.birthsCount = 6;
+  world.water.hygiene01 = 0.95;
+
+  const spawnX01 = world.berryReedSpawnX01;
+  assert.equal(world.addBerryReedPlant(), true);
+  const plant = world.berryReedPlants[0];
+  assert.ok(Math.abs((plant.x / world.bounds.width) - spawnX01) < 0.001);
+
+  const spawned = world.fruits[0] ?? null;
+  if (spawned) {
+    assert.equal(typeof spawned.branchIndex, 'number');
+    assert.ok(spawned.branchIndex >= 0);
+  }
+
+  const loaded = roundTrip(world);
+  assert.equal(loaded.berryReedSpawnX01, spawnX01);
+});
+
+test('fish edible targets ignore berry fruits and keep normal food targeting', () => {
+  const world = makeWorldForTest();
+  world.spawnFood(120, 120, 1, 120);
+  world.fruits.push({
+    id: 1,
+    plantId: 99,
+    branchIndex: 0,
+    x: 200,
+    y: 200,
+    radius: 2,
+    spawnedAtSec: 1,
+    expiresAtSec: 100
+  });
+
+  const edible = world.getEdibleTargetsForFish(world.fish[0]);
+  assert.equal(edible.length, 1);
+  assert.equal(edible[0].id, world.food[0].id);
+});

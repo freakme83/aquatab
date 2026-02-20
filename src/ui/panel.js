@@ -3,6 +3,8 @@
  * Responsibility: tabs, controls binding, and stat presentation.
  */
 
+import { getMaxSimSpeedMultiplier, isDevMode } from '../dev.js';
+
 export class Panel {
   constructor(rootElement, handlers) {
     this.root = rootElement;
@@ -74,6 +76,17 @@ export class Panel {
 
     this.speedValue = this.root.querySelector('[data-value="simSpeed"]');
     this.fishInspector = this.root.querySelector('[data-fish-inspector]');
+
+    this.devSection = document.createElement('section');
+    this.devSection.className = 'dev-panel';
+    this.devSection.hidden = true;
+    this.devSection.innerHTML = `
+      <p class="dev-panel__label">DEV MODE ON</p>
+      <div class="button-row"><button type="button" data-control="grantUnlockPrereqs">Grant all unlock prerequisites</button></div>
+    `;
+    const controlsPanel = this.root.querySelector('[data-content="controls"]');
+    controlsPanel?.appendChild(this.devSection);
+    this.grantUnlockPrereqsButton = this.devSection.querySelector('[data-control="grantUnlockPrereqs"]');
 
     this.deckToggle = document.getElementById('deckToggle');
 
@@ -161,6 +174,10 @@ export class Panel {
     this.addBerryReedButton?.addEventListener('click', () => {
       this.handlers.onAddBerryReed?.();
     });
+
+    this.grantUnlockPrereqsButton?.addEventListener('click', () => {
+      this.handlers.onGrantUnlockPrereqs?.();
+    });
   }
 
   #bindDeckToggle() {
@@ -227,10 +244,27 @@ export class Panel {
 
 
 
+  refreshSpeedControl() {
+    if (!this.speedSlider) return;
+    this.speedSlider.max = String(getMaxSimSpeedMultiplier());
+    const current = Number(this.speedSlider.value);
+    const clamped = Math.max(0.5, Math.min(getMaxSimSpeedMultiplier(), Number.isFinite(current) ? current : 1));
+    this.speedSlider.value = String(clamped);
+    if (this.speedValue) this.speedValue.textContent = `${clamped.toFixed(1)}x`;
+  }
+
+  updateDevSection() {
+    if (!this.devSection) return;
+    this.devSection.hidden = !isDevMode();
+  }
+
   sync({ speedMultiplier, paused }) {
-    this.speedSlider.value = String(speedMultiplier);
-    this.speedValue.textContent = `${speedMultiplier.toFixed(1)}x`;
+    this.refreshSpeedControl();
+    const clampedSpeed = Math.max(0.5, Math.min(getMaxSimSpeedMultiplier(), Number(speedMultiplier) || 1));
+    this.speedSlider.value = String(clampedSpeed);
+    this.speedValue.textContent = `${clampedSpeed.toFixed(1)}x`;
     this.toggleButton.textContent = paused ? 'Resume' : 'Pause';
+    this.updateDevSection();
     if (this.restartConfirm) this.restartConfirm.hidden = true;
   }
 
@@ -258,6 +292,9 @@ export class Panel {
     canAddBerryReed,
     berryReedPlantCount
   }) {
+    this.updateDevSection();
+    this.refreshSpeedControl();
+
     if (this.simTimeStat) {
       const totalSec = Math.max(0, Math.floor(simTimeSec ?? 0));
       const hh = String(Math.floor(totalSec / 3600)).padStart(2, '0');
@@ -362,7 +399,7 @@ export class Panel {
     const nextUnlock = Math.max(0, Math.floor(filterNextTierUnlockFeeds ?? 0));
     const neededFeeds = Math.max(0, Math.floor(foodsNeededForNextTier ?? 0));
     const showUpgrade = filterInstalled && tier < 3;
-    const canUpgrade = showUpgrade && neededFeeds <= 0 && !isInstalling && !isMaintaining && filterEnabled;
+    const canUpgrade = showUpgrade && (isDevMode() || neededFeeds <= 0) && !isInstalling && !isMaintaining && filterEnabled;
 
     if (this.filterTierRow) this.filterTierRow.hidden = !filterInstalled;
     if (this.filterTier) this.filterTier.textContent = `Tier ${Math.max(1, tier)}/3`;

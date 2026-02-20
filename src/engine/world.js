@@ -5,6 +5,7 @@
 
 import { Fish } from './fish.js';
 import { CONFIG } from '../config.js';
+import { getMaxSimSpeedMultiplier, isDevMode } from '../dev.js';
 
 const MAX_TILT = CONFIG.world.maxTiltRad;
 const rand = (min, max) => min + Math.random() * (max - min);
@@ -78,6 +79,7 @@ const BERRY_REED_FRUIT_INTERVAL_JITTER_SEC = 4;
 const BERRY_REED_FRUIT_TTL_SEC = 90;
 const BERRY_REED_MAX_FRUITS = 20;
 const BERRY_REED_MAX_FRUITS_PER_PLANT = 6;
+const MIN_SIM_SPEED_MULTIPLIER = 0.5;
 
 const WORLD_SAVE_VERSION = 1;
 export const WATER_SAVE_KEYS = [
@@ -248,6 +250,10 @@ function serializeBerryReedFruit(fruit) {
 function deserializeBerryReedFruit(data, bounds, plantById) {
   const source = data && typeof data === 'object' ? data : {};
   const plant = plantById.get(source.plantId) ?? null;
+  const maxBranchIndex = Math.max(0, (plant?.branches?.length ?? 1) - 1);
+  const branchIndex = Number.isFinite(source.branchIndex)
+    ? clamp(Math.floor(source.branchIndex), 0, maxBranchIndex)
+    : 0;
   const x = Number.isFinite(source.x) ? source.x : (plant?.x ?? bounds.width * 0.5);
   const y = Number.isFinite(source.y) ? source.y : (plant?.bottomY ?? bounds.height * 0.7);
   const spawnedAtSec = Number.isFinite(source.spawnedAtSec) ? source.spawnedAtSec : 0;
@@ -257,7 +263,7 @@ function deserializeBerryReedFruit(data, bounds, plantById) {
   return {
     id: Number.isFinite(source.id) ? source.id : 0,
     plantId: Number.isFinite(source.plantId) ? source.plantId : 0,
-    branchIndex: Number.isFinite(source.branchIndex) ? Math.max(0, Math.floor(source.branchIndex)) : 0,
+    branchIndex,
     x: clamp(x, 0, bounds.width),
     y: clamp(y, 0, bounds.height),
     radius: clamp(Number.isFinite(source.radius) ? source.radius : 2.4, 1.2, 4),
@@ -423,6 +429,7 @@ export class World {
     this.fruits = [];
     this.nextBerryReedPlantId = 1;
     this.nextFruitId = 1;
+    this.berryReedSpawnX01 = clamp(rand(0.38, 0.62), 0.2, 0.8);
 
     // Global environment state (will grow over time).
     this.water = this.#createInitialWaterState();
@@ -729,7 +736,8 @@ export class World {
       food: this.food.map((entry) => serializeFood(entry)),
       poop: this.poop.map((entry) => serializePoop(entry)),
       berryReedPlants: this.berryReedPlants.map((entry) => serializeBerryReedPlant(entry)),
-      fruits: this.fruits.map((entry) => serializeBerryReedFruit(entry))
+      fruits: this.fruits.map((entry) => serializeBerryReedFruit(entry)),
+      berryReedSpawnX01: this.berryReedSpawnX01
     };
   }
 
@@ -744,7 +752,7 @@ export class World {
     this.birthsCount = Math.max(0, Math.floor(Number.isFinite(source.birthsCount) ? source.birthsCount : 0));
     // Compatibility note: older saves included `realTimeSec` as a parallel clock.
     // We intentionally ignore it and keep `simTimeSec` as the only canonical sim time.
-    this.speedMultiplier = Math.max(0.5, Math.min(3, Number.isFinite(source.speedMultiplier) ? source.speedMultiplier : this.speedMultiplier));
+    this.speedMultiplier = Math.max(MIN_SIM_SPEED_MULTIPLIER, Math.min(getMaxSimSpeedMultiplier(), Number.isFinite(source.speedMultiplier) ? source.speedMultiplier : this.speedMultiplier));
     const fishArchiveSource = Array.isArray(source.fishArchive) ? source.fishArchive : source.fish;
     const fishArchive = Array.isArray(fishArchiveSource)
       ? fishArchiveSource.map((entry) => Fish.fromJSON(entry, this.bounds))
@@ -797,6 +805,10 @@ export class World {
     this.nextBerryReedPlantId = Math.max(1, ...this.berryReedPlants.map((entry) => Math.floor(entry.id || 0) + 1));
     this.nextFruitId = Math.max(1, ...this.fruits.map((entry) => Math.floor(entry.id || 0) + 1));
 
+    const spawnFromSave = Number.isFinite(source.berryReedSpawnX01) ? source.berryReedSpawnX01 : null;
+    const spawnFromPlant = this.berryReedPlants[0] ? (this.berryReedPlants[0].x / Math.max(1, this.bounds.width)) : null;
+    this.berryReedSpawnX01 = clamp(Number.isFinite(spawnFromSave) ? spawnFromSave : (Number.isFinite(spawnFromPlant) ? spawnFromPlant : this.berryReedSpawnX01), 0.2, 0.8);
+
     this.fishById = new Map();
     for (const fish of this.fish) this.fishById.set(fish.id, fish);
     if (!this.fishArchiveById.has(this.selectedFishId)) {
@@ -816,6 +828,7 @@ export class World {
     this.expiredFoodSinceLastWaterUpdate = 0;
     this.filterUnlockThreshold = Math.max(1, this.initialFishCount * 4);
     this.filterUnlocked = this.foodsConsumedCount >= this.filterUnlockThreshold || Boolean(this.water.filterUnlocked || this.filterUnlocked);
+    this.water.filterUnlocked = this.isFeatureUnlocked('waterFilter');
     if (this.water.filterInstalled && this.water.filterTier < 1) this.water.filterTier = 1;
 
     return true;
@@ -855,8 +868,15 @@ export class World {
     }
 
     for (const fruit of this.fruits) {
-      fruit.x = clamp(fruit.x, 0, width);
-      fruit.y = clamp(fruit.y, 0, height);
+      const plant = this.berryReedPlants.find((entry) => entry.id === fruit.plantId);
+      if (!plant) {
+        fruit.x = clamp(fruit.x, 0, width);
+        fruit.y = clamp(fruit.y, 0, height);
+        continue;
+      }
+      const anchor = this.#getBerryFruitAnchorPosition(plant, fruit.branchIndex);
+      fruit.x = anchor.x;
+      fruit.y = anchor.y;
     }
 
     this.#seedGroundAlgae();
@@ -1037,8 +1057,23 @@ export class World {
   setSpeedMultiplier(value) {
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) return this.speedMultiplier;
-    this.speedMultiplier = Math.max(0.5, Math.min(3, parsed));
+    this.speedMultiplier = Math.max(MIN_SIM_SPEED_MULTIPLIER, Math.min(getMaxSimSpeedMultiplier(), parsed));
     return this.speedMultiplier;
+  }
+
+  isFeatureUnlocked(featureId) {
+    if (isDevMode()) return true;
+
+    if (featureId === 'waterFilter') {
+      return this.foodsConsumedCount >= this.filterUnlockThreshold || Boolean(this.filterUnlocked || this.water?.filterUnlocked);
+    }
+
+    if (featureId === 'berryReed') {
+      return this.birthsCount >= BERRY_REED_UNLOCK_BIRTHS
+        && (this.water?.hygiene01 ?? 0) >= BERRY_REED_UNLOCK_HYGIENE01;
+    }
+
+    return false;
   }
 
   togglePause() {
@@ -1100,22 +1135,29 @@ export class World {
 
   installWaterFilter() {
     const water = this.water;
-    if (!water?.filterUnlocked || water.filterInstalled || water.installProgress01 > 0) return false;
+    if (!this.isFeatureUnlocked('waterFilter') || water.filterInstalled || water.installProgress01 > 0) return false;
     water.installProgress01 = 0.000001;
     return true;
   }
 
   canAddBerryReedPlant() {
-    return this.birthsCount >= BERRY_REED_UNLOCK_BIRTHS
-      && (this.water?.hygiene01 ?? 0) >= BERRY_REED_UNLOCK_HYGIENE01;
+    return this.isFeatureUnlocked('berryReed');
+  }
+
+  grantAllUnlockPrerequisites() {
+    this.birthsCount = Math.max(this.birthsCount, 999);
+    this.foodsConsumedCount = Math.max(this.foodsConsumedCount, this.getFilterTierUnlockFeeds(3));
+    if (this.water) {
+      this.water.hygiene01 = Math.max(this.water.hygiene01 ?? 0, 0.95);
+    }
+    this.filterUnlocked = this.foodsConsumedCount >= this.filterUnlockThreshold;
   }
 
   addBerryReedPlant() {
     if (!this.canAddBerryReedPlant()) return false;
     if (this.berryReedPlants.length >= BERRY_REED_MAX_COUNT) return false;
 
-    const centerOffset = rand(-this.bounds.width * 0.12, this.bounds.width * 0.12);
-    const x = clamp(this.bounds.width * 0.5 + centerOffset, 14, Math.max(14, this.bounds.width - 14));
+    const x = clamp(this.bounds.width * this.berryReedSpawnX01, 14, Math.max(14, this.bounds.width - 14));
     const plant = {
       id: this.nextBerryReedPlantId++,
       x,
@@ -1169,7 +1211,7 @@ export class World {
 
     const nextTier = Math.max(2, water.filterTier + 1);
     const unlockFeeds = this.getFilterTierUnlockFeeds(nextTier);
-    if (this.foodsConsumedCount < unlockFeeds) return false;
+    if (!isDevMode() && this.foodsConsumedCount < unlockFeeds) return false;
 
     water.filterTier = nextTier;
     water.dirt01 = clamp01(water.dirt01 - 0.05);
@@ -1214,7 +1256,7 @@ export class World {
     const bioload = fishCount / WATER_REFERENCE_FISH_COUNT;
     const water = this.water;
 
-    water.filterUnlocked = this.filterUnlocked;
+    water.filterUnlocked = this.isFeatureUnlocked('waterFilter');
 
     if (water.installProgress01 > 0 && !water.filterInstalled) {
       water.installProgress01 = clamp(water.installProgress01 + dtSec / FILTER_INSTALL_DURATION_SEC, 0, 1);
@@ -1799,6 +1841,31 @@ export class World {
     }));
   }
 
+  #getBerryFruitAnchorPosition(plant, branchIndex) {
+    const branches = Array.isArray(plant?.branches) ? plant.branches : [];
+    const safeIndex = Math.max(0, Math.min(branches.length - 1, Math.floor(branchIndex ?? 0)));
+    const branch = branches[safeIndex];
+    if (!branch) {
+      return {
+        x: clamp(plant?.x ?? this.bounds.width * 0.5, 0, this.bounds.width),
+        y: clamp((plant?.bottomY ?? this.bounds.height) - (plant?.height ?? this.bounds.height * 0.2), 0, this.bounds.height)
+      };
+    }
+
+    const t = clamp(Number.isFinite(branch.t) ? branch.t : 0.5, 0.1, 0.95);
+    const dir = branch.side === -1 ? -1 : 1;
+    const len = clamp(Number.isFinite(branch.len) ? branch.len : 0.26, 0.08, 0.5);
+    const stemY = (plant.bottomY ?? this.bounds.height) - (plant.height ?? this.bounds.height * 0.24) * t;
+    const stemX = plant.x ?? this.bounds.width * 0.5;
+    const tipX = stemX + dir * (plant.height ?? this.bounds.height * 0.24) * len * 0.32;
+    const tipY = stemY - (plant.height ?? this.bounds.height * 0.24) * len * 0.08;
+
+    return {
+      x: clamp(tipX + dir * 1.2, 0, this.bounds.width),
+      y: clamp(tipY + 1.6, 0, this.bounds.height)
+    };
+  }
+
   #spawnBerryFruit(plant) {
     if (!plant || !Array.isArray(plant.branches) || plant.branches.length === 0) return false;
     const fruitsOnPlant = this.fruits.filter((entry) => entry.plantId === plant.id).length;
@@ -1806,16 +1873,14 @@ export class World {
     if (this.fruits.length >= BERRY_REED_MAX_FRUITS) return false;
 
     const branchIndex = Math.floor(rand(0, plant.branches.length));
-    const branch = plant.branches[branchIndex];
-    const stemY = plant.bottomY - plant.height * branch.t;
-    const stemX = plant.x + branch.side * plant.height * branch.len;
+    const anchor = this.#getBerryFruitAnchorPosition(plant, branchIndex);
 
     this.fruits.push({
       id: this.nextFruitId++,
       plantId: plant.id,
       branchIndex,
-      x: clamp(stemX, 0, this.bounds.width),
-      y: clamp(stemY, 0, this.bounds.height),
+      x: anchor.x,
+      y: anchor.y,
       radius: rand(1.8, 3),
       spawnedAtSec: this.simTimeSec,
       expiresAtSec: this.simTimeSec + BERRY_REED_FRUIT_TTL_SEC
@@ -1833,7 +1898,18 @@ export class World {
 
     for (let i = this.fruits.length - 1; i >= 0; i -= 1) {
       const fruit = this.fruits[i];
-      if (!fruit || this.simTimeSec >= (fruit.expiresAtSec ?? 0)) this.fruits.splice(i, 1);
+      if (!fruit || this.simTimeSec >= (fruit.expiresAtSec ?? 0)) {
+        this.fruits.splice(i, 1);
+        continue;
+      }
+      const plant = this.berryReedPlants.find((entry) => entry.id === fruit.plantId);
+      if (!plant) {
+        this.fruits.splice(i, 1);
+        continue;
+      }
+      const anchor = this.#getBerryFruitAnchorPosition(plant, fruit.branchIndex);
+      fruit.x = anchor.x;
+      fruit.y = anchor.y;
     }
 
     for (const plant of this.berryReedPlants) {
