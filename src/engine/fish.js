@@ -906,6 +906,7 @@ export class Fish {
 
   #isHoverEligible() {
     if (this.lifeState !== 'ALIVE') return false;
+    if (this.speciesId === 'AZURE_DART' || this.species?.renderStyle === 'AZURE_DART') return false;
     if ((this.eatAnimTimer ?? 0) > 0) return false;
     if (this.behavior?.mode !== 'wander') return false;
     if (this.behavior?.targetFoodId) return false;
@@ -929,6 +930,7 @@ export class Fish {
 
   #shouldCancelHoverForUrgentGoal(nowSec) {
     if (!this.#isHoverActive(nowSec)) return false;
+    if (this.speciesId === 'AZURE_DART' || this.species?.renderStyle === 'AZURE_DART') return true;
     if (this.lifeState !== 'ALIVE') return true;
     if ((this.eatAnimTimer ?? 0) > 0) return true;
     if (this.behavior?.mode === 'seekFood' || this.behavior?.targetFoodId) return true;
