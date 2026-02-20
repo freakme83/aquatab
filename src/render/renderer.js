@@ -217,39 +217,41 @@ export class Renderer {
     ctx.lineCap = 'round';
 
     for (const plant of plants) {
-      const baseX = this.tankRect.x + plant.x * sx;
-      const baseY = this.tankRect.y + plant.bottomY * sy;
-      const h = plant.height * sy;
-      const sway = Math.sin(time * (plant.swayRate ?? 0.0012) + (plant.swayPhase ?? 0)) * (2.4 * sx);
+      const plantPose = this.#getBerryReedPlantPose(plant, time, sx, sy);
+      const { baseX, baseY, h, swayPx } = plantPose;
 
       ctx.strokeStyle = 'hsla(136deg 38% 42% / 0.9)';
       ctx.lineWidth = Math.max(1.4, 2 * sx);
       ctx.beginPath();
       ctx.moveTo(baseX, baseY);
-      ctx.bezierCurveTo(baseX - 4 * sx + sway * 0.2, baseY - h * 0.34, baseX + 3 * sx + sway, baseY - h * 0.72, baseX + sway, baseY - h);
+      ctx.bezierCurveTo(baseX - 4 * sx + swayPx * 0.2, baseY - h * 0.34, baseX + 3 * sx + swayPx, baseY - h * 0.72, baseX + swayPx, baseY - h);
       ctx.stroke();
 
-      for (const branch of plant.branches ?? []) {
-        const t = Math.max(0.1, Math.min(0.95, branch.t ?? 0.5));
-        const dir = branch.side === -1 ? -1 : 1;
-        const len = Math.max(0.08, Math.min(0.5, branch.len ?? 0.26));
-        const stemY = baseY - h * t;
-        const stemX = baseX + sway * t;
-        const tipX = stemX + dir * h * len * 0.32;
-        const tipY = stemY - h * len * 0.08;
+      for (const [branchIndex, branch] of (plant.branches ?? []).entries()) {
+        const branchPose = this.#getBerryReedBranchPose(plant, branch, branchIndex, time, sx, sy);
+        const { startX, startY, controlX, controlY, endX, endY } = branchPose;
 
         ctx.lineWidth = Math.max(1.1, 1.5 * sx);
         ctx.beginPath();
-        ctx.moveTo(stemX, stemY);
-        ctx.quadraticCurveTo(stemX + dir * 4 * sx, stemY - h * 0.03, tipX, tipY);
+        ctx.moveTo(startX, startY);
+        ctx.quadraticCurveTo(controlX, controlY, endX, endY);
         ctx.stroke();
       }
     }
 
     for (const fruit of fruits) {
-      const x = this.tankRect.x + fruit.x * sx;
-      const y = this.tankRect.y + fruit.y * sy;
+      const fruitPose = this.#getBerryReedFruitPose(fruit, time, sx, sy);
+      if (!fruitPose) continue;
+      const { x, y, branchX, branchY } = fruitPose;
       const r = Math.max(1, (fruit.radius ?? 2.2) * ((sx + sy) * 0.5));
+
+      ctx.strokeStyle = 'hsla(130deg 38% 40% / 0.75)';
+      ctx.lineWidth = Math.max(0.8, 1.05 * sx);
+      ctx.beginPath();
+      ctx.moveTo(branchX, branchY);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+
       ctx.fillStyle = 'hsla(332deg 58% 66% / 0.9)';
       ctx.beginPath();
       ctx.arc(x, y, r, 0, TAU);
@@ -257,6 +259,65 @@ export class Renderer {
     }
 
     ctx.restore();
+  }
+
+  #getBerryReedPlantPose(plant, time, sx, sy) {
+    const baseX = this.tankRect.x + (plant?.x ?? 0) * sx;
+    const baseY = this.tankRect.y + (plant?.bottomY ?? 0) * sy;
+    const h = (plant?.height ?? 0) * sy;
+    const swayRate = plant?.swayRate ?? 0.0012;
+    const swayPhase = plant?.swayPhase ?? 0;
+    const swayPx = Math.sin(time * swayRate + swayPhase) * (2.4 * sx);
+    return { baseX, baseY, h, swayPx };
+  }
+
+  #getBerryReedBranchPose(plant, branch, branchIndex, time, sx, sy) {
+    const { baseX, baseY, h, swayPx } = this.#getBerryReedPlantPose(plant, time, sx, sy);
+    const t = Math.max(0.1, Math.min(0.95, branch?.t ?? 0.5));
+    const dir = branch?.side === -1 ? -1 : 1;
+    const len = Math.max(0.08, Math.min(0.5, branch?.len ?? 0.26));
+    const localRate = (plant?.swayRate ?? 0.0012) * 1.7;
+    const localPhase = (plant?.swayPhase ?? 0) + branchIndex * 1.3;
+    const localSway = Math.sin(time * localRate + localPhase) * (0.9 * sx) * len;
+    const startX = baseX + swayPx * t;
+    const startY = baseY - h * t;
+    const endX = startX + dir * h * len * 0.32 + localSway;
+    const endY = startY - h * len * 0.08;
+    const controlX = startX + dir * 4 * sx + localSway * 0.6;
+    const controlY = startY - h * 0.03;
+    const angle = Math.atan2(endY - startY, endX - startX);
+    return {
+      startX,
+      startY,
+      controlX,
+      controlY,
+      endX,
+      endY,
+      angle
+    };
+  }
+
+  #getBerryReedFruitPose(fruit, time, sx, sy) {
+    const plants = this.world.berryReedPlants ?? [];
+    const plant = plants.find((entry) => entry.id === fruit?.plantId);
+    if (!plant) return null;
+    const branchIndex = Math.max(0, Math.floor(fruit?.branchIndex ?? 0));
+    const branch = plant.branches?.[branchIndex];
+    if (!branch) return null;
+
+    const branchPose = this.#getBerryReedBranchPose(plant, branch, branchIndex, time, sx, sy);
+    const u = Math.max(0, Math.min(1, fruit?.u ?? 0.9));
+    const v = Number.isFinite(fruit?.v) ? fruit.v : 0;
+    const branchX = branchPose.startX + (branchPose.endX - branchPose.startX) * u;
+    const branchY = branchPose.startY + (branchPose.endY - branchPose.startY) * u;
+    const perpX = -Math.sin(branchPose.angle);
+    const perpY = Math.cos(branchPose.angle);
+    return {
+      x: branchX + perpX * v,
+      y: branchY + perpY * v,
+      branchX,
+      branchY
+    };
   }
 
 

@@ -113,7 +113,7 @@ export const EGG_SAVE_KEYS = [
 ];
 export const BERRY_REED_BRANCH_SAVE_KEYS = ['t', 'side', 'len'];
 export const BERRY_REED_PLANT_SAVE_KEYS = ['id', 'x', 'bottomY', 'height', 'swayPhase', 'swayRate', 'branches', 'nextFruitAtSec'];
-export const BERRY_REED_FRUIT_SAVE_KEYS = ['id', 'plantId', 'branchIndex', 'x', 'y', 'radius', 'spawnedAtSec', 'expiresAtSec'];
+export const BERRY_REED_FRUIT_SAVE_KEYS = ['id', 'plantId', 'branchIndex', 'u', 'v', 'radius', 'createdAtSec', 'ttlSec'];
 
 function deepCopyPlain(value) {
   if (Array.isArray(value)) return value.map((entry) => deepCopyPlain(entry));
@@ -247,24 +247,29 @@ function serializeBerryReedFruit(fruit) {
   return pickSavedKeys(fruit, BERRY_REED_FRUIT_SAVE_KEYS);
 }
 
-function deserializeBerryReedFruit(data, bounds, plantById) {
+function deserializeBerryReedFruit(data, _bounds, plantById) {
   const source = data && typeof data === 'object' ? data : {};
   const plant = plantById.get(source.plantId) ?? null;
-  const x = Number.isFinite(source.x) ? source.x : (plant?.x ?? bounds.width * 0.5);
-  const y = Number.isFinite(source.y) ? source.y : (plant?.bottomY ?? bounds.height * 0.7);
-  const spawnedAtSec = Number.isFinite(source.spawnedAtSec) ? source.spawnedAtSec : 0;
-  const expiresAtSec = Number.isFinite(source.expiresAtSec)
-    ? source.expiresAtSec
-    : spawnedAtSec + BERRY_REED_FRUIT_TTL_SEC;
+  const createdAtSec = Number.isFinite(source.createdAtSec)
+    ? source.createdAtSec
+    : (Number.isFinite(source.spawnedAtSec) ? source.spawnedAtSec : 0);
+  const ttlFromLegacy = Number.isFinite(source.expiresAtSec)
+    ? Math.max(0, source.expiresAtSec - createdAtSec)
+    : BERRY_REED_FRUIT_TTL_SEC;
+  const ttlSec = Number.isFinite(source.ttlSec)
+    ? Math.max(0, source.ttlSec)
+    : ttlFromLegacy;
   return {
     id: Number.isFinite(source.id) ? source.id : 0,
     plantId: Number.isFinite(source.plantId) ? source.plantId : 0,
-    branchIndex: Number.isFinite(source.branchIndex) ? Math.max(0, Math.floor(source.branchIndex)) : 0,
-    x: clamp(x, 0, bounds.width),
-    y: clamp(y, 0, bounds.height),
+    branchIndex: Number.isFinite(source.branchIndex)
+      ? clamp(Math.floor(source.branchIndex), 0, Math.max(0, (plant?.branches?.length ?? 1) - 1))
+      : 0,
+    u: clamp(Number.isFinite(source.u) ? source.u : 0.9, 0, 1),
+    v: clamp(Number.isFinite(source.v) ? source.v : 0, -6, 6),
     radius: clamp(Number.isFinite(source.radius) ? source.radius : 2.4, 1.2, 4),
-    spawnedAtSec,
-    expiresAtSec
+    createdAtSec,
+    ttlSec
   };
 }
 
@@ -855,11 +860,6 @@ export class World {
       plant.x = clamp(plant.x, 10, Math.max(10, width - 10));
       plant.bottomY = clamp(plant.bottomY, Math.max(0, height - 14), Math.max(0, height - 1));
       plant.height = clamp(plant.height, height * 0.14, height * 0.35);
-    }
-
-    for (const fruit of this.fruits) {
-      fruit.x = clamp(fruit.x, 0, width);
-      fruit.y = clamp(fruit.y, 0, height);
     }
 
     this.#seedGroundAlgae();
@@ -1832,19 +1832,15 @@ export class World {
     if (this.fruits.length >= BERRY_REED_MAX_FRUITS) return false;
 
     const branchIndex = Math.floor(rand(0, plant.branches.length));
-    const branch = plant.branches[branchIndex];
-    const stemY = plant.bottomY - plant.height * branch.t;
-    const stemX = plant.x + branch.side * plant.height * branch.len;
-
     this.fruits.push({
       id: this.nextFruitId++,
       plantId: plant.id,
       branchIndex,
-      x: clamp(stemX, 0, this.bounds.width),
-      y: clamp(stemY, 0, this.bounds.height),
+      u: rand(0.75, 1),
+      v: rand(-3, 3),
       radius: rand(1.8, 3),
-      spawnedAtSec: this.simTimeSec,
-      expiresAtSec: this.simTimeSec + BERRY_REED_FRUIT_TTL_SEC
+      createdAtSec: this.simTimeSec,
+      ttlSec: BERRY_REED_FRUIT_TTL_SEC
     });
 
     return true;
@@ -1859,7 +1855,12 @@ export class World {
 
     for (let i = this.fruits.length - 1; i >= 0; i -= 1) {
       const fruit = this.fruits[i];
-      if (!fruit || this.simTimeSec >= (fruit.expiresAtSec ?? 0)) this.fruits.splice(i, 1);
+      if (!fruit) {
+        this.fruits.splice(i, 1);
+        continue;
+      }
+      const elapsedSec = this.simTimeSec - (fruit.createdAtSec ?? this.simTimeSec);
+      if (elapsedSec >= (fruit.ttlSec ?? 0)) this.fruits.splice(i, 1);
     }
 
     for (const plant of this.berryReedPlants) {
