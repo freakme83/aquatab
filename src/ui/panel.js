@@ -12,6 +12,7 @@ export class Panel {
     this.nameDraftByFishId = new Map();
     this.currentInspectorSelectedFishId = null;
     this.currentInspectorDetailTab = 'info';
+    this.currentInspectorSpeciesTab = 'LAB_MINNOW';
     this.lastInspectorSignature = null;
 
     this.tabButtons = [...this.root.querySelectorAll('.tab-button')];
@@ -231,6 +232,15 @@ export class Panel {
     }, true);
 
     this.fishInspector.addEventListener('click', (event) => {
+      const speciesTabButton = event.target.closest('[data-inspector-species-tab]');
+      if (speciesTabButton) {
+        const nextSpecies = speciesTabButton.dataset.inspectorSpeciesTab === 'AZURE_DART' ? 'AZURE_DART' : 'LAB_MINNOW';
+        this.currentInspectorSpeciesTab = nextSpecies;
+        this.currentInspectorSelectedFishId = null;
+        this.lastInspectorSignature = null;
+        return;
+      }
+
       const detailTabButton = event.target.closest('[data-fish-detail-tab]');
       if (detailTabButton) {
         this.currentInspectorDetailTab = detailTabButton.dataset.fishDetailTab === 'history' ? 'history' : 'info';
@@ -521,7 +531,13 @@ export class Panel {
       return a.id - b.id;
     });
 
-    const selectedFish = sorted.find((fish) => fish.id === selectedFishId) ?? null;
+    const selectedFishAnySpecies = sorted.find((fish) => fish.id === selectedFishId) ?? null;
+    if (selectedFishAnySpecies?.speciesId === 'AZURE_DART' || selectedFishAnySpecies?.speciesId === 'LAB_MINNOW') {
+      this.currentInspectorSpeciesTab = selectedFishAnySpecies.speciesId;
+    }
+
+    const filtered = sorted.filter((fish) => (fish.speciesId ?? 'LAB_MINNOW') === this.currentInspectorSpeciesTab);
+    const selectedFish = filtered.find((fish) => fish.id === selectedFishId) ?? null;
     const selectedLiveAgeSec = selectedFish ? Math.floor(selectedFish.ageSeconds(simTimeSec)) : -1;
     const selectedHungerPct = selectedFish ? Math.round((selectedFish.hunger01 ?? 0) * 100) : -1;
     const selectedWellbeingPct = selectedFish ? Math.round((selectedFish.wellbeing01 ?? 0) * 100) : -1;
@@ -530,7 +546,7 @@ export class Panel {
       ? `${selectedFish.history?.mealsEaten ?? 0}|${selectedFish.history?.mateCount ?? 0}|${selectedFish.history?.childrenIds?.length ?? 0}|${selectedFish.history?.deathSimTimeSec ?? ''}|${selectedFish.repro?.state ?? ''}|${selectedFish.deathReason ?? ''}`
       : 'none';
 
-    const signature = sorted
+    const signature = filtered
       .map((fish) => `${fish.id}|${fish.name ?? ''}|${fish.lifeState}|${fish.hungerState}|${fish.lifeStage ?? ''}|${fish.repro?.state ?? ''}`)
       .join(';')
       + `::selected=${selectedFishId ?? 'none'}`
@@ -539,12 +555,13 @@ export class Panel {
       + `::wellbeing=${selectedWellbeingPct}`
       + `::growth=${selectedGrowthPct}`
       + `::history=${selectedHistorySnapshot}`
-      + `::detailTab=${this.currentInspectorDetailTab}`;
+      + `::detailTab=${this.currentInspectorDetailTab}`
+      + `::speciesTab=${this.currentInspectorSpeciesTab}`;
 
     if (signature === this.lastInspectorSignature) return;
     this.lastInspectorSignature = signature;
 
-    const listHtml = sorted
+    const listHtml = filtered
       .map((fish) => {
         const selectedClass = fish.id === selectedFishId ? ' selected' : '';
         const deadClass = fish.lifeState !== 'ALIVE' ? ' fishRow--dead' : '';
@@ -564,8 +581,18 @@ export class Panel {
       ? this.#fishDetailsMarkup(selectedFish, simTimeSec)
       : '<p class="fish-empty">Select a fish.</p>';
 
+    const labActive = this.currentInspectorSpeciesTab === 'LAB_MINNOW';
+    const azureActive = this.currentInspectorSpeciesTab === 'AZURE_DART';
+    const speciesTabsHtml = `
+      <div class="inspector-species-tabs" role="tablist" aria-label="Fish species">
+        <button type="button" class="inspector-species-tab${labActive ? ' active' : ''}" data-inspector-species-tab="LAB_MINNOW" role="tab" aria-selected="${labActive}">Lab Minnow</button>
+        <button type="button" class="inspector-species-tab${azureActive ? ' active' : ''}" data-inspector-species-tab="AZURE_DART" role="tab" aria-selected="${azureActive}">Azure Dart</button>
+      </div>
+    `;
+
     this.fishInspector.innerHTML = `
-      <div class="fish-list">${listHtml}</div>
+      ${speciesTabsHtml}
+      <div class="fish-list">${listHtml || '<p class="fish-empty">No fish in this species tab.</p>'}</div>
       <div class="fish-detail">${detailHtml}</div>
     `;
 
