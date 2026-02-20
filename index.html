@@ -103,6 +103,21 @@
             </div>
           </section>
 
+          <section class="filter-accordion is-dim" data-species-accordion data-open="false">
+            <button class="filter-accordion-toggle" type="button" data-control="toggleSpeciesAccordion" aria-expanded="false">
+              <span>Add Species</span>
+              <span class="filter-accordion-chevron">▾</span>
+            </button>
+            <div class="filter-accordion-content" data-species-content hidden>
+              <div class="species-row" data-berry-row>
+                <button type="button" data-control="addBerryReed">Berry Reed</button>
+                <strong data-berry-state>Locked</strong>
+              </div>
+              <p class="filter-message" data-berry-req-births>Requires: 4 births (0/4)</p>
+              <p class="filter-message" data-berry-req-cleanliness>Requires: Cleanliness 80%+</p>
+            </div>
+          </section>
+
           <div class="button-row">
             <button type="button" data-control="restartSim">Restart</button>
           </div>

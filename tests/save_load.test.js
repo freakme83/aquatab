@@ -184,6 +184,52 @@ test('dead fish state and reason persist', () => {
   assert.equal(loadedFish.history.deathSimTimeSec, 123.4);
 });
 
+test('legacy saves without berry reed fields load defaults safely', () => {
+  const world = makeWorldForTest();
+  const snap = world.toJSON();
+  delete snap.birthsCount;
+  delete snap.berryReedPlants;
+  delete snap.fruits;
+
+  const loaded = World.fromJSON(snap, {
+    width: world.bounds.width,
+    height: world.bounds.height,
+    initialFishCount: world.initialFishCount
+  });
+
+  assert.equal(loaded.birthsCount, 0);
+  assert.deepEqual(loaded.berryReedPlants, []);
+  assert.deepEqual(loaded.fruits, []);
+});
+
+test('births count and berry reed entities persist through save/load', () => {
+  const world = makeWorldForTest();
+  world.birthsCount = 5;
+  world.water.hygiene01 = 0.92;
+  assert.equal(world.addBerryReedPlant(), true);
+  const plant = world.berryReedPlants[0];
+  world.fruits.push({
+    id: world.nextFruitId++,
+    plantId: plant.id,
+    branchIndex: 0,
+    x: plant.x,
+    y: plant.bottomY - plant.height * 0.4,
+    radius: 2.2,
+    spawnedAtSec: 10,
+    expiresAtSec: 80
+  });
+
+  const json = world.toJSON();
+  assert.equal(json.birthsCount, 5);
+  assert.equal(json.berryReedPlants.length, 1);
+
+  const loaded = roundTrip(world);
+  assert.equal(loaded.birthsCount, 5);
+  assert.equal(loaded.berryReedPlants.length, 1);
+  assert.equal(loaded.fruits.length, 1);
+  assert.equal(loaded.berryReedPlants[0].id, plant.id);
+});
+
 test('name uniqueness and next-id counters remain valid after load', () => {
   const world = makeWorldForTest();
   world.fish[0].name = 'Alice';
