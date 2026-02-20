@@ -7,6 +7,8 @@
   --text-main: #e6eff8;
   --text-soft: #9fb6ca;
   --accent: #7dc8ff;
+
+  --species-ready-green: #84e89a;
 }
 
 * {
@@ -423,6 +425,29 @@ input[type='range'] {
   gap: 10px;
 }
 
+.inspector-species-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.inspector-species-tab {
+  border: 1px solid var(--deck-border);
+  background: rgba(20, 37, 54, 0.6);
+  color: var(--text-soft);
+  border-radius: 7px;
+  padding: 5px 8px;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.inspector-species-tab.active {
+  color: var(--text-main);
+  background: rgba(85, 148, 198, 0.28);
+  border-color: rgba(140, 220, 255, 0.55);
+}
+
+
 .fish-list {
   display: grid;
   gap: 6px;
@@ -467,7 +492,7 @@ input[type='range'] {
 }
 
 .fish-inspector {
-  grid-template-rows: minmax(160px, 1fr) auto;
+  grid-template-rows: auto minmax(160px, 1fr) auto;
   min-height: 0;
 }
 
@@ -647,4 +672,20 @@ input[type='range'] {
   font-size: 0.68rem;
   letter-spacing: 0.08em;
   color: rgba(214, 235, 249, 0.88);
+}
+
+.species-row.is-locked {
+  opacity: 0.6;
+}
+
+
+
+.species-btn--ready {
+  border-color: color-mix(in srgb, var(--species-ready-green) 58%, #cfeeff 42%);
+  background: linear-gradient(180deg, rgba(57, 119, 84, 0.95), rgba(46, 100, 72, 0.95));
+  color: #ebfff2;
+}
+
+.species-btn--ready:disabled {
+  opacity: 0.72;
 }
