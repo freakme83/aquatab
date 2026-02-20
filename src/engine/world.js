@@ -327,6 +327,7 @@ export class World {
     this.selectedFishId = null;
     this.nameCounts = new Map();
     this.fishById = new Map();
+    this.fishArchiveById = new Map();
 
     this.initialFishCount = normalizedInitialFishCount;
     this.foodsConsumedCount = 0;
@@ -417,6 +418,7 @@ export class World {
   #registerFish(fish) {
     if (!fish) return;
     this.fishById.set(fish.id, fish);
+    this.fishArchiveById.set(fish.id, fish);
   }
 
   #unregisterFishById(fishId) {
@@ -425,11 +427,16 @@ export class World {
 
   #rebuildFishById() {
     this.fishById = new Map();
+    this.fishArchiveById = new Map();
     for (const fish of this.fish) this.#registerFish(fish);
   }
 
   getFishById(fishId) {
-    return this.fishById.get(fishId) ?? null;
+    return this.fishArchiveById.get(fishId) ?? null;
+  }
+
+  getFishInspectorList() {
+    return [...this.fishArchiveById.values()];
   }
 
 
@@ -621,8 +628,8 @@ export class World {
     this.fish = fishPool;
     this.#rebuildFishById();
 
-    if (!this.fish.some((f) => f.id === this.selectedFishId)) {
-      this.selectedFishId = this.fish[0]?.id ?? null;
+    if (!this.fishArchiveById.has(this.selectedFishId)) {
+      this.selectedFishId = this.fishArchiveById.keys().next().value ?? null;
     }
   }
 
@@ -634,6 +641,7 @@ export class World {
       speedMultiplier: Number.isFinite(this.speedMultiplier) ? this.speedMultiplier : 1,
       water: serializeWater(this.water),
       fish: this.fish.map((entry) => entry.toJSON()),
+      fishArchive: [...this.fishArchiveById.values()].map((entry) => entry.toJSON()),
       eggs: this.eggs.map((entry) => serializeEgg(entry)),
       food: this.food.map((entry) => serializeFood(entry)),
       poop: this.poop.map((entry) => serializePoop(entry))
@@ -649,11 +657,22 @@ export class World {
     // Compatibility note: older saves included `realTimeSec` as a parallel clock.
     // We intentionally ignore it and keep `simTimeSec` as the only canonical sim time.
     this.speedMultiplier = Math.max(0.5, Math.min(3, Number.isFinite(source.speedMultiplier) ? source.speedMultiplier : this.speedMultiplier));
+    const fishArchiveSource = Array.isArray(source.fishArchive) ? source.fishArchive : source.fish;
+    const fishArchive = Array.isArray(fishArchiveSource)
+      ? fishArchiveSource.map((entry) => Fish.fromJSON(entry, this.bounds))
+      : [];
+    this.fishArchiveById = new Map();
+    for (const fish of fishArchive) this.fishArchiveById.set(fish.id, fish);
+
     this.fish = Array.isArray(source.fish)
-      ? source.fish.map((entry) => Fish.fromJSON(entry, this.bounds))
+      ? source.fish.map((entry) => {
+        const fish = Fish.fromJSON(entry, this.bounds);
+        const archived = this.fishArchiveById.get(fish.id);
+        return archived ?? fish;
+      })
       : [];
 
-    for (const fish of this.fish) {
+    for (const fish of this.fishArchiveById.values()) {
       fish.position = clampPosition(fish.position, this.bounds, swimHeight);
       fish.updateLifeCycle(this.simTimeSec);
     }
@@ -672,14 +691,15 @@ export class World {
 
     this.water = deserializeWater(source.water, this.#createInitialWaterState());
 
-    this.nextFishId = Math.max(1, ...this.fish.map((entry) => Math.floor(entry.id || 0) + 1));
+    this.nextFishId = Math.max(1, ...[...this.fishArchiveById.values()].map((entry) => Math.floor(entry.id || 0) + 1));
     this.nextFoodId = Math.max(1, ...this.food.map((entry) => Math.floor(entry.id || 0) + 1));
     this.nextPoopId = Math.max(1, ...this.poop.map((entry) => Math.floor(entry.id || 0) + 1));
     this.nextEggId = Math.max(1, ...this.eggs.map((entry) => Math.floor(entry.id || 0) + 1));
 
-    this.#rebuildFishById();
-    if (!this.fish.some((entry) => entry.id === this.selectedFishId)) {
-      this.selectedFishId = this.fish[0]?.id ?? null;
+    this.fishById = new Map();
+    for (const fish of this.fish) this.fishById.set(fish.id, fish);
+    if (!this.fishArchiveById.has(this.selectedFishId)) {
+      this.selectedFishId = this.fishArchiveById.keys().next().value ?? null;
     }
 
     this.nameCounts = new Map();
@@ -831,7 +851,7 @@ export class World {
   }
 
   selectFish(fishId) {
-    const found = this.fish.find((f) => f.id === fishId);
+    const found = this.getFishById(fishId);
     this.selectedFishId = found ? found.id : null;
     return this.selectedFishId;
   }
@@ -858,7 +878,6 @@ export class World {
     if (index < 0) return false;
     this.fish.splice(index, 1);
     this.#unregisterFishById(fishId);
-    if (this.selectedFishId === fishId) this.selectedFishId = null;
     return true;
   }
 
@@ -870,7 +889,6 @@ export class World {
     fish.corpseRemoved = true;
     this.fish.splice(index, 1);
     this.#unregisterFishById(fishId);
-    if (this.selectedFishId === fishId) this.selectedFishId = null;
     return true;
   }
 
@@ -898,8 +916,8 @@ export class World {
       if (removed) this.#unregisterFishById(removed.id);
     }
 
-    if (!this.fish.some((f) => f.id === this.selectedFishId)) {
-      this.selectedFishId = this.fish[0]?.id ?? null;
+    if (!this.fishArchiveById.has(this.selectedFishId)) {
+      this.selectedFishId = this.fishArchiveById.keys().next().value ?? null;
     }
   }
 
@@ -1018,7 +1036,6 @@ export class World {
       if (fish.corpseDirtApplied01 >= CORPSE_DIRT_MAX01) {
         fish.corpseRemoved = true;
         this.fish.splice(i, 1);
-        if (this.selectedFishId === fish.id) this.selectedFishId = null;
       }
     }
 
