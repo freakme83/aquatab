@@ -184,6 +184,54 @@ test('dead fish state and reason persist', () => {
   assert.equal(loadedFish.history.deathSimTimeSec, 123.4);
 });
 
+test('legacy saves without berry reed fields load defaults safely', () => {
+  const world = makeWorldForTest();
+  const snap = world.toJSON();
+  delete snap.birthsCount;
+  delete snap.berryReedPlants;
+  delete snap.fruits;
+
+  const loaded = World.fromJSON(snap, {
+    width: world.bounds.width,
+    height: world.bounds.height,
+    initialFishCount: world.initialFishCount
+  });
+
+  assert.equal(loaded.birthsCount, 0);
+  assert.deepEqual(loaded.berryReedPlants, []);
+  assert.deepEqual(loaded.fruits, []);
+});
+
+test('births count and berry reed entities persist through save/load', () => {
+  const world = makeWorldForTest();
+  world.birthsCount = 5;
+  world.water.hygiene01 = 0.92;
+  assert.equal(world.addBerryReedPlant().ok, true);
+  const plant = world.berryReedPlants[0];
+  world.fruits.push({
+    id: world.nextFruitId++,
+    plantId: plant.id,
+    branchIndex: 0,
+    u: 0.88,
+    v: 1.5,
+    radius: 2.2,
+    createdAtSec: 10,
+    ttlSec: 70
+  });
+
+  const json = world.toJSON();
+  assert.equal(json.birthsCount, 5);
+  assert.equal(json.berryReedPlants.length, 1);
+
+  const loaded = roundTrip(world);
+  assert.equal(loaded.birthsCount, 5);
+  assert.equal(loaded.berryReedPlants.length, 1);
+  assert.equal(loaded.fruits.length, 1);
+  assert.equal(loaded.berryReedPlants[0].id, plant.id);
+  assert.equal(loaded.fruits[0].u, 0.88);
+  assert.equal(loaded.fruits[0].v, 1.5);
+});
+
 test('name uniqueness and next-id counters remain valid after load', () => {
   const world = makeWorldForTest();
   world.fish[0].name = 'Alice';
@@ -381,4 +429,238 @@ test('poop spawn type distribution uses weighted random bands', () => {
   const worldFloaty = makeWorldForTest();
   withStubbedRandom(0.95, () => worldFloaty.spawnPoop(20, 20));
   assert.equal(worldFloaty.poop[0].type, 'floaty');
+});
+
+test('water filter tier and feed counters persist through save-load', () => {
+  const world = makeWorldForTest({ initialFishCount: 5 });
+  world.foodsConsumedCount = 37;
+  world.water.filterInstalled = true;
+  world.water.filterEnabled = true;
+  world.water.filter01 = 0.9;
+  world.water.filterTier = 2;
+
+  const loaded = roundTrip(world);
+
+  assert.equal(loaded.initialFishCount, 5);
+  assert.equal(loaded.foodsConsumedCount, 37);
+  assert.equal(loaded.water.filterTier, 2);
+  assert.equal(loaded.getFilterTierUnlockFeeds(2), 40);
+  assert.equal(loaded.getFilterTierUnlockFeeds(3), 60);
+});
+
+test('upgradeWaterFilter applies recovery kick and tier scaling improves cleanup', () => {
+  const world = makeWorldForTest({ initialFishCount: 4 });
+  world.water.filterInstalled = true;
+  world.water.filterEnabled = true;
+  world.water.filter01 = 1;
+  world.water.filterTier = 1;
+  world.water.dirt01 = 0.4;
+  world.water.hygiene01 = 0.5;
+  world.foodsConsumedCount = world.initialFishCount * 8;
+
+  const upgraded = world.upgradeWaterFilter();
+  assert.equal(upgraded, true);
+  assert.equal(world.water.filterTier, 2);
+  assert.equal(Number(world.water.dirt01.toFixed(3)), 0.35);
+  assert.equal(Number(world.water.hygiene01.toFixed(3)), 0.55);
+
+  const tier1World = makeWorldForTest({ initialFishCount: 4 });
+  tier1World.water.filterInstalled = true;
+  tier1World.water.filterEnabled = true;
+  tier1World.water.filter01 = 1;
+  tier1World.water.filterTier = 1;
+  tier1World.water.dirt01 = 0.3;
+  tier1World.water.hygiene01 = 0.6;
+
+  const tier2World = makeWorldForTest({ initialFishCount: 4 });
+  tier2World.water.filterInstalled = true;
+  tier2World.water.filterEnabled = true;
+  tier2World.water.filter01 = 1;
+  tier2World.water.filterTier = 2;
+  tier2World.water.dirt01 = 0.3;
+  tier2World.water.hygiene01 = 0.6;
+
+  tier1World.update(60);
+  tier2World.update(60);
+
+  assert.ok(tier2World.water.dirt01 < tier1World.water.dirt01, 'tier 2 should remove more dirt over time');
+  assert.ok(tier2World.water.hygiene01 > tier1World.water.hygiene01, 'tier 2 should recover hygiene faster');
+});
+
+function withMockedDevMode(enabled, fn) {
+  const originalWindow = globalThis.window;
+  const storage = new Map([['aquatab_dev_mode', enabled ? '1' : '0']]);
+  globalThis.window = {
+    localStorage: {
+      getItem: (key) => storage.get(key) ?? null,
+      setItem: (key, value) => storage.set(key, String(value))
+    },
+    dispatchEvent: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {}
+  };
+
+  try {
+    return fn();
+  } finally {
+    globalThis.window = originalWindow;
+  }
+}
+
+test('dev mode bypasses feature unlock gates and grants extended speed range', () => {
+  withMockedDevMode(true, () => {
+    const world = makeWorldForTest();
+    world.birthsCount = 0;
+    world.water.hygiene01 = 0.2;
+    world.foodsConsumedCount = 0;
+    world.filterUnlocked = false;
+
+    assert.equal(world.canAddBerryReedPlant(), true);
+    assert.equal(world.installWaterFilter(), true);
+
+    world.setSpeedMultiplier(16);
+    assert.equal(world.speedMultiplier, 16);
+  });
+});
+
+test('grantAllUnlockPrerequisites bumps key unlock counters safely', () => {
+  withMockedDevMode(true, () => {
+    const world = makeWorldForTest();
+    world.birthsCount = 1;
+    world.foodsConsumedCount = 0;
+    world.water.hygiene01 = 0.5;
+
+    world.grantAllUnlockPrerequisites();
+
+    assert.ok(world.birthsCount >= 4);
+    assert.ok(world.water.hygiene01 >= 0.95);
+    assert.ok(world.foodsConsumedCount >= world.getFilterTierUnlockFeeds(3));
+  });
+});
+
+test('legacy fish saves without speciesId default to LAB_MINNOW', () => {
+  const world = makeWorldForTest();
+  const snap = world.toJSON();
+  delete snap.fish[0].speciesId;
+
+  const loaded = World.fromJSON({ saveVersion: 1, worldState: snap }, {
+    width: world.bounds.width,
+    height: world.bounds.height,
+    initialFishCount: world.initialFishCount
+  });
+
+  assert.equal(loaded.fish[0].speciesId, 'LAB_MINNOW');
+});
+
+test('speciesId persists and azure dart survives save/load', () => {
+  const world = makeWorldForTest();
+  world.birthsCount = 10;
+  world.water.hygiene01 = 1;
+  world.addBerryReedPlant();
+  assert.equal(world.addAzureDartSchool(), true);
+  assert.equal(world.addAzureDartSchool(), true);
+  assert.equal(world.addAzureDartSchool(), true);
+  assert.equal(world.addAzureDartSchool(), true);
+
+  const loaded = roundTrip(world);
+  const azure = loaded.fish.filter((f) => f.speciesId === 'AZURE_DART');
+  assert.ok(azure.length >= 4);
+  assert.equal(loaded.fish.some((f) => f.speciesId === 'LAB_MINNOW'), true);
+});
+
+test('cross-species reproduction does not occur', () => {
+  const world = makeWorldForTest();
+  const female = world.fish[0];
+  const male = world.fish[1];
+  female.speciesId = 'LAB_MINNOW';
+  male.speciesId = 'AZURE_DART';
+  female.sex = 'female';
+  male.sex = 'male';
+  female.position = { x: 120, y: 120 };
+  male.position = { x: 121, y: 121 };
+  forceFishAliveAdultFed(female);
+  forceFishAliveAdultFed(male);
+  world.water.hygiene01 = 1;
+
+  withStubbedRandom(0, () => {
+    for (let i = 0; i < 8; i += 1) world.update(1);
+  });
+
+  assert.notEqual(female.repro.state, 'GRAVID');
+  assert.equal(world.eggs.length, 0);
+});
+
+test('azure dart add button spawns one fish per click and caps at four total', () => {
+  const world = makeWorldForTest();
+  world.birthsCount = 10;
+  world.water.hygiene01 = 1;
+  world.addBerryReedPlant();
+
+  assert.equal(world.getAzureDartCount(), 0);
+  assert.equal(world.addAzureDartSchool(), true);
+  assert.equal(world.getAzureDartCount(), 1);
+  assert.equal(world.addAzureDartSchool(), true);
+  assert.equal(world.getAzureDartCount(), 2);
+  assert.equal(world.addAzureDartSchool(), true);
+  assert.equal(world.getAzureDartCount(), 3);
+  assert.equal(world.addAzureDartSchool(), true);
+  assert.equal(world.getAzureDartCount(), 4);
+  assert.equal(world.canAddAzureDart(), false);
+  assert.equal(world.addAzureDartSchool(), false);
+});
+
+
+test('dev mode bypass unlocks azure dart prerequisites', () => {
+  withMockedDevMode(true, () => {
+    const world = makeWorldForTest();
+    world.water.hygiene01 = 0.2;
+    world.berryReedPlants = [];
+
+    assert.equal(world.canAddAzureDart(), true);
+  });
+});
+
+
+test('azure dart spawn uses blue-dominant color trait range', () => {
+  const world = makeWorldForTest();
+  world.birthsCount = 10;
+  world.water.hygiene01 = 1;
+  world.addBerryReedPlant();
+  assert.equal(world.addAzureDartSchool(), true);
+  const azure = world.fish.find((f) => f.speciesId === 'AZURE_DART');
+  assert.ok(azure);
+  assert.ok(azure.traits.colorHue >= 190 && azure.traits.colorHue <= 232);
+  assert.equal(typeof azure.traits.colorPatternSeed, 'number');
+});
+
+
+test('berry reed unlock stays available after threshold dip', () => {
+  const world = makeWorldForTest();
+  world.birthsCount = 5;
+  world.water.hygiene01 = 0.85;
+  assert.equal(world.canAddBerryReedPlant(), true);
+
+  world.water.hygiene01 = 0.2;
+  assert.equal(world.canAddBerryReedPlant(), true);
+});
+
+test('azure dart unlock stays available after threshold dip while under cap', () => {
+  const world = makeWorldForTest();
+  world.birthsCount = 5;
+  world.water.hygiene01 = 0.9;
+  world.addBerryReedPlant();
+  assert.equal(world.canAddAzureDart(), true);
+
+  world.water.hygiene01 = 0.2;
+  assert.equal(world.canAddAzureDart(), true);
+});
+
+
+test('species tab clear-selection path is safe via toggleFishSelection(null)', () => {
+  const world = makeWorldForTest();
+  const fishId = world.fish[1]?.id ?? world.fish[0].id;
+  world.selectFish(fishId);
+  assert.equal(world.selectedFishId, fishId);
+  world.toggleFishSelection(null);
+  assert.equal(world.selectedFishId, null);
 });

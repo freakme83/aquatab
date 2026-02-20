@@ -6,6 +6,7 @@
 import { World } from './engine/world.js';
 import { Renderer } from './render/renderer.js';
 import { Panel } from './ui/panel.js';
+import { isDevMode, onDevModeChanged, toggleDevMode } from './dev.js';
 
 const DEFAULT_INITIAL_FISH_COUNT = 4;
 const SAVE_STORAGE_KEY = 'aquatab_save_v1';
@@ -35,6 +36,7 @@ let renderer = null;
 let panel = null;
 let started = false;
 let canvasClickHandler = null;
+let ecosystemFailed = false;
 
 let pendingSavePayload = null;
 
@@ -104,7 +106,7 @@ function formatRelativeSavedAt(epochMs) {
 }
 
 function saveWorldSnapshot() {
-  if (!started || !world) return false;
+  if (!started || !world || ecosystemFailed) return false;
 
   try {
     const payload = {
@@ -178,6 +180,55 @@ filterToast.style.fontSize = '12px';
 filterToast.style.zIndex = '30';
 filterToast.style.pointerEvents = 'none';
 document.body.appendChild(filterToast);
+
+const ecosystemFailedOverlay = document.createElement('div');
+ecosystemFailedOverlay.hidden = true;
+ecosystemFailedOverlay.style.position = 'fixed';
+ecosystemFailedOverlay.style.inset = '0';
+ecosystemFailedOverlay.style.display = 'grid';
+ecosystemFailedOverlay.style.placeItems = 'center';
+ecosystemFailedOverlay.style.background = 'rgba(2, 7, 12, 0.8)';
+ecosystemFailedOverlay.style.backdropFilter = 'blur(2px)';
+ecosystemFailedOverlay.style.zIndex = '120';
+
+const ecosystemFailedCard = document.createElement('div');
+ecosystemFailedCard.style.width = 'min(420px, calc(100vw - 32px))';
+ecosystemFailedCard.style.padding = '18px';
+ecosystemFailedCard.style.borderRadius = '12px';
+ecosystemFailedCard.style.border = '1px solid rgba(255, 255, 255, 0.28)';
+ecosystemFailedCard.style.background = 'rgba(13, 20, 28, 0.95)';
+ecosystemFailedCard.style.boxShadow = '0 16px 34px rgba(0, 0, 0, 0.44)';
+
+const ecosystemFailedTitle = document.createElement('h2');
+ecosystemFailedTitle.textContent = 'Ecosystem Failed';
+ecosystemFailedTitle.style.margin = '0 0 8px';
+ecosystemFailedTitle.style.fontSize = '22px';
+ecosystemFailedTitle.style.color = '#eaf7ff';
+
+const ecosystemFailedBody = document.createElement('p');
+ecosystemFailedBody.textContent = 'All fish are gone. This run cannot be continued.';
+ecosystemFailedBody.style.margin = '0 0 16px';
+ecosystemFailedBody.style.color = 'rgba(232, 244, 255, 0.9)';
+
+const ecosystemFailedActions = document.createElement('div');
+ecosystemFailedActions.style.display = 'flex';
+ecosystemFailedActions.style.justifyContent = 'flex-end';
+
+const ecosystemFailedRestartButton = document.createElement('button');
+ecosystemFailedRestartButton.type = 'button';
+ecosystemFailedRestartButton.textContent = 'Restart';
+ecosystemFailedRestartButton.style.padding = '8px 12px';
+ecosystemFailedRestartButton.style.borderRadius = '999px';
+ecosystemFailedRestartButton.style.border = '1px solid rgba(255, 255, 255, 0.4)';
+ecosystemFailedRestartButton.style.background = 'rgba(23, 50, 82, 0.92)';
+ecosystemFailedRestartButton.style.color = '#eaf7ff';
+ecosystemFailedRestartButton.style.fontWeight = '600';
+ecosystemFailedRestartButton.style.cursor = 'pointer';
+
+ecosystemFailedActions.append(ecosystemFailedRestartButton);
+ecosystemFailedCard.append(ecosystemFailedTitle, ecosystemFailedBody, ecosystemFailedActions);
+ecosystemFailedOverlay.append(ecosystemFailedCard);
+document.body.appendChild(ecosystemFailedOverlay);
 
 
 const infoModalCopy = {
@@ -332,7 +383,16 @@ function showFilterToast(textValue) {
   filterToastTimeoutId = setTimeout(() => {
     filterToast.hidden = true;
     filterToastTimeoutId = null;
-  }, 1000);
+  }, 2000);
+}
+
+
+function refreshDevModeUI() {
+  if (!panel) return;
+  panel.sync({
+    speedMultiplier: world?.speedMultiplier ?? 1,
+    paused: world?.paused ?? false
+  });
 }
 
 function worldToClientPoint(worldX, worldY) {
@@ -406,21 +466,47 @@ const VISIBLE_MAX_STEP_SEC = 0.25;
 const HIDDEN_STEP_SEC = 0.25;
 const HIDDEN_TICK_MS = 1000;
 
+function checkEcosystemFailure() {
+  if (!world || ecosystemFailed) return;
+
+  const aliveCount = world.fish.reduce((count, fish) => {
+    return count + (fish.lifeState === 'ALIVE' ? 1 : 0);
+  }, 0);
+
+  if (aliveCount === 0) triggerEcosystemFailed();
+}
+
+function triggerEcosystemFailed() {
+  if (!started || ecosystemFailed || !world) return;
+
+  ecosystemFailed = true;
+  world.paused = true;
+  stopRaf();
+  stopBackgroundSim();
+  stopAutosave();
+  hideCorpseAction();
+  localStorage.removeItem(SAVE_STORAGE_KEY);
+  ecosystemFailedOverlay.hidden = false;
+}
+
 function stepVisibleSim(rawDeltaSec) {
-  if (!world) return;
+  if (!world || ecosystemFailed) return;
   const dt = Math.min(VISIBLE_MAX_STEP_SEC, Math.max(0, rawDeltaSec));
   if (dt <= 0) return;
   world.update(dt);
+  checkEcosystemFailure();
 }
 
 function stepHiddenSim(rawDeltaSec) {
-  if (!world) return;
+  if (!world || ecosystemFailed) return;
   let remaining = Math.max(0, rawDeltaSec);
   if (remaining <= 0) return;
 
   while (remaining > 0) {
     const dt = Math.min(HIDDEN_STEP_SEC, remaining);
     world.update(dt);
+    checkEcosystemFailure();
+    if (ecosystemFailed) return;
     remaining -= dt;
   }
 }
@@ -434,6 +520,7 @@ function tick(now) {
   const renderDelta = Math.min(0.05, Math.max(0.000001, rawDelta));
 
   stepVisibleSim(rawDelta);
+  if (ecosystemFailed) return;
   renderer.render(now, renderDelta);
 
   panel.updateStats({
@@ -441,18 +528,28 @@ function tick(now) {
     fishCount: world.fish.length,
     cleanliness01: world.water.hygiene01,
     cleanlinessTrend: computeCleanlinessTrend(world.simTimeSec, world.water.hygiene01),
-    filterUnlocked: world.filterUnlocked,
+    filterUnlocked: world.isFeatureUnlocked?.('waterFilter') ?? world.filterUnlocked,
     foodsConsumedCount: world.foodsConsumedCount,
     filterUnlockThreshold: world.filterUnlockThreshold,
     filterInstalled: world.water.filterInstalled,
     filterEnabled: world.water.filterEnabled,
     filter01: world.water.filter01,
+    filterTier: world.water.filterTier,
+    filterNextTierUnlockFeeds: world.getFilterTierUnlockFeeds?.((world.water.filterTier ?? 0) + 1) ?? 0,
+    foodsNeededForNextTier: Math.max(0, (world.getFilterTierUnlockFeeds?.((world.water.filterTier ?? 0) + 1) ?? 0) - world.foodsConsumedCount),
     installProgress01: world.water.installProgress01,
     maintenanceProgress01: world.water.maintenanceProgress01,
     maintenanceCooldownSec: world.water.maintenanceCooldownSec,
-    filterDepletedThreshold01: world.filterDepletedThreshold01
+    filterDepletedThreshold01: world.filterDepletedThreshold01,
+    birthsCount: world.birthsCount,
+    berryReedUnlockBirths: 4,
+    berryReedUnlockCleanlinessPct: 80,
+    canAddBerryReed: world.canAddBerryReedPlant?.() ?? false,
+    berryReedPlantCount: world.berryReedPlants?.length ?? 0,
+    canAddAzureDart: world.canAddAzureDart?.() ?? false,
+    azureDartCount: world.getAzureDartCount?.() ?? 0
   });
-  panel.updateFishInspector(world.fish, world.selectedFishId, world.simTimeSec);
+  panel.updateFishInspector(world.getFishInspectorList?.() ?? world.fish, world.selectedFishId, world.simTimeSec);
   updateCorpseActionButton();
 
   const timing = world.debugTiming;
@@ -484,7 +581,7 @@ function stopRaf() {
 }
 
 function startBackgroundSim() {
-  if (!started || bgIntervalId != null) return;
+  if (!started || ecosystemFailed || bgIntervalId != null) return;
 
   let last = performance.now();
   bgIntervalId = setInterval(() => {
@@ -502,7 +599,7 @@ function stopBackgroundSim() {
 }
 
 function syncDriversToVisibility() {
-  if (!started) return;
+  if (!started || ecosystemFailed) return;
   if (document.visibilityState === 'hidden') {
     saveWorldSnapshot();
     stopRaf();
@@ -521,6 +618,18 @@ window.addEventListener('beforeunload', () => {
   saveWorldSnapshot();
 });
 
+document.addEventListener('keydown', (event) => {
+  if (!event.ctrlKey || !event.shiftKey || event.code !== 'KeyD') return;
+  event.preventDefault();
+  const enabled = toggleDevMode();
+  showFilterToast(`Dev mode ${enabled ? 'ON' : 'OFF'}`);
+});
+
+onDevModeChanged(() => {
+  if (world) world.setSpeedMultiplier(world.speedMultiplier);
+  refreshDevModeUI();
+});
+
 
 function restartToStartScreen() {
   if (!started) return;
@@ -530,8 +639,10 @@ function restartToStartScreen() {
   stopBackgroundSim();
   stopAutosave();
   hideCorpseAction();
+  ecosystemFailedOverlay.hidden = true;
 
   started = false;
+  ecosystemFailed = false;
   pendingSavePayload = null;
   world = null;
   renderer = null;
@@ -558,6 +669,8 @@ function startSimulation({ savedPayload = null } = {}) {
   appRoot.hidden = false;
   startScreen.hidden = true;
   pendingSavePayload = null;
+  ecosystemFailed = false;
+  ecosystemFailedOverlay.hidden = true;
 
   const initialSize = measureCanvasSize();
   if (savedPayload?.saveVersion === SAVE_VERSION) {
@@ -578,12 +691,39 @@ function startSimulation({ savedPayload = null } = {}) {
     onSpeedChange: (value) => world.setSpeedMultiplier(value),
     onPauseToggle: () => world.togglePause(),
     onFishSelect: (fishId) => world.toggleFishSelection(fishId),
+    onFishFocus: (fishId) => world.selectFish(fishId),
     onFishRename: (fishId, name) => world.renameFish(fishId, name),
     onFishDiscard: (fishId) => world.discardFish(fishId),
     onGetFishById: (fishId) => world.getFishById?.(fishId),
     onFilterInstall: () => world.installWaterFilter?.(),
     onFilterMaintain: () => world.maintainWaterFilter?.(),
     onFilterTogglePower: () => world.toggleWaterFilterEnabled?.(),
+    onFilterUpgrade: () => world.upgradeWaterFilter?.(),
+    onAddBerryReed: () => {
+      const result = world.addBerryReedPlant?.() ?? { ok: false, reason: 'WORLD_NOT_READY' };
+      if (result.ok) {
+        showFilterToast('Berry Reed added');
+        return result;
+      }
+
+      if (result.reason === 'MAX_COUNT') showFilterToast('Berry Reed already added');
+      else if (result.reason === 'LOCKED') showFilterToast('Berry Reed locked');
+      else if (result.reason === 'WORLD_NOT_READY') showFilterToast('Not ready yet');
+
+      if (isDevMode()) {
+        console.warn('[BerryReed]', result.reason, {
+          birthsCount: world.birthsCount,
+          hygiene01: world.water?.hygiene01,
+          plantCount: world.berryReedPlants?.length ?? 0,
+          maxCount: world.getBerryReedMaxCount?.() ?? 1,
+          bounds: world.bounds
+        });
+      }
+
+      return result;
+    },
+    onAddAzureDart: () => world.addAzureDartSchool?.(),
+    onGrantUnlockPrereqs: () => world.grantAllUnlockPrerequisites?.(),
     onRestartConfirm: () => restartToStartScreen()
   };
   if (!panel) {
@@ -629,6 +769,9 @@ function startSimulation({ savedPayload = null } = {}) {
   requestAnimationFrame(resize);
 
   started = true;
+  checkEcosystemFailure();
+  if (ecosystemFailed) return;
+
   startAutosave();
   syncDriversToVisibility();
 }
@@ -659,6 +802,10 @@ buyCoffeeButton?.addEventListener('click', () => {
 
 startSimButton?.addEventListener('click', () => {
   startSimulation();
+});
+
+ecosystemFailedRestartButton.addEventListener('click', () => {
+  restartToStartScreen();
 });
 
 refreshSavedStartPanel();

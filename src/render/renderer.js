@@ -99,6 +99,7 @@ export class Renderer {
     this.#drawCachedBackground(ctx);
     this.#drawPollutionTint(ctx);
     this.#drawWaterPlants(ctx, time);
+    this.#drawBerryReed(ctx, time);
     this.#drawGroundAlgae(ctx, time);
     this.#drawPlayEffects(ctx, time);
     this.#drawWaterParticles(ctx, delta);
@@ -205,6 +206,120 @@ export class Renderer {
     ctx.restore();
   }
 
+  #drawBerryReed(ctx, time) {
+    const sx = this.tankRect.width / this.world.bounds.width;
+    const sy = this.tankRect.height / this.world.bounds.height;
+    const plants = this.world.berryReedPlants ?? [];
+    const fruits = this.world.fruits ?? [];
+    if (!plants.length) return;
+
+    ctx.save();
+    ctx.lineCap = 'round';
+
+    for (const plant of plants) {
+      const plantPose = this.#getBerryReedPlantPose(plant, time, sx, sy);
+      const { baseX, baseY, h, swayPx } = plantPose;
+
+      ctx.strokeStyle = 'hsla(136deg 38% 42% / 0.9)';
+      ctx.lineWidth = Math.max(1.4, 2 * sx);
+      ctx.beginPath();
+      ctx.moveTo(baseX, baseY);
+      ctx.bezierCurveTo(baseX - 4 * sx + swayPx * 0.2, baseY - h * 0.34, baseX + 3 * sx + swayPx, baseY - h * 0.72, baseX + swayPx, baseY - h);
+      ctx.stroke();
+
+      for (const [branchIndex, branch] of (plant.branches ?? []).entries()) {
+        const branchPose = this.#getBerryReedBranchPose(plant, branch, branchIndex, time, sx, sy);
+        const { startX, startY, controlX, controlY, endX, endY } = branchPose;
+
+        ctx.lineWidth = Math.max(1.1, 1.5 * sx);
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.quadraticCurveTo(controlX, controlY, endX, endY);
+        ctx.stroke();
+      }
+    }
+
+    for (const fruit of fruits) {
+      const fruitPose = this.#getBerryReedFruitPose(fruit, time, sx, sy);
+      if (!fruitPose) continue;
+      const { x, y, branchX, branchY } = fruitPose;
+      const r = Math.max(1, (fruit.radius ?? 2.2) * ((sx + sy) * 0.5));
+
+      ctx.strokeStyle = 'hsla(130deg 38% 40% / 0.75)';
+      ctx.lineWidth = Math.max(0.8, 1.05 * sx);
+      ctx.beginPath();
+      ctx.moveTo(branchX, branchY);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+
+      ctx.fillStyle = 'hsla(332deg 58% 66% / 0.9)';
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, TAU);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  #getBerryReedPlantPose(plant, time, sx, sy) {
+    const baseX = this.tankRect.x + (plant?.x ?? 0) * sx;
+    const baseY = this.tankRect.y + (plant?.bottomY ?? 0) * sy;
+    const h = (plant?.height ?? 0) * sy;
+    const swayRate = plant?.swayRate ?? 0.0012;
+    const swayPhase = plant?.swayPhase ?? 0;
+    const swayPx = Math.sin(time * swayRate + swayPhase) * (2.4 * sx);
+    return { baseX, baseY, h, swayPx };
+  }
+
+  #getBerryReedBranchPose(plant, branch, branchIndex, time, sx, sy) {
+    const { baseX, baseY, h, swayPx } = this.#getBerryReedPlantPose(plant, time, sx, sy);
+    const t = Math.max(0.1, Math.min(0.95, branch?.t ?? 0.5));
+    const dir = branch?.side === -1 ? -1 : 1;
+    const len = Math.max(0.08, Math.min(0.5, branch?.len ?? 0.26));
+    const localRate = (plant?.swayRate ?? 0.0012) * 1.7;
+    const localPhase = (plant?.swayPhase ?? 0) + branchIndex * 1.3;
+    const localSway = Math.sin(time * localRate + localPhase) * (0.9 * sx) * len;
+    const startX = baseX + swayPx * t;
+    const startY = baseY - h * t;
+    const endX = startX + dir * h * len * 0.32 + localSway;
+    const endY = startY - h * len * 0.08;
+    const controlX = startX + dir * 4 * sx + localSway * 0.6;
+    const controlY = startY - h * 0.03;
+    const angle = Math.atan2(endY - startY, endX - startX);
+    return {
+      startX,
+      startY,
+      controlX,
+      controlY,
+      endX,
+      endY,
+      angle
+    };
+  }
+
+  #getBerryReedFruitPose(fruit, time, sx, sy) {
+    const plants = this.world.berryReedPlants ?? [];
+    const plant = plants.find((entry) => entry.id === fruit?.plantId);
+    if (!plant) return null;
+    const branchIndex = Math.max(0, Math.floor(fruit?.branchIndex ?? 0));
+    const branch = plant.branches?.[branchIndex];
+    if (!branch) return null;
+
+    const branchPose = this.#getBerryReedBranchPose(plant, branch, branchIndex, time, sx, sy);
+    const u = Math.max(0, Math.min(1, fruit?.u ?? 0.9));
+    const v = Number.isFinite(fruit?.v) ? fruit.v : 0;
+    const branchX = branchPose.startX + (branchPose.endX - branchPose.startX) * u;
+    const branchY = branchPose.startY + (branchPose.endY - branchPose.startY) * u;
+    const perpX = -Math.sin(branchPose.angle);
+    const perpY = Math.cos(branchPose.angle);
+    return {
+      x: branchX + perpX * v,
+      y: branchY + perpY * v,
+      branchX,
+      branchY
+    };
+  }
+
 
   #drawGroundAlgae(ctx, time) {
     const sx = this.tankRect.width / this.world.bounds.width;
@@ -290,19 +405,48 @@ export class Renderer {
   #drawPollutionTint(ctx) {
     const { x, y, width, height } = this.tankRect;
     const dirt01 = Math.max(0, Math.min(1, this.world.water?.dirt01 ?? 0));
+    if (dirt01 <= 0.001) return;
+
+    const ease = (value) => value * value * (3 - 2 * value);
     const start = Math.max(0, Math.min(1, CONFIG.world.water.POLLUTION_TINT_START ?? 0.9));
     const span = Math.max(0.0001, 1 - start);
 
     let t = Math.max(0, Math.min(1, (dirt01 - start) / span));
-    t = t * t * (3 - 2 * t);
+    t = ease(t);
 
     const maxAlpha = Math.max(0, Math.min(1, CONFIG.world.water.POLLUTION_TINT_MAX_ALPHA ?? 0.18));
     const alpha = t * maxAlpha;
-    if (alpha <= 0.001) return;
+    const murkMaxAlpha = Math.max(0, Math.min(1, CONFIG.world.water.POLLUTION_MURK_MAX_ALPHA ?? 0.18));
+    const murkAlpha = ease(dirt01) * murkMaxAlpha;
+
+    const settleColor = CONFIG.world.water.POLLUTION_SETTLE_COLOR ?? '74, 98, 76';
+    const settleMaxAlpha = Math.max(0, Math.min(1, CONFIG.world.water.POLLUTION_SETTLE_MAX_ALPHA ?? 0.26));
+    const settleCurve = ease(Math.max(0, Math.min(1, (dirt01 - 0.35) / 0.65)));
+    const settleAlphaBottom = settleCurve * settleMaxAlpha;
+
+    if (alpha <= 0.001 && murkAlpha <= 0.001 && settleAlphaBottom <= 0.001) return;
+
+    if (murkAlpha > 0.001) {
+      ctx.fillStyle = `rgba(22, 34, 30, ${murkAlpha})`;
+      ctx.fillRect(x, y, width, height);
+    }
 
     const tintColor = CONFIG.world.water.POLLUTION_TINT_COLOR ?? '86, 108, 78';
-    ctx.fillStyle = `rgba(${tintColor}, ${alpha})`;
-    ctx.fillRect(x, y, width, height);
+    if (alpha > 0.001) {
+      ctx.fillStyle = `rgba(${tintColor}, ${alpha})`;
+      ctx.fillRect(x, y, width, height);
+    }
+
+    if (settleAlphaBottom > 0.001) {
+      const settleTopAlpha = settleAlphaBottom * 0.08;
+      const settleGradient = ctx.createLinearGradient(0, y, 0, y + height);
+      settleGradient.addColorStop(0, `rgba(${settleColor}, 0)`);
+      settleGradient.addColorStop(0.45, `rgba(${settleColor}, ${settleTopAlpha})`);
+      settleGradient.addColorStop(0.78, `rgba(${settleColor}, ${settleAlphaBottom * 0.58})`);
+      settleGradient.addColorStop(1, `rgba(${settleColor}, ${settleAlphaBottom})`);
+      ctx.fillStyle = settleGradient;
+      ctx.fillRect(x, y, width, height);
+    }
   }
 
   #drawWaterParticles(ctx, delta) {
@@ -348,8 +492,10 @@ export class Renderer {
 
     const sx = this.tankRect.width / this.world.bounds.width;
     const sy = this.tankRect.height / this.world.bounds.height;
+    const tier = Math.max(1, Math.min(3, Math.floor(water.filterTier ?? 1)));
     const width = Math.max(16, 28 * sx);
-    const height = Math.max(26, 52 * sy);
+    const tierHeightScale = 1 + (tier - 1) * 0.1;
+    const height = Math.max(26, 52 * sy * tierHeightScale);
 
     return {
       x: this.tankRect.x + this.tankRect.width - width - 10,
@@ -375,14 +521,33 @@ export class Renderer {
     ctx.fill();
     ctx.stroke();
 
-    const health = water.filter01 ?? 0;
-    const led = water.filterEnabled
-      ? (health > 0.6 ? 'rgba(96, 255, 140, 0.95)' : (health >= 0.2 ? 'rgba(255, 224, 99, 0.95)' : 'rgba(255, 82, 82, 0.95)'))
-      : 'rgba(170, 180, 188, 0.45)';
-    ctx.fillStyle = led;
-    ctx.beginPath();
-    ctx.arc(x + moduleW * 0.5, y + 8, 3.2, 0, TAU);
-    ctx.fill();
+    const tier = Math.max(1, Math.min(3, Math.floor(water.filterTier ?? 1)));
+    const health = Math.max(0, Math.min(1, water.filter01 ?? 0));
+    const depletedThreshold01 = Math.max(0, Math.min(1, this.world.filterDepletedThreshold01 ?? 0.1));
+    const warningThreshold01 = Math.min(1, depletedThreshold01 + 0.2);
+    const isBlinkOn = Math.floor(time / 500) % 2 === 0;
+
+    let ledColor = 'rgba(170, 180, 188, 0.45)';
+    if (water.filterEnabled) {
+      if (health <= depletedThreshold01) {
+        ledColor = 'rgba(255, 82, 82, 0.96)';
+      } else if (health <= warningThreshold01) {
+        ledColor = 'rgba(246, 163, 74, 0.96)';
+      } else if (isBlinkOn) {
+        ledColor = 'rgba(96, 255, 140, 0.95)';
+      } else {
+        ledColor = 'rgba(52, 120, 72, 0.45)';
+      }
+    }
+
+    const ledCount = Math.max(1, Math.min(3, tier));
+    for (let i = 0; i < ledCount; i += 1) {
+      const ratio = ledCount === 1 ? 0.5 : i / (ledCount - 1);
+      ctx.fillStyle = ledColor;
+      ctx.beginPath();
+      ctx.arc(x + moduleW * (0.3 + ratio * 0.4), y + 8, 2.4, 0, TAU);
+      ctx.fill();
+    }
 
     ctx.strokeStyle = 'rgba(145, 205, 236, 0.32)';
     ctx.beginPath();
@@ -526,7 +691,7 @@ export class Renderer {
     const light = baseLight * (rp.lightnessMult ?? 1);
 
     const sat = Math.max(18, Math.min(76, 52 * (rp.saturationMult ?? 1)));
-
+    const isAzureDart = fish.speciesId === 'AZURE_DART';
 
     ctx.save();
     ctx.translate(position.x, position.y);
@@ -536,8 +701,34 @@ export class Renderer {
     const bodyPath = new Path2D();
     bodyPath.ellipse(0, 0, bodyLength * 0.5, bodyHeight * 0.5, 0, 0, TAU);
 
-    ctx.fillStyle = isSkeleton ? 'hsl(36deg 8% 72%)' : (isDead ? 'hsl(0deg 0% 56%)' : `hsl(${fish.colorHue + tint}deg ${sat}% ${light}%)`);
-    ctx.fill(bodyPath);
+    if (isSkeleton) {
+      ctx.fillStyle = 'hsl(36deg 8% 72%)';
+      ctx.fill(bodyPath);
+    } else if (isDead) {
+      ctx.fillStyle = 'hsl(0deg 0% 56%)';
+      ctx.fill(bodyPath);
+    } else if (isAzureDart) {
+      const baseHue = Math.max(190, Math.min(232, fish.colorHue ?? 212));
+      const pattern = Math.max(0, Math.min(1, fish.traits?.colorPatternSeed ?? 0.5));
+      const grad = ctx.createLinearGradient(-bodyLength * 0.5, 0, bodyLength * 0.5, 0);
+      grad.addColorStop(0, `hsl(${baseHue - 8}deg ${68 + pattern * 10}% ${66 - pattern * 5}%)`);
+      grad.addColorStop(0.55, `hsl(${baseHue + 2}deg ${80 + pattern * 8}% ${47 - pattern * 5}%)`);
+      grad.addColorStop(1, `hsl(${baseHue + 12}deg ${82 + pattern * 8}% ${22 + pattern * 6}%)`);
+      ctx.fillStyle = grad;
+      ctx.fill(bodyPath);
+      ctx.save();
+      ctx.globalAlpha = 0.88;
+      ctx.strokeStyle = 'rgba(245, 251, 255, 0.95)';
+      ctx.lineWidth = Math.max(1, bodyHeight * 0.2);
+      ctx.beginPath();
+      ctx.moveTo(-bodyLength * 0.35, 0);
+      ctx.lineTo(bodyLength * 0.42, 0);
+      ctx.stroke();
+      ctx.restore();
+    } else {
+      ctx.fillStyle = `hsl(${fish.colorHue + tint}deg ${sat}% ${light}%)`;
+      ctx.fill(bodyPath);
+    }
 
     const matingAnim = fish.matingAnim;
     if (matingAnim && fish.lifeState === 'ALIVE') {
@@ -549,14 +740,6 @@ export class Renderer {
         ctx.ellipse(0, 0, bodyLength * 0.62, bodyHeight * 0.62, 0, 0, TAU);
         ctx.fill();
       }
-    }
-
-    if (isHovering && fish.lifeState === 'ALIVE') {
-      const hoverPulse = 0.09 + (Math.sin(time * 0.006 + fish.id) * 0.5 + 0.5) * 0.08;
-      ctx.beginPath();
-      ctx.fillStyle = `rgba(206, 238, 255, ${hoverPulse})`;
-      ctx.ellipse(0, 0, bodyLength * 0.58, bodyHeight * 0.58, 0, 0, TAU);
-      ctx.fill();
     }
 
     if (fish.id === this.world.selectedFishId) {
@@ -573,11 +756,17 @@ export class Renderer {
     ctx.strokeStyle = 'rgba(205, 230, 245, 0.13)';
     ctx.stroke(bodyPath);
 
-    ctx.fillStyle = isSkeleton ? 'hsl(35deg 9% 54%)' : (isDead ? 'hsl(0deg 0% 42%)' : `hsl(${fish.colorHue + tint - 8}deg ${Math.max(12, sat - 12)}% ${light - 12}%)`);
+    ctx.fillStyle = isSkeleton ? 'hsl(35deg 9% 54%)' : (isDead ? 'hsl(0deg 0% 42%)' : (isAzureDart ? 'hsl(206deg 84% 68%)' : `hsl(${fish.colorHue + tint - 8}deg ${Math.max(12, sat - 12)}% ${light - 12}%)`));
     ctx.beginPath();
     ctx.moveTo(-bodyLength * 0.52, 0);
-    ctx.lineTo(-bodyLength * 0.84, bodyHeight * 0.35 + tailWag);
-    ctx.lineTo(-bodyLength * 0.84, -bodyHeight * 0.35 - tailWag);
+    if (isAzureDart) {
+      ctx.lineTo(-bodyLength * 0.86, bodyHeight * 0.22 + tailWag * 0.8);
+      ctx.lineTo(-bodyLength * 0.98, 0);
+      ctx.lineTo(-bodyLength * 0.86, -bodyHeight * 0.22 - tailWag * 0.8);
+    } else {
+      ctx.lineTo(-bodyLength * 0.84, bodyHeight * 0.35 + tailWag);
+      ctx.lineTo(-bodyLength * 0.84, -bodyHeight * 0.35 - tailWag);
+    }
     ctx.closePath();
     ctx.fill();
 

@@ -3,6 +3,8 @@
  * Responsibility: tabs, controls binding, and stat presentation.
  */
 
+import { getMaxSimSpeedMultiplier, isDevMode } from '../dev.js';
+
 export class Panel {
   constructor(rootElement, handlers) {
     this.root = rootElement;
@@ -10,7 +12,9 @@ export class Panel {
     this.nameDraftByFishId = new Map();
     this.currentInspectorSelectedFishId = null;
     this.currentInspectorDetailTab = 'info';
+    this.currentInspectorSpeciesTab = 'LAB_MINNOW';
     this.lastInspectorSignature = null;
+    this.lastObservedSelectedFishId = null;
 
     this.tabButtons = [...this.root.querySelectorAll('.tab-button')];
     this.tabContents = [...this.root.querySelectorAll('.tab-content')];
@@ -22,7 +26,7 @@ export class Panel {
     if (!this.cleanlinessTrendStat && this.cleanlinessStat?.closest('.stat-row')) {
       const row = document.createElement('div');
       row.className = 'stat-row';
-      row.innerHTML = '<span>Trend</span><strong data-stat="cleanlinessTrend">Stable</strong>';
+      row.innerHTML = '<span>Water quality trend</span><strong data-stat="cleanlinessTrend">Stable</strong>';
       this.cleanlinessStat.closest('.stat-row').insertAdjacentElement('afterend', row);
       this.cleanlinessTrendStat = row.querySelector('[data-stat="cleanlinessTrend"]');
     }
@@ -50,7 +54,23 @@ export class Panel {
     this.filterStatus = this.root.querySelector('[data-filter-status]');
     this.filterHealthRow = this.root.querySelector('[data-filter-health-row]');
     this.filterHealth = this.root.querySelector('[data-filter-health]');
+    this.filterTierRow = this.root.querySelector('[data-filter-tier-row]');
+    this.filterTier = this.root.querySelector('[data-filter-tier]');
+    this.filterTierProgressRow = this.root.querySelector('[data-filter-tier-progress-row]');
+    this.filterTierProgress = this.root.querySelector('[data-filter-tier-progress]');
     this.filterToggleRow = this.root.querySelector('[data-filter-toggle-row]');
+    this.speciesAccordion = this.root.querySelector('[data-species-accordion]');
+    this.speciesAccordionToggle = this.root.querySelector('[data-control="toggleSpeciesAccordion"]');
+    this.speciesContent = this.root.querySelector('[data-species-content]');
+    this.addBerryReedButton = this.root.querySelector('[data-control="addBerryReed"]');
+    this.berryState = this.root.querySelector('[data-berry-state]');
+    this.berryReqBirths = this.root.querySelector('[data-berry-req-births]');
+    this.berryReqCleanliness = this.root.querySelector('[data-berry-req-cleanliness]');
+    this.addAzureDartButton = this.root.querySelector('[data-control="addAzureDart"]');
+    this.azureDartState = this.root.querySelector('[data-azure-state]');
+    this.azureDartReqBerry = this.root.querySelector('[data-azure-req-berry]');
+    this.azureDartReqCleanliness = this.root.querySelector('[data-azure-req-cleanliness]');
+    this.azureDartRow = this.root.querySelector('[data-azure-dart-row]');
 
     this.installFilterButton = this.root.querySelector('[data-control="installFilter"]');
     this.maintainFilterButton = this.root.querySelector('[data-control="maintainFilter"]');
@@ -59,9 +79,21 @@ export class Panel {
     this.restartConfirmYes = this.root.querySelector('[data-control="restartConfirmYes"]');
     this.restartConfirmNo = this.root.querySelector('[data-control="restartConfirmNo"]');
     this.toggleFilterPowerButton = this.root.querySelector('[data-control="toggleFilterPower"]');
+    this.upgradeFilterButton = this.root.querySelector('[data-control="upgradeFilter"]');
 
     this.speedValue = this.root.querySelector('[data-value="simSpeed"]');
     this.fishInspector = this.root.querySelector('[data-fish-inspector]');
+
+    this.devSection = document.createElement('section');
+    this.devSection.className = 'dev-panel';
+    this.devSection.hidden = true;
+    this.devSection.innerHTML = `
+      <p class="dev-panel__label">DEV MODE ON</p>
+      <div class="button-row"><button type="button" data-control="grantUnlockPrereqs">Grant all unlock prerequisites</button></div>
+    `;
+    const controlsPanel = this.root.querySelector('[data-content="controls"]');
+    controlsPanel?.appendChild(this.devSection);
+    this.grantUnlockPrereqsButton = this.devSection.querySelector('[data-control="grantUnlockPrereqs"]');
 
     this.deckToggle = document.getElementById('deckToggle');
 
@@ -134,6 +166,35 @@ export class Panel {
     this.toggleFilterPowerButton?.addEventListener('click', () => {
       this.handlers.onFilterTogglePower?.();
     });
+
+    this.upgradeFilterButton?.addEventListener('click', () => {
+      this.handlers.onFilterUpgrade?.();
+    });
+
+    this.speciesAccordionToggle?.addEventListener('click', () => {
+      const nextOpen = this.speciesAccordion?.dataset.open !== 'true';
+      if (this.speciesAccordion) this.speciesAccordion.dataset.open = String(nextOpen);
+      this.speciesAccordionToggle?.setAttribute('aria-expanded', String(nextOpen));
+      if (this.speciesContent) this.speciesContent.hidden = !nextOpen;
+    });
+
+    this.addBerryReedButton?.addEventListener('pointerup', (event) => {
+      event.preventDefault();
+      const result = this.handlers.onAddBerryReed?.();
+      return result;
+    });
+
+    this.addAzureDartButton?.addEventListener('click', () => {
+      this.handlers.onAddAzureDart?.();
+    });
+
+    this.addAzureDartButton?.addEventListener('click', () => {
+      this.handlers.onAddAzureDart?.();
+    });
+
+    this.grantUnlockPrereqsButton?.addEventListener('click', () => {
+      this.handlers.onGrantUnlockPrereqs?.();
+    });
   }
 
   #bindDeckToggle() {
@@ -178,10 +239,29 @@ export class Panel {
     }, true);
 
     this.fishInspector.addEventListener('click', (event) => {
+      const speciesTabButton = event.target.closest('[data-inspector-species-tab]');
+      if (speciesTabButton) {
+        const nextSpecies = speciesTabButton.dataset.inspectorSpeciesTab === 'AZURE_DART' ? 'AZURE_DART' : 'LAB_MINNOW';
+        this.currentInspectorSpeciesTab = nextSpecies;
+        this.currentInspectorSelectedFishId = null;
+        this.handlers.onFishSelect?.(null);
+        this.lastInspectorSignature = null;
+        this.lastObservedSelectedFishId = null;
+        return;
+      }
+
       const detailTabButton = event.target.closest('[data-fish-detail-tab]');
       if (detailTabButton) {
         this.currentInspectorDetailTab = detailTabButton.dataset.fishDetailTab === 'history' ? 'history' : 'info';
         this.lastInspectorSignature = null;
+    this.lastObservedSelectedFishId = null;
+        return;
+      }
+
+      const linkFishButton = event.target.closest('[data-history-fish-id]');
+      if (linkFishButton) {
+        const targetFishId = Number(linkFishButton.dataset.historyFishId);
+        if (Number.isFinite(targetFishId)) this.handlers.onFishFocus?.(targetFishId);
         return;
       }
 
@@ -193,11 +273,35 @@ export class Panel {
 
 
 
+  refreshSpeedControl() {
+    if (!this.speedSlider) return;
+    this.speedSlider.max = String(getMaxSimSpeedMultiplier());
+    const current = Number(this.speedSlider.value);
+    const clamped = Math.max(0.5, Math.min(getMaxSimSpeedMultiplier(), Number.isFinite(current) ? current : 1));
+    this.speedSlider.value = String(clamped);
+    if (this.speedValue) this.speedValue.textContent = `${clamped.toFixed(1)}x`;
+  }
+
+  updateDevSection() {
+    if (!this.devSection) return;
+    this.devSection.hidden = !isDevMode();
+  }
+
   sync({ speedMultiplier, paused }) {
-    this.speedSlider.value = String(speedMultiplier);
-    this.speedValue.textContent = `${speedMultiplier.toFixed(1)}x`;
+    this.refreshSpeedControl();
+    const clampedSpeed = Math.max(0.5, Math.min(getMaxSimSpeedMultiplier(), Number(speedMultiplier) || 1));
+    this.speedSlider.value = String(clampedSpeed);
+    this.speedValue.textContent = `${clampedSpeed.toFixed(1)}x`;
     this.toggleButton.textContent = paused ? 'Resume' : 'Pause';
+    this.updateDevSection();
     if (this.restartConfirm) this.restartConfirm.hidden = true;
+  }
+
+
+
+  #setSpeciesButtonReady(button, canAdd) {
+    if (!button) return;
+    button.classList.toggle('species-btn--ready', Boolean(canAdd));
   }
 
   updateStats({
@@ -211,11 +315,24 @@ export class Panel {
     filterInstalled,
     filterEnabled,
     filter01,
+    filterTier,
+    filterNextTierUnlockFeeds,
+    foodsNeededForNextTier,
     installProgress01,
     maintenanceProgress01,
     maintenanceCooldownSec,
-    filterDepletedThreshold01
+    filterDepletedThreshold01,
+    birthsCount,
+    berryReedUnlockBirths,
+    berryReedUnlockCleanlinessPct,
+    canAddBerryReed,
+    berryReedPlantCount,
+    canAddAzureDart,
+    azureDartCount
   }) {
+    this.updateDevSection();
+    this.refreshSpeedControl();
+
     if (this.simTimeStat) {
       const totalSec = Math.max(0, Math.floor(simTimeSec ?? 0));
       const hh = String(Math.floor(totalSec / 3600)).padStart(2, '0');
@@ -278,12 +395,37 @@ export class Panel {
       this.installFilterButton.disabled = !canInstall;
     }
 
+    const health01 = Math.max(0, Math.min(1, filter01 ?? 0));
+    const depletedThreshold01 = Math.max(0, Math.min(1, filterDepletedThreshold01 ?? 0.1));
+    const warningThreshold01 = Math.min(1, depletedThreshold01 + 0.2);
+
     if (this.filterStatusRow) this.filterStatusRow.hidden = !filterInstalled;
-    if (this.filterStatus) this.filterStatus.textContent = filterEnabled ? 'ON' : 'OFF';
+    if (this.filterStatus) {
+      let statusLabel = 'OFF';
+      let statusColor = '#cfd9e3';
+      if (filterEnabled) {
+        if (health01 <= depletedThreshold01) {
+          statusLabel = 'DEPLETED';
+          statusColor = '#ef6b6b';
+        } else if (health01 <= warningThreshold01) {
+          statusLabel = 'MAINTENANCE DUE';
+          statusColor = '#f1a04f';
+        } else {
+          statusLabel = 'ON';
+          statusColor = '#84e89a';
+        }
+      }
+      this.filterStatus.textContent = statusLabel;
+      this.filterStatus.style.color = statusColor;
+    }
 
     if (this.filterHealthRow) this.filterHealthRow.hidden = !filterInstalled;
-    if (this.filterHealth) this.filterHealth.textContent = `${Math.round(Math.max(0, filter01 ?? 0) * 100)}%`;
-
+    if (this.filterHealth) {
+      this.filterHealth.textContent = `${Math.round(health01 * 100)}%`;
+      this.filterHealth.style.color = health01 <= depletedThreshold01
+        ? '#ef6b6b'
+        : (health01 <= warningThreshold01 ? '#f1a04f' : '');
+    }
 
     if (this.filterToggleRow) this.filterToggleRow.hidden = !filterInstalled;
     if (this.toggleFilterPowerButton) {
@@ -291,10 +433,95 @@ export class Panel {
       this.toggleFilterPowerButton.textContent = filterEnabled ? 'Turn OFF' : 'Turn ON';
     }
 
+    const tier = Math.max(0, Math.min(3, Math.floor(filterTier ?? 0)));
+    const nextUnlock = Math.max(0, Math.floor(filterNextTierUnlockFeeds ?? 0));
+    const neededFeeds = Math.max(0, Math.floor(foodsNeededForNextTier ?? 0));
+    const showUpgrade = filterInstalled && tier < 3;
+    const canUpgrade = showUpgrade && (isDevMode() || neededFeeds <= 0) && !isInstalling && !isMaintaining && filterEnabled;
+
+    if (this.filterTierRow) this.filterTierRow.hidden = !filterInstalled;
+    if (this.filterTier) this.filterTier.textContent = `Tier ${Math.max(1, tier)}/3`;
+
+    if (this.filterTierProgressRow) this.filterTierProgressRow.hidden = !filterInstalled || tier >= 3;
+    if (this.filterTierProgress) {
+      if (!filterInstalled || tier >= 3) {
+        this.filterTierProgress.textContent = '';
+      } else if (canUpgrade) {
+        this.filterTierProgress.textContent = 'Upgrade available';
+      } else {
+        this.filterTierProgress.textContent = `${neededFeeds} feeds left (${consumed}/${nextUnlock})`;
+      }
+    }
+
+    if (this.upgradeFilterButton) {
+      this.upgradeFilterButton.hidden = !showUpgrade;
+      this.upgradeFilterButton.disabled = !canUpgrade;
+    }
+
     if (this.maintainFilterButton) {
       const canMaintain = filterInstalled && !isInstalling && !isMaintaining && (maintenanceCooldownSec ?? 0) <= 0;
       this.maintainFilterButton.hidden = !filterInstalled;
       this.maintainFilterButton.disabled = !canMaintain;
+    }
+
+    const roundedCleanlinessPct = Math.round((cleanliness01 ?? 1) * 100);
+    const requiredBirths = Math.max(1, Math.floor(berryReedUnlockBirths ?? 4));
+    const birthProgress = Math.max(0, Math.floor(birthsCount ?? 0));
+    const requiredCleanlinessPct = Math.max(1, Math.min(100, Math.floor(berryReedUnlockCleanlinessPct ?? 80)));
+    const alreadyAdded = (berryReedPlantCount ?? 0) >= 1;
+
+    if (this.speciesAccordion) this.speciesAccordion.classList.toggle('is-dim', !canAddBerryReed && !alreadyAdded);
+
+    if (this.berryReqBirths) {
+      this.berryReqBirths.textContent = `Requires: ${requiredBirths} births (${Math.min(birthProgress, requiredBirths)}/${requiredBirths})`;
+    }
+
+    if (this.berryReqCleanliness) {
+      this.berryReqCleanliness.textContent = roundedCleanlinessPct >= requiredCleanlinessPct
+        ? `Requires: Cleanliness ${requiredCleanlinessPct}%+ ✓`
+        : `Requires: Cleanliness ${requiredCleanlinessPct}%+ (currently ${roundedCleanlinessPct}%)`;
+    }
+
+    if (this.addBerryReedButton) {
+      if (alreadyAdded) {
+        this.addBerryReedButton.disabled = true;
+        this.addBerryReedButton.textContent = 'Added ✓';
+      } else {
+        this.addBerryReedButton.disabled = !canAddBerryReed;
+        this.addBerryReedButton.textContent = 'Berry Reed';
+      }
+      this.#setSpeciesButtonReady(this.addBerryReedButton, canAddBerryReed && !alreadyAdded);
+    }
+
+    if (this.berryState) {
+      this.berryState.textContent = alreadyAdded ? 'Added' : (canAddBerryReed ? 'Ready' : 'Locked');
+      this.berryState.style.color = alreadyAdded
+        ? '#84e89a'
+        : (canAddBerryReed ? '#cfeeff' : '');
+    }
+
+
+    const azureUnlocked = Boolean(canAddAzureDart);
+    const hasBerry = (berryReedPlantCount ?? 0) >= 1;
+    const devBypass = isDevMode();
+    if (this.azureDartReqBerry) {
+      this.azureDartReqBerry.textContent = (hasBerry || devBypass) ? 'Requires: Berry Reed added ✓' : 'Requires: Berry Reed added';
+    }
+    if (this.azureDartReqCleanliness) {
+      this.azureDartReqCleanliness.textContent = (roundedCleanlinessPct >= 80 || devBypass)
+        ? 'Requires: Cleanliness 80%+ ✓'
+        : `Requires: Cleanliness 80%+ (currently ${roundedCleanlinessPct}%)`;
+    }
+    if (this.azureDartState) {
+      this.azureDartState.textContent = azureDartCount >= 4 ? 'Added' : (azureUnlocked ? 'Ready' : 'Locked');
+      this.azureDartState.style.color = azureDartCount >= 4
+        ? '#84e89a'
+        : (azureUnlocked ? '#cfeeff' : '');
+    }
+    if (this.azureDartRow) this.azureDartRow.classList.toggle('is-locked', !azureUnlocked);
+    if (this.addAzureDartButton) {
+      this.addAzureDartButton.disabled = !azureUnlocked;
+      this.#setSpeciesButtonReady(this.addAzureDartButton, azureUnlocked);
     }
   }
 
@@ -314,11 +541,15 @@ export class Panel {
       return a.id - b.id;
     });
 
-    const selectedFish = sorted.find((fish) => fish.id === selectedFishId) ?? null;
-    if ((selectedFish?.id ?? null) !== this.currentInspectorSelectedFishId) {
-      this.currentInspectorDetailTab = 'info';
+    const selectedFishAnySpecies = sorted.find((fish) => fish.id === selectedFishId) ?? null;
+    const selectedChanged = selectedFishId !== this.lastObservedSelectedFishId;
+    if (selectedChanged && (selectedFishAnySpecies?.speciesId === 'AZURE_DART' || selectedFishAnySpecies?.speciesId === 'LAB_MINNOW')) {
+      this.currentInspectorSpeciesTab = selectedFishAnySpecies.speciesId;
     }
+    this.lastObservedSelectedFishId = selectedFishId ?? null;
 
+    const filtered = sorted.filter((fish) => (fish.speciesId ?? 'LAB_MINNOW') === this.currentInspectorSpeciesTab);
+    const selectedFish = filtered.find((fish) => fish.id === selectedFishId) ?? null;
     const selectedLiveAgeSec = selectedFish ? Math.floor(selectedFish.ageSeconds(simTimeSec)) : -1;
     const selectedHungerPct = selectedFish ? Math.round((selectedFish.hunger01 ?? 0) * 100) : -1;
     const selectedWellbeingPct = selectedFish ? Math.round((selectedFish.wellbeing01 ?? 0) * 100) : -1;
@@ -327,7 +558,7 @@ export class Panel {
       ? `${selectedFish.history?.mealsEaten ?? 0}|${selectedFish.history?.mateCount ?? 0}|${selectedFish.history?.childrenIds?.length ?? 0}|${selectedFish.history?.deathSimTimeSec ?? ''}|${selectedFish.repro?.state ?? ''}|${selectedFish.deathReason ?? ''}`
       : 'none';
 
-    const signature = sorted
+    const signature = filtered
       .map((fish) => `${fish.id}|${fish.name ?? ''}|${fish.lifeState}|${fish.hungerState}|${fish.lifeStage ?? ''}|${fish.repro?.state ?? ''}`)
       .join(';')
       + `::selected=${selectedFishId ?? 'none'}`
@@ -336,12 +567,13 @@ export class Panel {
       + `::wellbeing=${selectedWellbeingPct}`
       + `::growth=${selectedGrowthPct}`
       + `::history=${selectedHistorySnapshot}`
-      + `::detailTab=${this.currentInspectorDetailTab}`;
+      + `::detailTab=${this.currentInspectorDetailTab}`
+      + `::speciesTab=${this.currentInspectorSpeciesTab}`;
 
     if (signature === this.lastInspectorSignature) return;
     this.lastInspectorSignature = signature;
 
-    const listHtml = sorted
+    const listHtml = filtered
       .map((fish) => {
         const selectedClass = fish.id === selectedFishId ? ' selected' : '';
         const deadClass = fish.lifeState !== 'ALIVE' ? ' fishRow--dead' : '';
@@ -361,8 +593,18 @@ export class Panel {
       ? this.#fishDetailsMarkup(selectedFish, simTimeSec)
       : '<p class="fish-empty">Select a fish.</p>';
 
+    const labActive = this.currentInspectorSpeciesTab === 'LAB_MINNOW';
+    const azureActive = this.currentInspectorSpeciesTab === 'AZURE_DART';
+    const speciesTabsHtml = `
+      <div class="inspector-species-tabs" role="tablist" aria-label="Fish species">
+        <button type="button" class="inspector-species-tab${labActive ? ' active' : ''}" data-inspector-species-tab="LAB_MINNOW" role="tab" aria-selected="${labActive}">Lab Minnow</button>
+        <button type="button" class="inspector-species-tab${azureActive ? ' active' : ''}" data-inspector-species-tab="AZURE_DART" role="tab" aria-selected="${azureActive}">Azure Dart</button>
+      </div>
+    `;
+
     this.fishInspector.innerHTML = `
-      <div class="fish-list">${listHtml}</div>
+      ${speciesTabsHtml}
+      <div class="fish-list">${listHtml || '<p class="fish-empty">No fish in this species tab.</p>'}</div>
       <div class="fish-detail">${detailHtml}</div>
     `;
 
@@ -392,9 +634,11 @@ export class Panel {
       ? '<div class="status-line status--pregnant">pregnant</div>'
       : '';
 
+    const speciesLabel = fish.speciesId === 'AZURE_DART' ? 'Azure Dart' : 'Lab Minnow';
     const infoRows = `
       <label class="control-group fish-name-group"><span>Name</span><input type="text" maxlength="24" value="${this.#escapeAttribute(draftName)}" data-fish-name-input placeholder="Fish name" /></label>
       <div class="stat-row"><span>Fish ID</span><strong>${fish.id}</strong></div>
+      <div class="stat-row"><span>Species</span><strong>${speciesLabel}</strong></div>
       <div class="stat-row"><span>Sex</span><strong>${fish.sex}</strong></div>
       <div class="stat-row"><span>Life Stage</span><strong>${typeof fish.lifeStageLabel === 'function' ? fish.lifeStageLabel() : (fish.lifeStage ?? '')}</strong></div>
       <div class="stat-row"><span>Hunger</span><strong>${fish.hungerState} (${Math.round(fish.hunger01 * 100)}%)</strong></div>
@@ -405,25 +649,20 @@ export class Panel {
     `;
 
     const history = fish.history ?? {};
-    const motherValue = history.motherId != null ? this.resolveFishLabelById(history.motherId) : '—';
-    const fatherValue = history.fatherId != null ? this.resolveFishLabelById(history.fatherId) : '—';
+    const motherValue = this.#historyFishReference(history.motherId);
+    const fatherValue = this.#historyFishReference(history.fatherId);
     const lifetimeValue = this.#formatMMSS(typeof fish.getLifeTimeSec === 'function' ? fish.getLifeTimeSec(simTimeSec) : 0);
-    const childrenIds = Array.isArray(history.childrenIds) ? history.childrenIds : [];
-    const childLabels = childrenIds.map((id) => this.resolveFishLabelById(id));
-    const childrenSummary = childLabels.length > 0 ? childLabels.join(', ') : '—';
-    const childrenMarkup = childLabels.length > 0
-      ? childLabels.map((label) => `<div class="history-child-item">${this.#escapeHtml(label)}</div>`).join('')
-      : '<div class="history-child-item">—</div>';
+    const [childrenSummary, childrenMarkup] = this.#historyFishReferenceList(history.childrenIds);
 
     const historyRows = `
-      <div class="stat-row"><span>Mother</span><strong>${this.#escapeHtml(motherValue)}</strong></div>
-      <div class="stat-row"><span>Father</span><strong>${this.#escapeHtml(fatherValue)}</strong></div>
+      <div class="stat-row"><span>Mother</span><strong>${motherValue}</strong></div>
+      <div class="stat-row"><span>Father</span><strong>${fatherValue}</strong></div>
       <div class="stat-row"><span>Born in aquarium</span><strong>${history.bornInAquarium ? 'Yes' : 'No'}</strong></div>
       <div class="stat-row"><span>Life duration</span><strong>${lifetimeValue}</strong></div>
       <div class="stat-row"><span>Died</span><strong>${this.#deathReasonLabel(fish)}</strong></div>
       <div class="stat-row"><span>Meals eaten</span><strong>${Math.max(0, Math.floor(history.mealsEaten ?? 0))}</strong></div>
       <div class="stat-row"><span>Times mated</span><strong>${Math.max(0, Math.floor(history.mateCount ?? 0))}</strong></div>
-      <div class="stat-row"><span>Children</span><strong>${this.#escapeHtml(childrenSummary)}</strong></div>
+      <div class="stat-row"><span>Children</span><strong>${childrenSummary}</strong></div>
       <div class="history-children-list">${childrenMarkup}</div>
     `;
 
@@ -450,6 +689,26 @@ export class Panel {
     return resolvedName || String(id);
   }
 
+
+
+  #historyFishReference(id) {
+    if (id == null) return '—';
+    const label = this.resolveFishLabelById(id);
+    const fishId = Number(id);
+    if (!Number.isFinite(fishId)) return this.#escapeHtml(label);
+    return `<button type="button" class="history-fish-link" data-history-fish-id="${fishId}">${this.#escapeHtml(label)}</button>`;
+  }
+
+  #historyFishReferenceList(ids) {
+    const normalized = Array.isArray(ids) ? ids : [];
+    if (normalized.length === 0) return ['—', '<div class="history-child-item">—</div>'];
+
+    const summary = normalized.map((id) => this.#historyFishReference(id)).join(', ');
+    const listMarkup = normalized
+      .map((id) => `<div class="history-child-item">${this.#historyFishReference(id)}</div>`)
+      .join('');
+    return [summary, listMarkup];
+  }
 
   #deathReasonLabel(fish) {
     if (!fish || fish.lifeState !== 'DEAD') return '—';

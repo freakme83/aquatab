@@ -1,4 +1,4 @@
-import { CONFIG } from '../config.js';
+import { CONFIG, DEFAULT_SPECIES_ID, SPECIES } from '../config.js';
 
 const TAU = CONFIG.fish.tau;
 const MAX_TILT = CONFIG.fish.maxTiltRad;
@@ -22,6 +22,7 @@ const AGE_CONFIG = CONFIG.fish.age;
 const GROWTH_CONFIG = CONFIG.fish.growth;
 const MORPH = CONFIG.fish.morph;
 const STAGE_SPEED = CONFIG.fish.stageSpeed;
+const SPECIES_MAP = SPECIES ?? {};
 const WATER_WELLBEING = CONFIG.fish.waterWellbeing ?? {};
 const WATER_STRESS_START_HYGIENE01 = Math.max(0.05, Math.min(1, WATER_WELLBEING.stressStartHygiene01 ?? 0.7));
 const WATER_STRESS_CURVE_POWER = Math.max(1, WATER_WELLBEING.stressCurvePower ?? 1.35);
@@ -56,6 +57,7 @@ const deepCopyPlain = (value) => {
 
 export const FISH_SAVE_KEYS = [
   'id',
+  'speciesId',
   'name',
   'spawnTimeSec',
   'stageShiftBabySec',
@@ -88,6 +90,9 @@ export const FISH_SAVE_KEYS = [
   'repro',
   'matingAnim',
   'digestBites',
+  'schoolingBias',
+  'soloUntilSec',
+  'nextSoloWindowAtSec',
   'history'
 ];
 // Smooth-ish ease for growth transitions.
@@ -123,11 +128,28 @@ function clampAngleForFacing(angle, facing) {
   return normalizeAngle(base + clamp(relative, -MAX_TILT, MAX_TILT));
 }
 
+
+function getSpeciesConfig(speciesId) {
+  return SPECIES_MAP[speciesId] ?? SPECIES_MAP[DEFAULT_SPECIES_ID] ?? null;
+}
+
+function getSpeciesDiet(speciesId) {
+  const species = getSpeciesConfig(speciesId);
+  return Array.isArray(species?.diet) ? species.diet : ['pellet'];
+}
+
+function randomColorHueForSpecies(speciesId) {
+  if (speciesId === 'AZURE_DART') return rand(198, 228);
+  return rand(8, 42);
+}
+
 export class Fish {
   constructor(bounds, options = {}) {
     this.bounds = bounds;
 
     this.id = options.id ?? 0;
+    this.speciesId = typeof options.speciesId === 'string' ? options.speciesId : DEFAULT_SPECIES_ID;
+    this.species = getSpeciesConfig(this.speciesId);
     this.name = '';
     this.spawnTimeSec = options.spawnTimeSec ?? 0;
 
@@ -136,15 +158,16 @@ export class Fish {
     const growthRange = GROWTH_CONFIG.growthRateRange;
 
     const baseTraits = {
-      colorHue: options.colorHue ?? rand(8, 42),
+      colorHue: options.colorHue ?? randomColorHueForSpecies(this.speciesId),
       sizeFactor: options.sizeFactor ?? rand(sizeRange.min, sizeRange.max),
       growthRate: options.growthRate ?? rand(growthRange.min, growthRange.max),
       lifespanSec: null,
-      speedFactor: options.speedFactor ?? rand(0.42, 0.68)
+      speedFactor: options.speedFactor ?? rand(0.42, 0.68),
+      colorPatternSeed: options.colorPatternSeed ?? rand(0, 1)
     };
 
-    const lifeMean = AGE_CONFIG.lifespanMeanSec;
-    const lifeJitter = AGE_CONFIG.lifespanJitterSec;
+    const lifeMean = AGE_CONFIG.lifespanMeanSec * (this.species?.lifespanScale ?? 1);
+    const lifeJitter = AGE_CONFIG.lifespanJitterSec * (this.species?.lifespanScale ?? 1);
     baseTraits.lifespanSec = options.lifespanSec ?? rand(lifeMean - lifeJitter, lifeMean + lifeJitter);
     this.traits = {
       ...baseTraits,
@@ -153,7 +176,7 @@ export class Fish {
     // Backward compatibility for existing usage paths while traits are adopted.
     Object.assign(this, this.traits);
 
-    this.adultRadius = GROWTH_CONFIG.adultRadius * this.traits.sizeFactor;
+    this.adultRadius = GROWTH_CONFIG.adultRadius * this.traits.sizeFactor * (this.species?.adultSizeScale ?? 1);
 
     const stageJitter = AGE_CONFIG.stageJitterSec;
     this.stageShiftBabySec = options.stageShiftBabySec ?? rand(-stageJitter, stageJitter);
@@ -177,6 +200,14 @@ export class Fish {
     this.desiredAngle = this.headingAngle;
 
     this.currentSpeed = this.#baseSpeed() * rand(0.9, 1.06);
+    const schooling = this.species?.schooling ?? {};
+    this.schoolingBias = Number.isFinite(options.schoolingBias)
+      ? clamp(options.schoolingBias, 0, 1)
+      : clamp(rand(schooling.biasMin ?? 0, schooling.biasMax ?? 0), 0, 1);
+    this.soloUntilSec = Number.isFinite(options.soloUntilSec) ? options.soloUntilSec : 0;
+    this.nextSoloWindowAtSec = Number.isFinite(options.nextSoloWindowAtSec)
+      ? options.nextSoloWindowAtSec
+      : rand(5, 20);
     this.cruisePhase = rand(0, TAU);
     this.cruiseRate = rand(0.35, 0.7);
 
@@ -254,6 +285,7 @@ export class Fish {
     const history = source.history && typeof source.history === 'object' ? deepCopyPlain(source.history) : {};
     const fish = new Fish(bounds, {
       id: Number.isFinite(source.id) ? source.id : 0,
+      speciesId: typeof source.speciesId === 'string' ? source.speciesId : DEFAULT_SPECIES_ID,
       spawnTimeSec: Number.isFinite(source.spawnTimeSec) ? source.spawnTimeSec : 0,
       stageShiftBabySec: Number.isFinite(source.stageShiftBabySec) ? source.stageShiftBabySec : undefined,
       stageShiftJuvenileSec: Number.isFinite(source.stageShiftJuvenileSec) ? source.stageShiftJuvenileSec : undefined,
@@ -270,6 +302,9 @@ export class Fish {
       fish[key] = deepCopyPlain(source[key]);
     }
 
+
+    fish.speciesId = typeof fish.speciesId === 'string' ? fish.speciesId : DEFAULT_SPECIES_ID;
+    fish.species = getSpeciesConfig(fish.speciesId);
     fish.name = typeof fish.name === 'string' ? fish.name : '';
     fish.sex = fish.sex === 'female' || fish.sex === 'male' ? fish.sex : 'female';
     fish.energy01 = clamp01(Number.isFinite(fish.energy01) ? fish.energy01 : 1);
@@ -459,7 +494,7 @@ export class Fish {
       return;
     }
 
-    const visibleFood = this.#findNearestFood(world?.food ?? []);
+    const visibleFood = this.#findNearestFood(world);
     if (!visibleFood) {
       this.behavior = { mode: 'wander', targetFoodId: null, speedBoost: 1 };
       this.#updateHoverAfterBehavior(world?.simTimeSec ?? 0);
@@ -483,9 +518,9 @@ export class Fish {
     }
 
     // Pursuit: keep the target synced to the pellet's *current* position.
-    if (this.behavior.mode === 'seekFood' && this.behavior.targetFoodId && this._worldRef?.food) {
-      const food = this._worldRef.food.find((f) => f.id === this.behavior.targetFoodId);
-      if (food) this.target = { x: food.x, y: food.y };
+    if (this.behavior.mode === 'seekFood' && this.behavior.targetFoodId) {
+      const targetFood = this.#findTargetFoodById(this._worldRef, this.behavior.targetFoodId);
+      if (targetFood) this.target = { x: targetFood.x, y: targetFood.y };
     }
 
     if (this.behavior.mode === 'playChase' && this.behavior.targetFishId && this._worldRef?.fish) {
@@ -532,6 +567,9 @@ export class Fish {
     const avoidance = this.#wallAvoidanceVector();
     let desiredX = seek.x + avoidance.x;
     let desiredY = seek.y + avoidance.y;
+    const schooling = this.#schoolingVector(this._worldRef, nowSec);
+    desiredX += schooling.x;
+    desiredY += schooling.y;
 
     if (this.matingAnim && this.lifeState === 'ALIVE') {
       const progress = clamp01((nowSec - this.matingAnim.startSec) / Math.max(0.001, this.matingAnim.durationSec ?? 1.1));
@@ -574,9 +612,11 @@ export class Fish {
     this.facing = resolveFacingByCos(rawDesiredAngle, this.facing);
 
     const constrainedDesired = clampAngleForFacing(rawDesiredAngle, this.facing);
+    const speciesTurnRateScale = this.species?.turnRateScale ?? 1;
+    const speciesDesiredTurnRateScale = this.species?.desiredTurnRateScale ?? 1;
     const turnRateScale = isHovering ? HOVER_TURN_RATE_MULTIPLIER : 1;
-    this.desiredAngle = moveTowardsAngle(this.desiredAngle, constrainedDesired, DESIRED_TURN_RATE * dt * turnRateScale);
-    this.headingAngle = moveTowardsAngle(this.headingAngle, this.desiredAngle, MAX_TURN_RATE * dt * turnRateScale);
+    this.desiredAngle = moveTowardsAngle(this.desiredAngle, constrainedDesired, DESIRED_TURN_RATE * speciesDesiredTurnRateScale * dt * turnRateScale);
+    this.headingAngle = moveTowardsAngle(this.headingAngle, this.desiredAngle, MAX_TURN_RATE * speciesTurnRateScale * dt * turnRateScale);
 
     this.cruisePhase = normalizeAngle(this.cruisePhase + dt * this.cruiseRate);
     const cruiseFactor = 1 + Math.sin(this.cruisePhase) * 0.18;
@@ -611,7 +651,7 @@ export class Fish {
 
   tryConsumeFood(world) {
     if (this.behavior.mode !== 'seekFood' || !this.behavior.targetFoodId) return;
-    const targetFood = world?.food?.find((entry) => entry.id === this.behavior.targetFoodId);
+    const targetFood = this.#findTargetFoodById(world, this.behavior.targetFoodId);
     if (!targetFood) return;
 
     const head = this.headPoint();
@@ -621,9 +661,9 @@ export class Fish {
     const reachRadius = nearBottom ? FOOD_REACH_RADIUS * 1.7 : FOOD_REACH_RADIUS;
     if (Math.min(distHead, distBody) > reachRadius) return;
 
-    // Single bite: pellet disappears in one bite.
-    // Satiety remains partial (eat() scales recovery), so fish may continue seeking.
-    const consumed = world.consumeFood(targetFood.id, targetFood.amount);
+    const consumed = targetFood.kind === 'fruit'
+      ? world.consumeFruit?.(targetFood.id)
+      : world.consumeFood(targetFood.id, targetFood.amount);
     if (consumed <= 0) return;
     this.eatAnimTimer = this.eatAnimDuration;
     this.eat(consumed);
@@ -698,9 +738,13 @@ export class Fish {
     // Condition affects "plumpness" and saturation a bit (middle-road model).
     const condition01 = clamp01(1 - this.hunger01 * 0.9);
 
-    const bodyLength = this.size * 1.32 * morph.bodyLength;
-    const bodyHeight = this.size * 0.73 * morph.bodyHeight * lerp(0.92, 1.06, condition01);
-    const tailWagAmp = this.size * 0.13 * morph.tailLength;
+    const isAzureDart = this.species?.renderStyle === 'AZURE_DART';
+    const bodyLengthBase = isAzureDart ? 1.58 : 1.32;
+    const bodyHeightBase = isAzureDart ? 0.50 : 0.73;
+    const tailBase = isAzureDart ? 0.16 : 0.13;
+    const bodyLength = this.size * bodyLengthBase * morph.bodyLength;
+    const bodyHeight = this.size * bodyHeightBase * morph.bodyHeight * lerp(0.92, 1.06, condition01);
+    const tailWagAmp = this.size * tailBase * morph.tailLength;
 
     return {
       radius: this.size,
@@ -766,24 +810,52 @@ export class Fish {
 
   #baseSpeed() {
     const stageMul = STAGE_SPEED[this.lifeStage] ?? 1;
-    return (20 + this.size * 0.9 * this.speedFactor) * SPEED_MULTIPLIER * stageMul;
+    return (20 + this.size * 0.9 * this.speedFactor) * SPEED_MULTIPLIER * stageMul * (this.species?.speedScale ?? 1);
   }
 
-  #findNearestFood(foodList) {
+  #findNearestFood(world) {
     const visionRadius = FOOD_VISION_RADIUS[this.hungerState] ?? 0;
     if (visionRadius <= 0) return null;
 
+    const diet = getSpeciesDiet(this.speciesId);
+    const candidates = [];
+    if (diet.includes('pellet')) {
+      for (const food of world?.food ?? []) candidates.push({ ...food, kind: 'pellet' });
+    }
+    if (diet.includes('fruit')) {
+      for (const fruit of world?.fruits ?? []) {
+        if (!fruit) continue;
+        const pose = world?.getFruitPosition?.(fruit);
+        if (!pose) continue;
+        candidates.push({ id: fruit.id, x: pose.x, y: pose.y, amount: 1, kind: 'fruit' });
+      }
+    }
+
     let best = null;
     let bestDist = Infinity;
-
-    for (const food of foodList) {
+    for (const food of candidates) {
       const dist = Math.hypot(food.x - this.position.x, food.y - this.position.y);
       if (dist > visionRadius || dist >= bestDist) continue;
       best = food;
       bestDist = dist;
     }
-
     return best;
+  }
+
+  #findTargetFoodById(world, targetId) {
+    const diet = getSpeciesDiet(this.speciesId);
+    if (diet.includes('pellet')) {
+      const pellet = world?.food?.find((entry) => entry.id === targetId);
+      if (pellet) return { ...pellet, kind: 'pellet' };
+    }
+    if (diet.includes('fruit')) {
+      const fruit = world?.fruits?.find((entry) => entry.id === targetId);
+      if (fruit) {
+        const pose = world?.getFruitPosition?.(fruit);
+        if (pose) return { id: fruit.id, x: pose.x, y: pose.y, amount: 1, kind: 'fruit' };
+      }
+    }
+    return null;
   }
 
   #applyDeadSink(dt) {
@@ -834,6 +906,7 @@ export class Fish {
 
   #isHoverEligible() {
     if (this.lifeState !== 'ALIVE') return false;
+    if (this.speciesId === 'AZURE_DART' || this.species?.renderStyle === 'AZURE_DART') return false;
     if ((this.eatAnimTimer ?? 0) > 0) return false;
     if (this.behavior?.mode !== 'wander') return false;
     if (this.behavior?.targetFoodId) return false;
@@ -857,6 +930,7 @@ export class Fish {
 
   #shouldCancelHoverForUrgentGoal(nowSec) {
     if (!this.#isHoverActive(nowSec)) return false;
+    if (this.speciesId === 'AZURE_DART' || this.species?.renderStyle === 'AZURE_DART') return true;
     if (this.lifeState !== 'ALIVE') return true;
     if ((this.eatAnimTimer ?? 0) > 0) return true;
     if (this.behavior?.mode === 'seekFood' || this.behavior?.targetFoodId) return true;
@@ -961,6 +1035,63 @@ export class Fish {
     if (dBottom < influence) ay -= ((influence - dBottom) / influence) ** 2 * strength;
 
     return { x: ax, y: ay };
+  }
+
+
+  #schoolingVector(world, nowSec) {
+    const schooling = this.species?.schooling ?? {};
+    if (!schooling.enabled || !world?.fish?.length) return { x: 0, y: 0 };
+
+    if (nowSec >= this.nextSoloWindowAtSec) {
+      const soloDuration = rand(schooling.soloWindowSec?.[0] ?? 3, schooling.soloWindowSec?.[1] ?? 8);
+      if (Math.random() > this.schoolingBias) this.soloUntilSec = nowSec + soloDuration;
+      const cooldown = rand(schooling.soloCooldownSec?.[0] ?? 8, schooling.soloCooldownSec?.[1] ?? 16);
+      this.nextSoloWindowAtSec = nowSec + cooldown;
+    }
+
+    const soloMul = nowSec < this.soloUntilSec ? 0.18 : 1;
+    const nRadius = Math.max(10, schooling.neighborRadius ?? 90);
+    const sRadius = Math.max(4, schooling.separationRadius ?? 24);
+    let cx = 0; let cy = 0; let ax = 0; let ay = 0; let sx = 0; let sy = 0; let count = 0;
+
+    for (const other of world.fish) {
+      if (!other || other.id === this.id || other.lifeState !== 'ALIVE' || other.speciesId !== this.speciesId) continue;
+      const dx = other.position.x - this.position.x;
+      const dy = other.position.y - this.position.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist <= 0.0001 || dist > nRadius) continue;
+      count += 1;
+      cx += other.position.x;
+      cy += other.position.y;
+      ax += Math.cos(other.headingAngle);
+      ay += Math.sin(other.headingAngle);
+      if (dist < sRadius) {
+        const push = (sRadius - dist) / sRadius;
+        sx -= (dx / dist) * push;
+        sy -= (dy / dist) * push;
+      }
+    }
+
+    if (count === 0) return { x: 0, y: 0 };
+
+    cx = (cx / count) - this.position.x;
+    cy = (cy / count) - this.position.y;
+    const cm = Math.hypot(cx, cy) || 1;
+    const am = Math.hypot(ax, ay) || 1;
+    const cohesion = { x: (cx / cm) * (schooling.cohesion ?? 0.8), y: (cy / cm) * (schooling.cohesion ?? 0.8) };
+    const align = { x: (ax / am) * (schooling.alignment ?? 0.3), y: (ay / am) * (schooling.alignment ?? 0.3) };
+    const separate = { x: sx * (schooling.separation ?? 1.1), y: sy * (schooling.separation ?? 1.1) };
+
+    const groupIntensity = count >= 3 ? 1.3 : 0.9;
+    let outX = (cohesion.x + align.x + separate.x) * this.schoolingBias * soloMul * groupIntensity;
+    let outY = (cohesion.y + align.y + separate.y) * this.schoolingBias * soloMul * groupIntensity;
+    const maxInfluence = Math.max(0.1, schooling.maxInfluence ?? 2);
+    const mag = Math.hypot(outX, outY);
+    if (mag > maxInfluence) {
+      outX = (outX / mag) * maxInfluence;
+      outY = (outY / mag) * maxInfluence;
+    }
+    return { x: outX, y: outY };
   }
 
   #resolveCollisions() {

@@ -55,8 +55,8 @@ export const CONFIG = Object.freeze({
     MATE_MIN_HYGIENE: 0.60,
 
     // Gestation + eggs
-    GESTATION_SEC: [300, 360],
-    EGG_INCUBATION_SEC: [120, 300],
+    GESTATION_SEC: [450, 540],
+    EGG_INCUBATION_SEC: [180, 450],
     MOTHER_COOLDOWN_SEC: [600, 1080],
     CLUTCH_SIZE: [2, 4],
 
@@ -93,22 +93,29 @@ export const CONFIG = Object.freeze({
       hygiene01: 1,
       dirt01: 0,
       POLLUTION_TINT_START: 0.90,
-      POLLUTION_TINT_MAX_ALPHA: 0.18,
-      POLLUTION_TINT_COLOR: '86, 108, 78',
+      POLLUTION_TINT_MAX_ALPHA: 0.13,
+      POLLUTION_TINT_COLOR: '84, 112, 82',
+      POLLUTION_MURK_MAX_ALPHA: 0.11,
+      POLLUTION_SETTLE_MAX_ALPHA: 0.14,
+      POLLUTION_SETTLE_COLOR: '74, 98, 76',
       dirtDecayPower: 1.9,
       dirtDecayStrength: 8.0,
-      hygieneDropPerExpiredFood: 0.012,
-      hygieneDropPerPoopSpawn: 0.003,
+      hygieneDropPerExpiredFood: 0.007,
+      hygieneDropPerPoopSpawn: 0.002,
       referenceFishCount: 20,
       baselineDecayPerSec: 0.0002,
-      bioloadDirtPerSec: 0.00035,
-      dirtPerExpiredFood: 0.015,
+      bioloadDirtPerSec: 0.00028,
+      dirtPerExpiredFood: 0.010,
       dirtToDecayMultiplier: 3,
       filterDirtRemovePerSec: 0.0006,
       wearBasePerSec: 0.00005,
       wearBioloadFactor: 1.0,
       wearDirtFactor: 2.5,
       bioloadMitigationFactor: 0.6,
+      filterTierDirtRemovalStep: 0.25,
+      filterTierBioloadStep: 0.15,
+      filterTierWearStep: 0.08,
+      hygieneRecoveryPerSec: 0.00006,
       filterDepletedThreshold01: 0.1,
       installDurationSec: 12,
       maintenanceDurationSec: 12,
@@ -129,7 +136,7 @@ export const CONFIG = Object.freeze({
     deadSinkSpeed: 30,
 
     metabolism: {
-      costPerPixel: 0.00004
+      costPerPixel: 0.00002
     },
     hunger: {
       hungryThreshold: 0.35,
@@ -164,20 +171,20 @@ export const CONFIG = Object.freeze({
     // Life cycle & growth (age-driven growth + small per-fish randomness).
     age: {
       // Target average lifespan for the default fish type (realtime seconds).
-      lifespanMeanSec: 90 * 60,
+      lifespanMeanSec: 180 * 60,
       // +/- jitter around the mean lifespan.
-      lifespanJitterSec: 15 * 60,
+      lifespanJitterSec: 30 * 60,
 
       // Stage boundaries (base values) in realtime seconds from birth.
       // Each fish gets a small per-fish jitter so they don't all sync.
       stageBaseSec: {
-        babyEndSec: 10 * 60,
-        juvenileEndSec: 25 * 60
+        babyEndSec: 20 * 60,
+        juvenileEndSec: 50 * 60
       },
-      stageJitterSec: 3 * 60,
+      stageJitterSec: 6 * 60,
 
       // Old stage starts at this fraction of lifespan.
-      oldStartRatio: 0.85,
+      oldStartRatio: 0.9,
 
       // Cap for randomized initial spawn age at game start (20 minutes).
       INITIAL_MAX_AGE_SEC: 1200
@@ -221,3 +228,64 @@ export const CONFIG = Object.freeze({
 
   }
 });
+
+export const SPECIES = Object.freeze({
+  LAB_MINNOW: Object.freeze({
+    id: 'LAB_MINNOW',
+    displayName: 'Lab Minnow',
+    diet: ['pellet'],
+    adultSizeScale: 1,
+    speedScale: 1,
+    lifespanScale: 1,
+    reproductionScale: 1,
+    clutchSizes: [2, 4],
+    schooling: Object.freeze({
+      enabled: false,
+      biasMin: 0,
+      biasMax: 0,
+      soloWindowSec: [0, 0],
+      soloCooldownSec: [0, 0],
+      cohesion: 0,
+      separation: 0,
+      alignment: 0,
+      neighborRadius: 0,
+      separationRadius: 0,
+      maxInfluence: 0
+    }),
+    turnRateScale: 1,
+    desiredTurnRateScale: 1,
+    bioloadFactor: 1,
+    poopBioloadFactor: 1,
+    renderStyle: 'LAB_MINNOW'
+  }),
+  AZURE_DART: Object.freeze({
+    id: 'AZURE_DART',
+    displayName: 'Azure Dart',
+    diet: ['fruit'],
+    adultSizeScale: 0.54,
+    speedScale: 2,
+    lifespanScale: 0.5,
+    reproductionScale: 0.5,
+    clutchSizes: [3, 4, 5],
+    schooling: Object.freeze({
+      enabled: true,
+      biasMin: 0.62,
+      biasMax: 0.96,
+      soloWindowSec: [1.5, 4],
+      soloCooldownSec: [10, 20],
+      cohesion: 1.2,
+      separation: 0.95,
+      alignment: 0.95,
+      neighborRadius: 150,
+      separationRadius: 24,
+      maxInfluence: 3.8
+    }),
+    turnRateScale: 1.8,
+    desiredTurnRateScale: 1.7,
+    bioloadFactor: 0.35,
+    poopBioloadFactor: 0.25,
+    renderStyle: 'AZURE_DART'
+  })
+});
+
+export const DEFAULT_SPECIES_ID = 'LAB_MINNOW';
