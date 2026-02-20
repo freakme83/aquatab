@@ -454,6 +454,7 @@ export class World {
     this.fruits = [];
     this.nextBerryReedPlantId = 1;
     this.nextFruitId = 1;
+    this.speciesUnlocks = { berryReed: false, azureDart: false };
 
     // Global environment state (will grow over time).
     this.water = this.#createInitialWaterState();
@@ -855,6 +856,7 @@ export class World {
     this.filterUnlocked = this.foodsConsumedCount >= this.filterUnlockThreshold || Boolean(this.water.filterUnlocked || this.filterUnlocked);
     this.water.filterUnlocked = this.isFeatureUnlocked('waterFilter');
     if (this.water.filterInstalled && this.water.filterTier < 1) this.water.filterTier = 1;
+    this.#refreshSpeciesUnlocks();
 
     return true;
   }
@@ -1113,6 +1115,7 @@ export class World {
     if (this.paused) return;
 
     const simDt = rawDelta * this.speedMultiplier;
+    this.#refreshSpeciesUnlocks();
     const motionDt = simDt;
     this.simTimeSec += simDt;
     this.debugTiming = {
@@ -1168,8 +1171,26 @@ export class World {
     return true;
   }
 
+
+  #refreshSpeciesUnlocks() {
+    if (isDevMode()) {
+      this.speciesUnlocks.berryReed = true;
+      this.speciesUnlocks.azureDart = true;
+      return;
+    }
+
+    const berryReedReadyNow = this.birthsCount >= BERRY_REED_UNLOCK_BIRTHS
+      && (this.water?.hygiene01 ?? 0) >= BERRY_REED_UNLOCK_HYGIENE01;
+    if (berryReedReadyNow) this.speciesUnlocks.berryReed = true;
+
+    const azureReadyNow = (this.berryReedPlants?.length ?? 0) >= 1
+      && (this.water?.hygiene01 ?? 0) >= AZURE_DART_UNLOCK_HYGIENE01;
+    if (azureReadyNow) this.speciesUnlocks.azureDart = true;
+  }
+
   canAddBerryReedPlant() {
-    return this.isFeatureUnlocked('berryReed');
+    this.#refreshSpeciesUnlocks();
+    return isDevMode() || this.speciesUnlocks.berryReed;
   }
 
   grantAllUnlockPrerequisites() {
@@ -1179,6 +1200,7 @@ export class World {
       this.water.hygiene01 = Math.max(this.water.hygiene01 ?? 0, 0.95);
     }
     this.filterUnlocked = this.foodsConsumedCount >= this.filterUnlockThreshold;
+    this.#refreshSpeciesUnlocks();
   }
 
   addBerryReedPlant() {
@@ -1205,15 +1227,15 @@ export class World {
 
 
   getAzureDartCount() {
-    return this.fish.filter((fish) => fish.speciesId === AZURE_DART_SPECIES_ID).length;
+    return this.fish.filter((fish) => fish.speciesId === AZURE_DART_SPECIES_ID && fish.lifeState === 'ALIVE').length;
   }
 
   canAddAzureDart() {
     const underCap = this.getAzureDartCount() < AZURE_DART_MAX_PLAYER_COUNT;
     if (!underCap) return false;
+    this.#refreshSpeciesUnlocks();
     if (isDevMode()) return true;
-    return (this.berryReedPlants?.length ?? 0) >= 1
-      && (this.water?.hygiene01 ?? 0) >= AZURE_DART_UNLOCK_HYGIENE01;
+    return this.speciesUnlocks.azureDart;
   }
 
   addAzureDartSchool() {

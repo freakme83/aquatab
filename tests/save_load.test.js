@@ -632,3 +632,25 @@ test('azure dart spawn uses blue-dominant color trait range', () => {
   assert.ok(azure.traits.colorHue >= 190 && azure.traits.colorHue <= 232);
   assert.equal(typeof azure.traits.colorPatternSeed, 'number');
 });
+
+
+test('berry reed unlock stays available after threshold dip', () => {
+  const world = makeWorldForTest();
+  world.birthsCount = 5;
+  world.water.hygiene01 = 0.85;
+  assert.equal(world.canAddBerryReedPlant(), true);
+
+  world.water.hygiene01 = 0.2;
+  assert.equal(world.canAddBerryReedPlant(), true);
+});
+
+test('azure dart unlock stays available after threshold dip while under cap', () => {
+  const world = makeWorldForTest();
+  world.birthsCount = 5;
+  world.water.hygiene01 = 0.9;
+  world.addBerryReedPlant();
+  assert.equal(world.canAddAzureDart(), true);
+
+  world.water.hygiene01 = 0.2;
+  assert.equal(world.canAddAzureDart(), true);
+});
