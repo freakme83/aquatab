@@ -476,9 +476,17 @@ input[type='range'] {
   background: rgba(56, 117, 167, 0.35);
 }
 
+.fish-row-sex--pregnant {
+  color: #2ecc71;
+  font-weight: 600;
+}
+
 .fish-detail {
   border-top: 1px solid var(--deck-border);
   padding-top: 8px;
+  min-height: 220px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .fish-empty {
@@ -488,19 +496,24 @@ input[type='range'] {
 }
 
 .tab-content[data-content='fish'] {
-  overflow-y: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  scrollbar-gutter: stable;
 }
 
 .fish-inspector {
-  grid-template-rows: auto minmax(160px, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) minmax(220px, 0.9fr);
+  height: 100%;
   min-height: 0;
 }
 
 .fish-list {
-  min-height: 120px;
+  min-height: 140px;
   max-height: none;
   overflow-y: auto;
   padding-right: 2px;
+  scrollbar-gutter: stable;
 }
 
 
@@ -529,6 +542,7 @@ input[type='range'] {
 
 .fish-detail-pane {
   display: none;
+  min-height: 168px;
 }
 
 .fish-detail-pane.active {

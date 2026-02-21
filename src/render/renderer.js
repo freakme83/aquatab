@@ -220,18 +220,26 @@ export class Renderer {
       const plantPose = this.#getBerryReedPlantPose(plant, time, sx, sy);
       const { baseX, baseY, h, swayPx } = plantPose;
 
-      ctx.strokeStyle = 'hsla(136deg 38% 42% / 0.9)';
-      ctx.lineWidth = Math.max(1.4, 2 * sx);
+      ctx.strokeStyle = 'hsla(24deg 34% 39% / 0.92)';
+      ctx.lineWidth = Math.max(1.5, 2.1 * sx);
       ctx.beginPath();
       ctx.moveTo(baseX, baseY);
       ctx.bezierCurveTo(baseX - 4 * sx + swayPx * 0.2, baseY - h * 0.34, baseX + 3 * sx + swayPx, baseY - h * 0.72, baseX + swayPx, baseY - h);
+      ctx.stroke();
+
+      ctx.strokeStyle = 'hsla(178deg 28% 62% / 0.34)';
+      ctx.lineWidth = Math.max(0.5, 0.85 * sx);
+      ctx.beginPath();
+      ctx.moveTo(baseX + 0.55 * sx, baseY - h * 0.02);
+      ctx.bezierCurveTo(baseX - 2.8 * sx + swayPx * 0.15, baseY - h * 0.32, baseX + 2.8 * sx + swayPx * 0.9, baseY - h * 0.7, baseX + swayPx * 0.95 + 0.55 * sx, baseY - h * 0.97);
       ctx.stroke();
 
       for (const [branchIndex, branch] of (plant.branches ?? []).entries()) {
         const branchPose = this.#getBerryReedBranchPose(plant, branch, branchIndex, time, sx, sy);
         const { startX, startY, controlX, controlY, endX, endY } = branchPose;
 
-        ctx.lineWidth = Math.max(1.1, 1.5 * sx);
+        ctx.strokeStyle = 'hsla(28deg 30% 44% / 0.9)';
+        ctx.lineWidth = Math.max(1.05, 1.45 * sx);
         ctx.beginPath();
         ctx.moveTo(startX, startY);
         ctx.quadraticCurveTo(controlX, controlY, endX, endY);
@@ -245,14 +253,14 @@ export class Renderer {
       const { x, y, branchX, branchY } = fruitPose;
       const r = Math.max(1, (fruit.radius ?? 2.2) * ((sx + sy) * 0.5));
 
-      ctx.strokeStyle = 'hsla(130deg 38% 40% / 0.75)';
+      ctx.strokeStyle = 'hsla(34deg 30% 38% / 0.72)';
       ctx.lineWidth = Math.max(0.8, 1.05 * sx);
       ctx.beginPath();
       ctx.moveTo(branchX, branchY);
       ctx.lineTo(x, y);
       ctx.stroke();
 
-      ctx.fillStyle = 'hsla(332deg 58% 66% / 0.9)';
+      ctx.fillStyle = 'hsla(326deg 60% 63% / 0.92)';
       ctx.beginPath();
       ctx.arc(x, y, r, 0, TAU);
       ctx.fill();

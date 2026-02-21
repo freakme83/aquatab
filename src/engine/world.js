@@ -93,7 +93,16 @@ const BERRY_REED_FRUIT_INTERVAL_MAX_SEC = 48;
 const BERRY_REED_FRUIT_INTERVAL_JITTER_SEC = 4;
 const BERRY_REED_FRUIT_TTL_SEC = 90;
 const BERRY_REED_MAX_FRUITS = 20;
-const BERRY_REED_MAX_FRUITS_PER_PLANT = 6;
+const BERRY_REED_GROWTH_HYGIENE_MIN01 = 0.4;
+const BERRY_REED_GROWTH_HYGIENE_EXPONENT = 1.18;
+const BERRY_REED_GROWTH_TO_MATURE_SEC = Math.max(60, (CONFIG.fish?.age?.stageBaseSec?.juvenileEndSec ?? 50 * 60) * 2);
+const BERRY_REED_CAPACITY_START = 4;
+const BERRY_REED_CAPACITY_MID = 6;
+const BERRY_REED_CAPACITY_MAX = 12;
+const BERRY_REED_INTERVAL_AT_START_CAPACITY_SEC = 24;
+const BERRY_REED_MAX_FRUITS_PER_PLANT_START = 4;
+const BERRY_REED_MAX_FRUITS_PER_PLANT_MID = 6;
+const BERRY_REED_MAX_FRUITS_PER_PLANT_MAX = 12;
 const MIN_SIM_SPEED_MULTIPLIER = 0.5;
 
 const WORLD_SAVE_VERSION = 1;
@@ -128,7 +137,7 @@ export const EGG_SAVE_KEYS = [
   'nutrition'
 ];
 export const BERRY_REED_BRANCH_SAVE_KEYS = ['t', 'side', 'len'];
-export const BERRY_REED_PLANT_SAVE_KEYS = ['id', 'x', 'bottomY', 'height', 'swayPhase', 'swayRate', 'branches', 'nextFruitAtSec'];
+export const BERRY_REED_PLANT_SAVE_KEYS = ['id', 'x', 'bottomY', 'height', 'swayPhase', 'swayRate', 'branches', 'nextFruitAtSec', 'growth01', 'minHeight', 'maxHeight', 'plantedAtSec'];
 export const BERRY_REED_FRUIT_SAVE_KEYS = ['id', 'plantId', 'branchIndex', 'u', 'v', 'radius', 'createdAtSec', 'ttlSec'];
 
 function deepCopyPlain(value) {
@@ -242,11 +251,24 @@ function deserializeBerryReedPlant(data, bounds) {
   const branchSource = Array.isArray(source.branches) ? source.branches : [];
   const minBottomY = Math.max(0, bounds.height - 14);
   const maxBottomY = Math.max(minBottomY, bounds.height - 1);
+  const height = clamp(Number.isFinite(source.height) ? source.height : bounds.height * 0.24, bounds.height * 0.14, bounds.height * 0.35);
+  const minHeightRaw = Number.isFinite(source.minHeight) ? source.minHeight : height;
+  const maxHeightRaw = Number.isFinite(source.maxHeight) ? source.maxHeight : height;
+  const minHeight = clamp(minHeightRaw, bounds.height * 0.1, bounds.height * 0.34);
+  const maxHeight = clamp(maxHeightRaw, minHeight, bounds.height * 0.4);
+  const hasGrowthFields = Number.isFinite(source.growth01) || Number.isFinite(source.minHeight) || Number.isFinite(source.maxHeight);
+  const growth01 = hasGrowthFields
+    ? clamp01(Number.isFinite(source.growth01) ? source.growth01 : 0)
+    : 1;
   return {
     id: Number.isFinite(source.id) ? source.id : 0,
     x: clamp(Number.isFinite(source.x) ? source.x : bounds.width * 0.5, 10, Math.max(10, bounds.width - 10)),
     bottomY: clamp(Number.isFinite(source.bottomY) ? source.bottomY : bounds.height - 4, minBottomY, maxBottomY),
-    height: clamp(Number.isFinite(source.height) ? source.height : bounds.height * 0.24, bounds.height * 0.14, bounds.height * 0.35),
+    height,
+    minHeight,
+    maxHeight,
+    growth01,
+    plantedAtSec: Number.isFinite(source.plantedAtSec) ? source.plantedAtSec : 0,
     swayPhase: Number.isFinite(source.swayPhase) ? source.swayPhase : rand(0, Math.PI * 2),
     swayRate: clamp(Number.isFinite(source.swayRate) ? source.swayRate : rand(0.0008, 0.0016), 0.0002, 0.004),
     branches: branchSource
@@ -1285,12 +1307,19 @@ export class World {
       id: this.nextBerryReedPlantId++,
       x,
       bottomY: this.bounds.height - rand(2, 6),
-      height: rand(this.bounds.height * 0.2, this.bounds.height * 0.28),
+      minHeight: rand(this.bounds.height * 0.11, this.bounds.height * 0.14),
+      maxHeight: rand(this.bounds.height * 0.27, this.bounds.height * 0.33),
+      growth01: 0,
+      plantedAtSec: this.simTimeSec,
+      height: 0,
       swayPhase: rand(0, Math.PI * 2),
       swayRate: rand(0.0009, 0.0017),
       branches: this.#makeBerryReedBranches(),
-      nextFruitAtSec: this.simTimeSec + this.getBerryReedFruitSpawnIntervalSec(this.water?.hygiene01 ?? 1)
+      nextFruitAtSec: Infinity
     };
+
+    plant.height = plant.minHeight;
+    plant.nextFruitAtSec = this.simTimeSec + this.#getBerryReedFruitSpawnIntervalForPlantSec(plant, this.water?.hygiene01 ?? 1);
 
     this.berryReedPlants.push(plant);
     return { ok: true };
@@ -1360,9 +1389,39 @@ export class World {
 
   getBerryReedFruitSpawnIntervalSec(hygiene01) {
     const h = clamp01(hygiene01);
-    if (h < 0.4) return Infinity;
-    const t = clamp01((h - 0.4) / 0.6);
+    if (h < BERRY_REED_GROWTH_HYGIENE_MIN01) return Infinity;
+    const t = clamp01((h - BERRY_REED_GROWTH_HYGIENE_MIN01) / (1 - BERRY_REED_GROWTH_HYGIENE_MIN01));
     return BERRY_REED_FRUIT_INTERVAL_MAX_SEC - (BERRY_REED_FRUIT_INTERVAL_MAX_SEC - BERRY_REED_FRUIT_INTERVAL_MIN_SEC) * t;
+  }
+
+  getBerryReedCapacityAtGrowth(growth01) {
+    const g = clamp01(growth01);
+    if (g <= 0.5) return BERRY_REED_CAPACITY_START + (BERRY_REED_CAPACITY_MID - BERRY_REED_CAPACITY_START) * (g / 0.5);
+    return BERRY_REED_CAPACITY_MID + (BERRY_REED_CAPACITY_MAX - BERRY_REED_CAPACITY_MID) * ((g - 0.5) / 0.5);
+  }
+
+  #getBerryReedIntervalAtIdealHygieneSec(plant) {
+    const capacity = this.getBerryReedCapacityAtGrowth(plant?.growth01 ?? 0);
+    const scale = BERRY_REED_CAPACITY_START / Math.max(1, capacity);
+    return Math.max(5, BERRY_REED_INTERVAL_AT_START_CAPACITY_SEC * scale);
+  }
+
+  #getBerryReedFruitSpawnIntervalForPlantSec(plant, hygiene01) {
+    const h = clamp01(hygiene01);
+    if (h < BERRY_REED_GROWTH_HYGIENE_MIN01) return Infinity;
+    const t = clamp01((h - BERRY_REED_GROWTH_HYGIENE_MIN01) / (1 - BERRY_REED_GROWTH_HYGIENE_MIN01));
+    const idealInterval = this.#getBerryReedIntervalAtIdealHygieneSec(plant);
+    return BERRY_REED_FRUIT_INTERVAL_MAX_SEC - (BERRY_REED_FRUIT_INTERVAL_MAX_SEC - idealInterval) * t;
+  }
+
+  #getBerryReedPlantMaxFruits(plant) {
+    const capacity = this.getBerryReedCapacityAtGrowth(plant?.growth01 ?? 0);
+    if (capacity <= BERRY_REED_CAPACITY_MID) {
+      const t = (capacity - BERRY_REED_CAPACITY_START) / Math.max(0.0001, BERRY_REED_CAPACITY_MID - BERRY_REED_CAPACITY_START);
+      return Math.round(BERRY_REED_MAX_FRUITS_PER_PLANT_START + (BERRY_REED_MAX_FRUITS_PER_PLANT_MID - BERRY_REED_MAX_FRUITS_PER_PLANT_START) * clamp01(t));
+    }
+    const t = (capacity - BERRY_REED_CAPACITY_MID) / Math.max(0.0001, BERRY_REED_CAPACITY_MAX - BERRY_REED_CAPACITY_MID);
+    return Math.round(BERRY_REED_MAX_FRUITS_PER_PLANT_MID + (BERRY_REED_MAX_FRUITS_PER_PLANT_MAX - BERRY_REED_MAX_FRUITS_PER_PLANT_MID) * clamp01(t));
   }
 
 
@@ -2063,7 +2122,7 @@ export class World {
   #spawnBerryFruit(plant) {
     if (!plant || !Array.isArray(plant.branches) || plant.branches.length === 0) return false;
     const fruitsOnPlant = this.fruits.filter((entry) => entry.plantId === plant.id).length;
-    if (fruitsOnPlant >= BERRY_REED_MAX_FRUITS_PER_PLANT) return false;
+    if (fruitsOnPlant >= this.#getBerryReedPlantMaxFruits(plant)) return false;
     if (this.fruits.length >= BERRY_REED_MAX_FRUITS) return false;
 
     const branchIndex = Math.floor(rand(0, plant.branches.length));
@@ -2099,15 +2158,25 @@ export class World {
     }
 
     for (const plant of this.berryReedPlants) {
+      const hygiene01 = this.water?.hygiene01 ?? 1;
+      const growthH = clamp01((hygiene01 - BERRY_REED_GROWTH_HYGIENE_MIN01) / (1 - BERRY_REED_GROWTH_HYGIENE_MIN01));
+      const growthRate = (growthH ** BERRY_REED_GROWTH_HYGIENE_EXPONENT) / BERRY_REED_GROWTH_TO_MATURE_SEC;
+      plant.growth01 = clamp01((plant.growth01 ?? 0) + growthRate * dt);
+      const minHeight = clamp(Number.isFinite(plant.minHeight) ? plant.minHeight : plant.height ?? this.bounds.height * 0.12, this.bounds.height * 0.1, this.bounds.height * 0.34);
+      const maxHeight = clamp(Number.isFinite(plant.maxHeight) ? plant.maxHeight : plant.height ?? this.bounds.height * 0.3, minHeight, this.bounds.height * 0.4);
+      plant.minHeight = minHeight;
+      plant.maxHeight = maxHeight;
+      plant.height = minHeight + (maxHeight - minHeight) * clamp01(plant.growth01 ?? 0);
+
       if (!Number.isFinite(plant.nextFruitAtSec)) {
-        const resumedInterval = this.getBerryReedFruitSpawnIntervalSec(this.water?.hygiene01 ?? 1);
+        const resumedInterval = this.#getBerryReedFruitSpawnIntervalForPlantSec(plant, hygiene01);
         if (Number.isFinite(resumedInterval)) {
           plant.nextFruitAtSec = this.simTimeSec + resumedInterval;
         }
       }
       if (this.simTimeSec < (plant.nextFruitAtSec ?? Infinity)) continue;
       const spawned = this.#spawnBerryFruit(plant);
-      const baseInterval = this.getBerryReedFruitSpawnIntervalSec(this.water?.hygiene01 ?? 1);
+      const baseInterval = this.#getBerryReedFruitSpawnIntervalForPlantSec(plant, hygiene01);
       if (!Number.isFinite(baseInterval)) {
         plant.nextFruitAtSec = Infinity;
         continue;
