@@ -93,16 +93,19 @@ export const CONFIG = Object.freeze({
       hygiene01: 1,
       dirt01: 0,
       POLLUTION_TINT_START: 0.90,
-      POLLUTION_TINT_MAX_ALPHA: 0.18,
-      POLLUTION_TINT_COLOR: '86, 108, 78',
+      POLLUTION_TINT_MAX_ALPHA: 0.13,
+      POLLUTION_TINT_COLOR: '84, 112, 82',
+      POLLUTION_MURK_MAX_ALPHA: 0.11,
+      POLLUTION_SETTLE_MAX_ALPHA: 0.14,
+      POLLUTION_SETTLE_COLOR: '74, 98, 76',
       dirtDecayPower: 1.9,
       dirtDecayStrength: 8.0,
-      hygieneDropPerExpiredFood: 0.012,
-      hygieneDropPerPoopSpawn: 0.003,
+      hygieneDropPerExpiredFood: 0.007,
+      hygieneDropPerPoopSpawn: 0.002,
       referenceFishCount: 20,
       baselineDecayPerSec: 0.0002,
-      bioloadDirtPerSec: 0.00035,
-      dirtPerExpiredFood: 0.015,
+      bioloadDirtPerSec: 0.00028,
+      dirtPerExpiredFood: 0.010,
       dirtToDecayMultiplier: 3,
       filterDirtRemovePerSec: 0.0006,
       wearBasePerSec: 0.00005,
@@ -221,6 +224,66 @@ export const CONFIG = Object.freeze({
       stressPerSec: 0.0012,
       ageSensitivityMin: 1,
       ageSensitivityEdgeBoost: 0.6
+    },
+
+    populationStress: {
+      capacityUnits: 20,
+      sizeRatioMin: 0.35,
+      sizeRatioMax: 1.25,
+      sizeRatioPower: 1.15,
+      pressuredThreshold: 0.72,
+      stressedThreshold: 0.92,
+      stageWeights: {
+        BABY: 0.45,
+        JUVENILE: 0.75,
+        ADULT: 1.0,
+        OLD: 0.90
+      },
+      speciesDensitySensitivity: {
+        LAB_MINNOW: 1.0,
+        AZURE_DART: 0.72
+      },
+      reproductionFactor: {
+        LAB_MINNOW: {
+          CALM: 1.0,
+          PRESSURED: 0.72,
+          STRESSED: 0.38
+        },
+        AZURE_DART: {
+          CALM: 1.0,
+          PRESSURED: 0.88,
+          STRESSED: 0.68
+        }
+      },
+      behavior: {
+        speedFactor: {
+          CALM: 1.0,
+          PRESSURED: 0.93,
+          STRESSED: 0.84
+        },
+        visionFactor: {
+          CALM: 1.0,
+          PRESSURED: 0.94,
+          STRESSED: 0.88
+        },
+        surfaceBias: {
+          CALM: 0.0,
+          PRESSURED: 0.18,
+          STRESSED: 0.36
+        }
+      },
+      visuals: {
+        saturationFactor: {
+          CALM: 1.0,
+          PRESSURED: 0.94,
+          STRESSED: 0.86
+        },
+        lightnessFactor: {
+          CALM: 1.0,
+          PRESSURED: 0.98,
+          STRESSED: 0.94
+        }
+      }
     },
 
   }

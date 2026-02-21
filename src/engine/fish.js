@@ -29,6 +29,14 @@ const WATER_STRESS_CURVE_POWER = Math.max(1, WATER_WELLBEING.stressCurvePower ??
 const WATER_STRESS_PER_SEC = Math.max(0, WATER_WELLBEING.stressPerSec ?? 0.006);
 const WATER_AGE_SENSITIVITY_MIN = Math.max(0, WATER_WELLBEING.ageSensitivityMin ?? 1);
 const WATER_AGE_SENSITIVITY_EDGE_BOOST = Math.max(0, WATER_WELLBEING.ageSensitivityEdgeBoost ?? 0.6);
+const POP_STRESS = CONFIG.fish.populationStress ?? {};
+const POP_STRESS_BEHAVIOR = POP_STRESS.behavior ?? {};
+const POP_STRESS_VISUALS = POP_STRESS.visuals ?? {};
+const POP_STRESS_SPEED_FACTOR = POP_STRESS_BEHAVIOR.speedFactor ?? {};
+const POP_STRESS_VISION_FACTOR = POP_STRESS_BEHAVIOR.visionFactor ?? {};
+const POP_STRESS_SURFACE_BIAS = POP_STRESS_BEHAVIOR.surfaceBias ?? {};
+const POP_STRESS_SATURATION_FACTOR = POP_STRESS_VISUALS.saturationFactor ?? {};
+const POP_STRESS_LIGHTNESS_FACTOR = POP_STRESS_VISUALS.lightnessFactor ?? {};
 const rand = (min, max) => min + Math.random() * (max - min);
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const HOVER_CONFIG = CONFIG.fish.hover ?? {};
@@ -45,6 +53,11 @@ const HOVER_SPEED_FACTOR = clamp(HOVER_CONFIG.speedFactor ?? 0.15, 0.01, 1);
 
 const clamp01 = (v) => clamp(v, 0, 1);
 const lerp = (a, b, t) => a + (b - a) * t;
+const stressFactorByTier = (table, tier, fallback = 1) => {
+  if (tier === 'STRESSED') return Math.max(0, table?.STRESSED ?? fallback);
+  if (tier === 'PRESSURED') return Math.max(0, table?.PRESSURED ?? fallback);
+  return Math.max(0, table?.CALM ?? fallback);
+};
 const deepCopyPlain = (value) => {
   if (Array.isArray(value)) return value.map((entry) => deepCopyPlain(entry));
   if (value && typeof value === 'object') {
@@ -227,6 +240,9 @@ export class Fish {
     this.corpseRemoved = false;
     this.corpseDirtApplied01 = 0;
     this.behavior = { mode: 'wander', targetFoodId: null, speedBoost: 1 };
+    this.stressTier = 'CALM';
+    this.stressLevel01 = 0;
+    this.populationDensity01 = 0;
     this.eatAnimTimer = 0;
     this.eatAnimDuration = 0.22;
 
@@ -570,6 +586,7 @@ export class Fish {
     const schooling = this.#schoolingVector(this._worldRef, nowSec);
     desiredX += schooling.x;
     desiredY += schooling.y;
+    desiredY -= stressFactorByTier(POP_STRESS_SURFACE_BIAS, this.stressTier, 0) * 0.22;
 
     if (this.matingAnim && this.lifeState === 'ALIVE') {
       const progress = clamp01((nowSec - this.matingAnim.startSec) / Math.max(0.001, this.matingAnim.durationSec ?? 1.1));
@@ -737,6 +754,8 @@ export class Fish {
     const morph = MORPH[this.lifeStage] ?? MORPH.ADULT;
     // Condition affects "plumpness" and saturation a bit (middle-road model).
     const condition01 = clamp01(1 - this.hunger01 * 0.9);
+    const stressSat = stressFactorByTier(POP_STRESS_SATURATION_FACTOR, this.stressTier, 1);
+    const stressLight = stressFactorByTier(POP_STRESS_LIGHTNESS_FACTOR, this.stressTier, 1);
 
     const isAzureDart = this.species?.renderStyle === 'AZURE_DART';
     const bodyLengthBase = isAzureDart ? 1.58 : 1.32;
@@ -752,8 +771,8 @@ export class Fish {
       bodyHeight,
       tailWagAmp,
       eyeScale: morph.eye * lerp(0.95, 1.05, condition01),
-      saturationMult: morph.saturation * lerp(0.92, 1.06, condition01),
-      lightnessMult: morph.lightness,
+      saturationMult: morph.saturation * lerp(0.92, 1.06, condition01) * stressSat,
+      lightnessMult: morph.lightness * stressLight,
       condition01
     };
   }
@@ -810,11 +829,13 @@ export class Fish {
 
   #baseSpeed() {
     const stageMul = STAGE_SPEED[this.lifeStage] ?? 1;
-    return (20 + this.size * 0.9 * this.speedFactor) * SPEED_MULTIPLIER * stageMul * (this.species?.speedScale ?? 1);
+    const stressSpeed = stressFactorByTier(POP_STRESS_SPEED_FACTOR, this.stressTier, 1);
+    return (20 + this.size * 0.9 * this.speedFactor) * SPEED_MULTIPLIER * stageMul * (this.species?.speedScale ?? 1) * stressSpeed;
   }
 
   #findNearestFood(world) {
-    const visionRadius = FOOD_VISION_RADIUS[this.hungerState] ?? 0;
+    const stressVision = stressFactorByTier(POP_STRESS_VISION_FACTOR, this.stressTier, 1);
+    const visionRadius = (FOOD_VISION_RADIUS[this.hungerState] ?? 0) * stressVision;
     if (visionRadius <= 0) return null;
 
     const diet = getSpeciesDiet(this.speciesId);
