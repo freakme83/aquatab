@@ -476,6 +476,11 @@ input[type='range'] {
   background: rgba(56, 117, 167, 0.35);
 }
 
+.fish-row-sex--pregnant {
+  color: #2ecc71;
+  font-weight: 600;
+}
+
 .fish-detail {
   border-top: 1px solid var(--deck-border);
   padding-top: 8px;
@@ -488,11 +493,12 @@ input[type='range'] {
 }
 
 .tab-content[data-content='fish'] {
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .fish-inspector {
   grid-template-rows: auto minmax(160px, 1fr) auto;
+  height: 100%;
   min-height: 0;
 }
 
