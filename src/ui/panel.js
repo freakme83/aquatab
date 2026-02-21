@@ -15,6 +15,8 @@ export class Panel {
     this.currentInspectorSpeciesTab = 'LAB_MINNOW';
     this.lastInspectorSignature = null;
     this.lastObservedSelectedFishId = null;
+    this.lastInspectorFishList = [];
+    this.lastInspectorSimTimeSec = 0;
 
     this.tabButtons = [...this.root.querySelectorAll('.tab-button')];
     this.tabContents = [...this.root.querySelectorAll('.tab-content')];
@@ -184,11 +186,8 @@ export class Panel {
       return result;
     });
 
-    this.addAzureDartButton?.addEventListener('click', () => {
-      this.handlers.onAddAzureDart?.();
-    });
-
-    this.addAzureDartButton?.addEventListener('click', () => {
+    this.addAzureDartButton?.addEventListener('pointerup', (event) => {
+      event.preventDefault();
       this.handlers.onAddAzureDart?.();
     });
 
@@ -247,6 +246,7 @@ export class Panel {
         this.handlers.onFishSelect?.(null);
         this.lastInspectorSignature = null;
         this.lastObservedSelectedFishId = null;
+        this.updateFishInspector(this.lastInspectorFishList, null, this.lastInspectorSimTimeSec);
         return;
       }
 
@@ -254,7 +254,7 @@ export class Panel {
       if (detailTabButton) {
         this.currentInspectorDetailTab = detailTabButton.dataset.fishDetailTab === 'history' ? 'history' : 'info';
         this.lastInspectorSignature = null;
-    this.lastObservedSelectedFishId = null;
+        this.lastObservedSelectedFishId = null;
         return;
       }
 
@@ -527,6 +527,8 @@ export class Panel {
 
   updateFishInspector(fishList, selectedFishId, simTimeSec) {
     if (!this.fishInspector) return;
+    this.lastInspectorFishList = Array.isArray(fishList) ? [...fishList] : [];
+    this.lastInspectorSimTimeSec = Number.isFinite(simTimeSec) ? simTimeSec : 0;
 
     const activeInput = this.fishInspector.querySelector('[data-fish-name-input]:focus');
     if (activeInput) return;
@@ -581,11 +583,15 @@ export class Panel {
         const deadClass = fish.lifeState !== 'ALIVE' ? ' fishRow--dead' : '';
         const stageLabel = typeof fish.lifeStageLabel === 'function' ? fish.lifeStageLabel() : (fish.lifeStage ?? '');
         const state = `${stageLabel} · ${fish.hungerState}`;
+        const isPregnant = fish.sex === 'female' && (fish.repro?.state === 'GRAVID' || fish.repro?.state === 'LAYING');
+        const sexMarkup = isPregnant
+          ? '<span class="fish-row-sex--pregnant">female</span>'
+          : this.#escapeHtml(fish.sex);
         const liveName = fish.name?.trim() || '';
         const draftName = this.nameDraftByFishId.get(fish.id) ?? liveName;
         const rawLabel = draftName || 'Unnamed';
         const label = this.#escapeHtml(rawLabel);
-        return `<button type="button" class="fish-row${selectedClass}${deadClass}" data-fish-id="${fish.id}">${label} · ${fish.sex} · ${state}</button>`;
+        return `<button type="button" class="fish-row${selectedClass}${deadClass}" data-fish-id="${fish.id}">${label} · ${sexMarkup} · ${state}</button>`;
       })
       .join('');
 
