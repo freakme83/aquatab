@@ -545,6 +545,20 @@ input[type='range'] {
   font-weight: 600;
 }
 
+.status--pressured {
+  color: #f39c12;
+  font-weight: 600;
+}
+
+.status--stressed {
+  color: #e74c3c;
+  font-weight: 700;
+}
+
+.sex--pregnant {
+  color: #2ecc71;
+}
+
 
 .history-fish-link {
   border: 0;

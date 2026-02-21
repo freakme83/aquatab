@@ -78,6 +78,16 @@ const CORPSE_DIRT_MAX01 = 0.12;
 const BERRY_REED_UNLOCK_BIRTHS = 4;
 const BERRY_REED_UNLOCK_HYGIENE01 = 0.8;
 const BERRY_REED_MAX_COUNT = 1;
+const POP_STRESS_CONFIG = CONFIG.fish.populationStress ?? {};
+const POP_STRESS_CAPACITY_UNITS = Math.max(1, POP_STRESS_CONFIG.capacityUnits ?? WATER_REFERENCE_FISH_COUNT);
+const POP_STRESS_SIZE_RATIO_MIN = Math.max(0.1, POP_STRESS_CONFIG.sizeRatioMin ?? 0.35);
+const POP_STRESS_SIZE_RATIO_MAX = Math.max(POP_STRESS_SIZE_RATIO_MIN, POP_STRESS_CONFIG.sizeRatioMax ?? 1.25);
+const POP_STRESS_SIZE_RATIO_POWER = Math.max(0.1, POP_STRESS_CONFIG.sizeRatioPower ?? 1.15);
+const POP_STRESS_PRESSURED_THRESHOLD = clamp01(POP_STRESS_CONFIG.pressuredThreshold ?? 0.72);
+const POP_STRESS_STRESSED_THRESHOLD = Math.max(POP_STRESS_PRESSURED_THRESHOLD + 0.01, clamp01(POP_STRESS_CONFIG.stressedThreshold ?? 0.92));
+const POP_STRESS_STAGE_WEIGHTS = POP_STRESS_CONFIG.stageWeights ?? {};
+const POP_STRESS_SPECIES_SENSITIVITY = POP_STRESS_CONFIG.speciesDensitySensitivity ?? {};
+const POP_STRESS_REPRODUCTION_FACTOR = POP_STRESS_CONFIG.reproductionFactor ?? {};
 const BERRY_REED_FRUIT_INTERVAL_MIN_SEC = 16;
 const BERRY_REED_FRUIT_INTERVAL_MAX_SEC = 48;
 const BERRY_REED_FRUIT_INTERVAL_JITTER_SEC = 4;
@@ -387,6 +397,32 @@ function getSpeciesPoopBioloadFactor(speciesId) {
 function getSpeciesReproductionScale(speciesId) {
   return Math.max(0.05, getSpeciesConfig(speciesId)?.reproductionScale ?? 1);
 }
+
+function stageDensityWeight(stage) {
+  if (stage === 'BABY') return Math.max(0.05, POP_STRESS_STAGE_WEIGHTS.BABY ?? 0.45);
+  if (stage === 'JUVENILE') return Math.max(0.05, POP_STRESS_STAGE_WEIGHTS.JUVENILE ?? 0.75);
+  if (stage === 'OLD') return Math.max(0.05, POP_STRESS_STAGE_WEIGHTS.OLD ?? 0.9);
+  return Math.max(0.05, POP_STRESS_STAGE_WEIGHTS.ADULT ?? 1);
+}
+
+function speciesStressSensitivity(speciesId) {
+  return Math.max(0.2, Number.isFinite(POP_STRESS_SPECIES_SENSITIVITY[speciesId]) ? POP_STRESS_SPECIES_SENSITIVITY[speciesId] : 1);
+}
+
+function tierFromDensity(density01) {
+  if (density01 >= POP_STRESS_STRESSED_THRESHOLD) return 'STRESSED';
+  if (density01 >= POP_STRESS_PRESSURED_THRESHOLD) return 'PRESSURED';
+  return 'CALM';
+}
+
+function stressReproductionFactor(speciesId, tier) {
+  const speciesEntry = POP_STRESS_REPRODUCTION_FACTOR[speciesId] ?? POP_STRESS_REPRODUCTION_FACTOR.LAB_MINNOW ?? null;
+  if (!speciesEntry) return 1;
+  if (tier === 'STRESSED') return Math.max(0, speciesEntry.STRESSED ?? 0.38);
+  if (tier === 'PRESSURED') return Math.max(0, speciesEntry.PRESSURED ?? 0.72);
+  return Math.max(0, speciesEntry.CALM ?? 1);
+}
+
 function makeBubble(bounds) {
   return {
     x: rand(0, bounds.width),
@@ -1132,6 +1168,7 @@ export class World {
 
     for (const fish of this.fish) fish.updateLifeCycle?.(this.simTimeSec);
     for (const fish of this.fish) fish.updatePlayState?.(this.simTimeSec);
+    this.#updatePopulationStress();
     this.#updatePlaySessions();
     this.#tryExpandPlaySessions();
     this.#tryStartPlaySessions();
@@ -1150,6 +1187,32 @@ export class World {
     this.#updateWaterHygiene(simDt);
     this.#updateFxParticles(motionDt);
     this.#updateBubbles(motionDt);
+  }
+
+  #updatePopulationStress() {
+    const aliveFish = this.fish.filter((fish) => fish?.lifeState === 'ALIVE');
+    if (!aliveFish.length) return;
+
+    let loadUnits = 0;
+    for (const fish of aliveFish) {
+      const adultRadius = Math.max(1, Number.isFinite(fish.adultRadius) ? fish.adultRadius : fish.size ?? 1);
+      const size = Math.max(0.1, Number.isFinite(fish.size) ? fish.size : adultRadius);
+      const sizeRatio = clamp(size / adultRadius, POP_STRESS_SIZE_RATIO_MIN, POP_STRESS_SIZE_RATIO_MAX);
+      const weightedSize = sizeRatio ** POP_STRESS_SIZE_RATIO_POWER;
+      const stageWeight = stageDensityWeight(fish.lifeStage);
+      loadUnits += stageWeight * weightedSize;
+    }
+
+    const baseDensity01 = loadUnits / POP_STRESS_CAPACITY_UNITS;
+    for (const fish of aliveFish) {
+      const sensitivity = speciesStressSensitivity(fish.speciesId ?? DEFAULT_SPECIES_ID);
+      const effectiveDensity01 = baseDensity01 * sensitivity;
+      const tier = tierFromDensity(effectiveDensity01);
+      const level01 = clamp01((effectiveDensity01 - POP_STRESS_PRESSURED_THRESHOLD) / Math.max(0.01, POP_STRESS_STRESSED_THRESHOLD - POP_STRESS_PRESSURED_THRESHOLD));
+      fish.stressTier = tier;
+      fish.stressLevel01 = level01;
+      fish.populationDensity01 = clamp01(effectiveDensity01);
+    }
   }
 
   #createInitialWaterState() {
@@ -1654,7 +1717,11 @@ export class World {
     const w = Math.min(a.wellbeing01 ?? 0, b.wellbeing01 ?? 0);
     const u = clamp01((w - 0.80) / 0.20);
     const wellbeingFactor = 0.6 + 0.4 * u;
-    const pMate = MATE_BASE_CHANCE * hygieneFactor * wellbeingFactor;
+    const stressFactor = Math.min(
+      stressReproductionFactor(a.speciesId ?? DEFAULT_SPECIES_ID, a.stressTier ?? 'CALM'),
+      stressReproductionFactor(b.speciesId ?? DEFAULT_SPECIES_ID, b.stressTier ?? 'CALM')
+    );
+    const pMate = MATE_BASE_CHANCE * hygieneFactor * wellbeingFactor * stressFactor;
 
     if (Math.random() >= pMate) return;
 

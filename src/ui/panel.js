@@ -554,6 +554,7 @@ export class Panel {
     const selectedHungerPct = selectedFish ? Math.round((selectedFish.hunger01 ?? 0) * 100) : -1;
     const selectedWellbeingPct = selectedFish ? Math.round((selectedFish.wellbeing01 ?? 0) * 100) : -1;
     const selectedGrowthPct = selectedFish ? Math.round((selectedFish.growth01 ?? 0) * 100) : -1;
+    const selectedStressTier = selectedFish ? (selectedFish.stressTier ?? 'CALM') : 'none';
     const selectedHistorySnapshot = selectedFish
       ? `${selectedFish.history?.mealsEaten ?? 0}|${selectedFish.history?.mateCount ?? 0}|${selectedFish.history?.childrenIds?.length ?? 0}|${selectedFish.history?.deathSimTimeSec ?? ''}|${selectedFish.repro?.state ?? ''}|${selectedFish.deathReason ?? ''}`
       : 'none';
@@ -566,6 +567,7 @@ export class Panel {
       + `::hunger=${selectedHungerPct}`
       + `::wellbeing=${selectedWellbeingPct}`
       + `::growth=${selectedGrowthPct}`
+      + `::stress=${selectedStressTier}`
       + `::history=${selectedHistorySnapshot}`
       + `::detailTab=${this.currentInspectorDetailTab}`
       + `::speciesTab=${this.currentInspectorSpeciesTab}`;
@@ -633,19 +635,24 @@ export class Panel {
     const pregnantMarkup = isPregnant
       ? '<div class="status-line status--pregnant">pregnant</div>'
       : '';
+    const stressTier = fish.stressTier === 'STRESSED' ? 'STRESSED' : (fish.stressTier === 'PRESSURED' ? 'PRESSURED' : 'CALM');
+    const stressMarkup = stressTier === 'CALM'
+      ? ''
+      : `<div class="status-line ${stressTier === 'STRESSED' ? 'status--stressed' : 'status--pressured'}">${stressTier === 'STRESSED' ? 'stressed' : 'pressured'}</div>`;
 
     const speciesLabel = fish.speciesId === 'AZURE_DART' ? 'Azure Dart' : 'Lab Minnow';
     const infoRows = `
       <label class="control-group fish-name-group"><span>Name</span><input type="text" maxlength="24" value="${this.#escapeAttribute(draftName)}" data-fish-name-input placeholder="Fish name" /></label>
       <div class="stat-row"><span>Fish ID</span><strong>${fish.id}</strong></div>
       <div class="stat-row"><span>Species</span><strong>${speciesLabel}</strong></div>
-      <div class="stat-row"><span>Sex</span><strong>${fish.sex}</strong></div>
+      <div class="stat-row"><span>Sex</span><strong class="${isPregnant ? 'sex--pregnant' : ''}">${fish.sex}</strong></div>
       <div class="stat-row"><span>Life Stage</span><strong>${typeof fish.lifeStageLabel === 'function' ? fish.lifeStageLabel() : (fish.lifeStage ?? '')}</strong></div>
       <div class="stat-row"><span>Hunger</span><strong>${fish.hungerState} (${Math.round(fish.hunger01 * 100)}%)</strong></div>
       <div class="stat-row"><span>Wellbeing</span><strong>${Math.round(fish.wellbeing01 * 100)}%</strong></div>
       <div class="stat-row"><span>Growth</span><strong>${Math.round((fish.growth01 ?? 0) * 100)}%</strong></div>
       <div class="stat-row"><span>Aquarium Time</span><strong>${aquariumTime}</strong></div>
       ${pregnantMarkup}
+      ${stressMarkup}
     `;
 
     const history = fish.history ?? {};
