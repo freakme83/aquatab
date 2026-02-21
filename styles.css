@@ -421,8 +421,11 @@ input[type='range'] {
 
 
 .fish-inspector {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
+  height: 100%;
+  min-height: 0;
 }
 
 .inspector-species-tabs {
@@ -451,8 +454,12 @@ input[type='range'] {
 .fish-list {
   display: grid;
   gap: 6px;
-  max-height: 180px;
+  flex: 1 1 auto;
+  min-height: 150px;
+  max-height: none;
   overflow-y: auto;
+  padding-right: 2px;
+  scrollbar-gutter: stable;
 }
 
 .fish-row {
@@ -484,7 +491,7 @@ input[type='range'] {
 .fish-detail {
   border-top: 1px solid var(--deck-border);
   padding-top: 8px;
-  min-height: 220px;
+  min-height: 170px;
   overflow-y: auto;
   scrollbar-gutter: stable;
 }
@@ -497,23 +504,12 @@ input[type='range'] {
 
 .tab-content[data-content='fish'] {
   overflow: hidden;
+  scrollbar-gutter: stable;
+}
+
+.tab-content[data-content='fish'].active {
   display: flex;
   flex-direction: column;
-  scrollbar-gutter: stable;
-}
-
-.fish-inspector {
-  grid-template-rows: auto minmax(0, 1fr) minmax(220px, 0.9fr);
-  height: 100%;
-  min-height: 0;
-}
-
-.fish-list {
-  min-height: 140px;
-  max-height: none;
-  overflow-y: auto;
-  padding-right: 2px;
-  scrollbar-gutter: stable;
 }
 
 
@@ -542,7 +538,7 @@ input[type='range'] {
 
 .fish-detail-pane {
   display: none;
-  min-height: 168px;
+  min-height: 132px;
 }
 
 .fish-detail-pane.active {
