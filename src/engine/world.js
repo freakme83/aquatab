@@ -93,6 +93,8 @@ const BERRY_REED_MAX_GROWTH_PHASES = 2;
 const BERRY_REED_GROWTH_REFERENCE_SEC = Math.max(60, AGE_CONFIG.stageBaseSec?.juvenileEndSec ?? 50 * 60);
 const BERRY_REED_MAX_GROWTH_ELAPSED_SEC = BERRY_REED_GROWTH_REFERENCE_SEC * BERRY_REED_MAX_GROWTH_PHASES;
 const MIN_SIM_SPEED_MULTIPLIER = 0.5;
+const REPRO_PRESSURE_START_COUNT = Math.max(6, Math.round(WATER_REFERENCE_FISH_COUNT * 0.9));
+const REPRO_PRESSURE_CRITICAL_COUNT = Math.max(REPRO_PRESSURE_START_COUNT + 2, Math.round(WATER_REFERENCE_FISH_COUNT * 1.7));
 
 const WORLD_SAVE_VERSION = 1;
 export const WATER_SAVE_KEYS = [
@@ -1689,6 +1691,18 @@ export class World {
     }
   }
 
+  #getPopulationPressure01(speciesId = null) {
+    let aliveCount = 0;
+    for (const fish of this.fish) {
+      if (fish.lifeState !== 'ALIVE') continue;
+      if (speciesId && (fish.speciesId ?? DEFAULT_SPECIES_ID) !== speciesId) continue;
+      aliveCount += 1;
+    }
+    if (aliveCount <= REPRO_PRESSURE_START_COUNT) return 0;
+    const span = Math.max(1, REPRO_PRESSURE_CRITICAL_COUNT - REPRO_PRESSURE_START_COUNT);
+    return clamp01((aliveCount - REPRO_PRESSURE_START_COUNT) / span);
+  }
+
 
   #isMateEligible(fish, nowSec) {
     if (!fish || fish.lifeState !== 'ALIVE') return false;
@@ -1718,7 +1732,10 @@ export class World {
     const w = Math.min(a.wellbeing01 ?? 0, b.wellbeing01 ?? 0);
     const u = clamp01((w - 0.80) / 0.20);
     const wellbeingFactor = 0.6 + 0.4 * u;
-    const pMate = MATE_BASE_CHANCE * hygieneFactor * wellbeingFactor;
+    const speciesId = a.speciesId ?? DEFAULT_SPECIES_ID;
+    const populationPressure01 = this.#getPopulationPressure01(speciesId);
+    const densityFactor = 1 - (populationPressure01 * 0.75);
+    const pMate = MATE_BASE_CHANCE * hygieneFactor * wellbeingFactor * densityFactor;
 
     if (Math.random() >= pMate) return;
 
@@ -1765,9 +1782,12 @@ export class World {
     const clutchSizes = speciesId === AZURE_DART_SPECIES_ID
       ? [3, 4, 5]
       : CLUTCH_SIZE;
-    const clutchCount = speciesId === AZURE_DART_SPECIES_ID
+    const baseClutchCount = speciesId === AZURE_DART_SPECIES_ID
       ? clutchSizes[Math.floor(rand(0, clutchSizes.length))]
       : Math.max(1, randIntInclusive(clutchSizes, 2, 4));
+    const populationPressure01 = this.#getPopulationPressure01(speciesId);
+    const clutchPressureFactor = 1 - (populationPressure01 * 0.45);
+    const clutchCount = Math.max(1, Math.round(baseClutchCount * clutchPressureFactor));
     const reproScale = getSpeciesReproductionScale(speciesId);
     const baseLayY = Math.max(0, this.#swimHeight() - 14);
 
@@ -2002,6 +2022,14 @@ export class World {
         const t = clamp01((hygiene01 - 0.60) / 0.40);
         hatchChance = 0.20 + 0.80 * (t * t);
       }
+
+      const speciesId = egg.speciesId ?? this.getFishById(egg.motherId)?.speciesId ?? DEFAULT_SPECIES_ID;
+      const populationPressure01 = this.#getPopulationPressure01(speciesId);
+      hatchChance *= (1 - (populationPressure01 * 0.5));
+      if (speciesId === AZURE_DART_SPECIES_ID && this.berryReedPlants.length > 0) {
+        hatchChance += 0.08;
+      }
+      hatchChance = clamp01(hatchChance);
 
       const success = Math.random() < hatchChance;
       if (success) {
