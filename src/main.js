@@ -12,6 +12,7 @@ const DEFAULT_INITIAL_FISH_COUNT = 4;
 const SAVE_STORAGE_KEY = 'aquatab_save_v1';
 const SAVE_VERSION = 1;
 const AUTOSAVE_INTERVAL_MS = 10_000;
+const INACTIVITY_AWAY_THRESHOLD_SIM_SEC = 300;
 
 const startScreen = document.getElementById('startScreen');
 const appRoot = document.getElementById('appRoot');
@@ -41,6 +42,9 @@ let ecosystemFailed = false;
 let pendingSavePayload = null;
 
 let autosaveIntervalId = null;
+let awaySnapshot = null;
+let autoPauseOverlayOpen = false;
+let lastInteractionSimTimeSec = 0;
 
 let lastTimingDebugLogAtSec = -1;
 let lastTrendSampleSimTimeSec = null;
@@ -230,6 +234,66 @@ ecosystemFailedCard.append(ecosystemFailedTitle, ecosystemFailedBody, ecosystemF
 ecosystemFailedOverlay.append(ecosystemFailedCard);
 document.body.appendChild(ecosystemFailedOverlay);
 
+const autoPauseOverlay = document.createElement('div');
+autoPauseOverlay.hidden = true;
+autoPauseOverlay.style.position = 'fixed';
+autoPauseOverlay.style.inset = '0';
+autoPauseOverlay.style.display = 'grid';
+autoPauseOverlay.style.placeItems = 'center';
+autoPauseOverlay.style.background = 'rgba(2, 7, 12, 0.74)';
+autoPauseOverlay.style.backdropFilter = 'blur(2px)';
+autoPauseOverlay.style.zIndex = '118';
+
+const autoPauseCard = document.createElement('div');
+autoPauseCard.style.width = 'min(430px, calc(100vw - 32px))';
+autoPauseCard.style.padding = '16px';
+autoPauseCard.style.borderRadius = '12px';
+autoPauseCard.style.border = '1px solid rgba(255, 255, 255, 0.28)';
+autoPauseCard.style.background = 'rgba(12, 20, 28, 0.95)';
+autoPauseCard.style.boxShadow = '0 16px 34px rgba(0, 0, 0, 0.44)';
+
+const autoPauseTitle = document.createElement('h2');
+autoPauseTitle.textContent = 'Auto-pause due to inactivity';
+autoPauseTitle.style.margin = '0 0 6px';
+autoPauseTitle.style.fontSize = '20px';
+autoPauseTitle.style.color = '#eaf7ff';
+
+const autoPauseSubtitle = document.createElement('p');
+autoPauseSubtitle.textContent = 'While you were away';
+autoPauseSubtitle.style.margin = '0 0 10px';
+autoPauseSubtitle.style.color = 'rgba(232, 244, 255, 0.92)';
+
+const autoPauseList = document.createElement('ul');
+autoPauseList.style.margin = '0 0 12px';
+autoPauseList.style.paddingLeft = '18px';
+autoPauseList.style.color = 'rgba(232, 244, 255, 0.94)';
+autoPauseList.style.fontSize = '14px';
+
+const autoPauseStarving = document.createElement('p');
+autoPauseStarving.style.margin = '0 0 14px';
+autoPauseStarving.style.color = 'rgba(255, 213, 164, 0.95)';
+autoPauseStarving.style.fontSize = '13px';
+
+const autoPauseActions = document.createElement('div');
+autoPauseActions.style.display = 'flex';
+autoPauseActions.style.justifyContent = 'flex-end';
+
+const autoPauseResumeButton = document.createElement('button');
+autoPauseResumeButton.type = 'button';
+autoPauseResumeButton.textContent = 'OK · Resume';
+autoPauseResumeButton.style.padding = '8px 12px';
+autoPauseResumeButton.style.borderRadius = '999px';
+autoPauseResumeButton.style.border = '1px solid rgba(255, 255, 255, 0.4)';
+autoPauseResumeButton.style.background = 'rgba(28, 80, 54, 0.92)';
+autoPauseResumeButton.style.color = '#eaf7ff';
+autoPauseResumeButton.style.fontWeight = '600';
+autoPauseResumeButton.style.cursor = 'pointer';
+
+autoPauseActions.append(autoPauseResumeButton);
+autoPauseCard.append(autoPauseTitle, autoPauseSubtitle, autoPauseList, autoPauseStarving, autoPauseActions);
+autoPauseOverlay.append(autoPauseCard);
+document.body.appendChild(autoPauseOverlay);
+
 
 const infoModalCopy = {
   howToPlay: {
@@ -386,6 +450,162 @@ function showFilterToast(textValue) {
   }, 2000);
 }
 
+function speciesLabel(speciesId) {
+  return speciesId === 'AZURE_DART' ? 'Azure Dart' : 'Lab Minnow';
+}
+
+function fishDisplayName(fish) {
+  if (!fish) return 'Unknown fish';
+  const name = String(fish.name ?? '').trim() || `Fish #${fish.id}`;
+  return `${name} (${speciesLabel(fish.speciesId)})`;
+}
+
+function captureAwaySnapshot() {
+  if (!world) return null;
+  const deadIds = new Set();
+  const gravidIds = new Set();
+
+  for (const fish of world.getFishInspectorList?.() ?? world.fish) {
+    if (fish.lifeState === 'DEAD') deadIds.add(fish.id);
+    if (fish.repro?.state === 'GRAVID' || fish.repro?.state === 'LAYING') gravidIds.add(fish.id);
+  }
+
+  return {
+    atSimSec: world.simTimeSec,
+    birthsCount: world.birthsCount,
+    foodsConsumedCount: world.foodsConsumedCount,
+    deadIds,
+    gravidIds
+  };
+}
+
+function clearAwaySnapshot() {
+  awaySnapshot = null;
+}
+
+function isAway() {
+  if (!started || !world) return false;
+  if (document.visibilityState === 'hidden') return true;
+  const inactivitySimSec = Math.max(0, world.simTimeSec - lastInteractionSimTimeSec);
+  return inactivitySimSec >= INACTIVITY_AWAY_THRESHOLD_SIM_SEC;
+}
+
+function ensureAwaySnapshotState() {
+  if (!started || !world || ecosystemFailed || autoPauseOverlayOpen) {
+    clearAwaySnapshot();
+    return;
+  }
+
+  if (isAway()) {
+    if (!awaySnapshot) awaySnapshot = captureAwaySnapshot();
+    return;
+  }
+
+  clearAwaySnapshot();
+}
+
+function buildAwayReport() {
+  if (!world || !awaySnapshot) {
+    return {
+      birthsDelta: 0,
+      foodsDelta: 0,
+      deathsDelta: 0,
+      newlyPregnantDelta: 0,
+      starvingNowNames: []
+    };
+  }
+
+  const currentDeadIds = new Set();
+  const currentGravidIds = new Set();
+  const starvingNowNames = [];
+
+  for (const fish of world.getFishInspectorList?.() ?? world.fish) {
+    if (fish.lifeState === 'DEAD') currentDeadIds.add(fish.id);
+    if (fish.repro?.state === 'GRAVID' || fish.repro?.state === 'LAYING') currentGravidIds.add(fish.id);
+    if (fish.lifeState === 'ALIVE' && fish.hungerState === 'STARVING') starvingNowNames.push(fishDisplayName(fish));
+  }
+
+  let deathsDelta = 0;
+  for (const id of currentDeadIds) {
+    if (!awaySnapshot.deadIds.has(id)) deathsDelta += 1;
+  }
+
+  let newlyPregnantDelta = 0;
+  for (const id of currentGravidIds) {
+    if (!awaySnapshot.gravidIds.has(id)) newlyPregnantDelta += 1;
+  }
+
+  return {
+    birthsDelta: Math.max(0, world.birthsCount - awaySnapshot.birthsCount),
+    foodsDelta: Math.max(0, world.foodsConsumedCount - awaySnapshot.foodsConsumedCount),
+    deathsDelta,
+    newlyPregnantDelta,
+    starvingNowNames
+  };
+}
+
+function renderAutoPauseReport(report) {
+  autoPauseList.replaceChildren();
+  const rows = [];
+  if (report.birthsDelta > 0) rows.push(`${report.birthsDelta} born`);
+  if (report.deathsDelta > 0) rows.push(`${report.deathsDelta} died while away`);
+  if (report.foodsDelta > 0) rows.push(`${report.foodsDelta} meals eaten`);
+  if (report.newlyPregnantDelta > 0) rows.push(`${report.newlyPregnantDelta} became pregnant`);
+
+  if (rows.length === 0) rows.push('No major population changes while away.');
+
+  for (const text of rows) {
+    const item = document.createElement('li');
+    item.textContent = text;
+    autoPauseList.appendChild(item);
+  }
+
+  autoPauseStarving.textContent = report.starvingNowNames.length
+    ? `Starving now: ${report.starvingNowNames.join(', ')}`
+    : 'No fish are currently starving.';
+}
+
+function triggerAutoPauseDueToAway() {
+  if (!started || !world || ecosystemFailed || autoPauseOverlayOpen) return;
+  world.paused = true;
+  stopBackgroundSim();
+  stopRaf();
+  hideCorpseAction();
+  renderAutoPauseReport(buildAwayReport());
+  autoPauseOverlay.hidden = false;
+  autoPauseOverlayOpen = true;
+}
+
+function maybeAutoPauseOnStarvingAway() {
+  if (!started || !world || ecosystemFailed || autoPauseOverlayOpen) return;
+  ensureAwaySnapshotState();
+  if (!awaySnapshot) return;
+
+  const hasStarvingFish = world.fish.some((fish) => fish.lifeState === 'ALIVE' && fish.hungerState === 'STARVING');
+  if (hasStarvingFish) triggerAutoPauseDueToAway();
+}
+
+function markUserInteraction() {
+  if (!started || !world || ecosystemFailed) return;
+  lastInteractionSimTimeSec = world.simTimeSec;
+  if (!autoPauseOverlayOpen) ensureAwaySnapshotState();
+}
+
+autoPauseResumeButton.addEventListener('click', () => {
+  if (!started || !world || ecosystemFailed || !autoPauseOverlayOpen) return;
+  autoPauseOverlay.hidden = true;
+  autoPauseOverlayOpen = false;
+  clearAwaySnapshot();
+  world.paused = false;
+  lastInteractionSimTimeSec = world.simTimeSec;
+  syncDriversToVisibility();
+});
+
+const trackedInteractionEvents = ['pointerdown', 'keydown', 'wheel', 'touchstart'];
+for (const eventName of trackedInteractionEvents) {
+  document.addEventListener(eventName, markUserInteraction, { passive: true });
+}
+
 
 function refreshDevModeUI() {
   if (!panel) return;
@@ -485,6 +705,9 @@ function triggerEcosystemFailed() {
   stopBackgroundSim();
   stopAutosave();
   hideCorpseAction();
+  autoPauseOverlay.hidden = true;
+  autoPauseOverlayOpen = false;
+  clearAwaySnapshot();
   localStorage.removeItem(SAVE_STORAGE_KEY);
   ecosystemFailedOverlay.hidden = false;
 }
@@ -494,6 +717,7 @@ function stepVisibleSim(rawDeltaSec) {
   const dt = Math.min(VISIBLE_MAX_STEP_SEC, Math.max(0, rawDeltaSec));
   if (dt <= 0) return;
   world.update(dt);
+  maybeAutoPauseOnStarvingAway();
   checkEcosystemFailure();
 }
 
@@ -505,8 +729,10 @@ function stepHiddenSim(rawDeltaSec) {
   while (remaining > 0) {
     const dt = Math.min(HIDDEN_STEP_SEC, remaining);
     world.update(dt);
+    maybeAutoPauseOnStarvingAway();
     checkEcosystemFailure();
     if (ecosystemFailed) return;
+    if (autoPauseOverlayOpen) return;
     remaining -= dt;
   }
 }
@@ -600,12 +826,22 @@ function stopBackgroundSim() {
 
 function syncDriversToVisibility() {
   if (!started || ecosystemFailed) return;
+  ensureAwaySnapshotState();
+
+  if (autoPauseOverlayOpen) {
+    stopBackgroundSim();
+    stopRaf();
+    if (document.visibilityState !== 'hidden') startRaf();
+    return;
+  }
+
   if (document.visibilityState === 'hidden') {
     saveWorldSnapshot();
     stopRaf();
     hideCorpseAction();
     stopBackgroundSim();
     startBackgroundSim();
+    maybeAutoPauseOnStarvingAway();
   } else {
     stopBackgroundSim();
     stopRaf();
@@ -640,12 +876,16 @@ function restartToStartScreen() {
   stopAutosave();
   hideCorpseAction();
   ecosystemFailedOverlay.hidden = true;
+  autoPauseOverlay.hidden = true;
+  autoPauseOverlayOpen = false;
+  clearAwaySnapshot();
 
   started = false;
   ecosystemFailed = false;
   pendingSavePayload = null;
   world = null;
   renderer = null;
+  lastInteractionSimTimeSec = 0;
   lastTrendSampleSimTimeSec = null;
   lastTrendSampleHygiene01 = null;
   smoothedHygieneDeltaPerMin = 0;
@@ -671,6 +911,9 @@ function startSimulation({ savedPayload = null } = {}) {
   pendingSavePayload = null;
   ecosystemFailed = false;
   ecosystemFailedOverlay.hidden = true;
+  autoPauseOverlay.hidden = true;
+  autoPauseOverlayOpen = false;
+  clearAwaySnapshot();
 
   const initialSize = measureCanvasSize();
   if (savedPayload?.saveVersion === SAVE_VERSION) {
@@ -683,6 +926,7 @@ function startSimulation({ savedPayload = null } = {}) {
     world = new World(initialSize.width, initialSize.height, initialFishCount);
   }
   renderer = new Renderer(canvas, world);
+  lastInteractionSimTimeSec = world.simTimeSec;
   lastTrendSampleSimTimeSec = null;
   lastTrendSampleHygiene01 = null;
   smoothedHygieneDeltaPerMin = 0;
