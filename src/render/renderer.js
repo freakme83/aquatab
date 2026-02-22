@@ -85,7 +85,12 @@ export class Renderer {
   #updateCamera() {
     const worldWidth = Math.max(1, this.world.bounds.width);
     const worldHeight = Math.max(1, this.world.bounds.height);
-    const scale = Math.min(this.tankRect.width / worldWidth, this.tankRect.height / worldHeight);
+    const fitScale = Math.min(this.tankRect.width / worldWidth, this.tankRect.height / worldHeight);
+    const fillScale = Math.max(this.tankRect.width / worldWidth, this.tankRect.height / worldHeight);
+    const isPortrait = window.innerHeight > window.innerWidth;
+    const isCoarsePointer = window.matchMedia?.('(pointer: coarse)')?.matches ?? false;
+    const useFillScale = isPortrait && isCoarsePointer;
+    const scale = useFillScale ? fillScale : fitScale;
     const viewWidth = worldWidth * scale;
     const viewHeight = worldHeight * scale;
     const offsetX = this.tankRect.x + (this.tankRect.width - viewWidth) * 0.5;
