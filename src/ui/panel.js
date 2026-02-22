@@ -15,6 +15,10 @@ export class Panel {
     this.currentInspectorSpeciesTab = 'LAB_MINNOW';
     this.lastInspectorSignature = null;
     this.lastObservedSelectedFishId = null;
+    this.inspectorRenderThrottleMs = 200;
+    this.lastInspectorRenderAtMs = 0;
+    this.pendingInspectorPayload = null;
+    this.inspectorPointerActive = false;
 
     this.tabButtons = [...this.root.querySelectorAll('.tab-button')];
     this.tabContents = [...this.root.querySelectorAll('.tab-content')];
@@ -208,6 +212,23 @@ export class Panel {
 
   #bindFishInspectorDelegates() {
     if (!this.fishInspector) return;
+
+    const releaseInspectorPointer = () => {
+      if (!this.inspectorPointerActive) return;
+      this.inspectorPointerActive = false;
+      if (this.pendingInspectorPayload) {
+        const payload = this.pendingInspectorPayload;
+        this.pendingInspectorPayload = null;
+        this.#renderFishInspector(payload);
+      }
+    };
+
+    this.fishInspector.addEventListener('pointerdown', () => {
+      this.inspectorPointerActive = true;
+    });
+    this.fishInspector.addEventListener('pointerup', releaseInspectorPointer);
+    this.fishInspector.addEventListener('pointercancel', releaseInspectorPointer);
+    window.addEventListener('pointerup', releaseInspectorPointer);
 
     this.fishInspector.addEventListener('pointerdown', (event) => {
       const rowButton = event.target.closest('[data-fish-id]');
@@ -527,6 +548,24 @@ export class Panel {
 
   updateFishInspector(fishList, selectedFishId, simTimeSec) {
     if (!this.fishInspector) return;
+
+    const payload = { fishList, selectedFishId, simTimeSec };
+    if (this.inspectorPointerActive) {
+      this.pendingInspectorPayload = payload;
+      return;
+    }
+
+    const nowMs = performance.now();
+    if (nowMs - this.lastInspectorRenderAtMs < this.inspectorRenderThrottleMs) {
+      this.pendingInspectorPayload = payload;
+      return;
+    }
+
+    this.#renderFishInspector(payload);
+  }
+
+  #renderFishInspector({ fishList, selectedFishId, simTimeSec }) {
+    this.lastInspectorRenderAtMs = performance.now();
 
     const activeInput = this.fishInspector.querySelector('[data-fish-name-input]:focus');
     if (activeInput) return;
