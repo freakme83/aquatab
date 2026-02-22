@@ -546,12 +546,13 @@ function buildAwayReport() {
 
 function renderAutoPauseReport(report) {
   autoPauseList.replaceChildren();
-  const rows = [
-    `${report.birthsDelta} born`,
-    `${report.deathsDelta} died`,
-    `${report.foodsDelta} meals eaten`,
-    `${report.newlyPregnantDelta} became pregnant`
-  ];
+  const rows = [];
+  if (report.birthsDelta > 0) rows.push(`${report.birthsDelta} born`);
+  if (report.deathsDelta > 0) rows.push(`${report.deathsDelta} died while away`);
+  if (report.foodsDelta > 0) rows.push(`${report.foodsDelta} meals eaten`);
+  if (report.newlyPregnantDelta > 0) rows.push(`${report.newlyPregnantDelta} became pregnant`);
+
+  if (rows.length === 0) rows.push('No major population changes while away.');
 
   for (const text of rows) {
     const item = document.createElement('li');
