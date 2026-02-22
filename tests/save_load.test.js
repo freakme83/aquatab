@@ -168,6 +168,46 @@ test('egg incubation data persists and hatches after due time', () => {
   assert.equal(baby.history.bornInAquarium, true);
 });
 
+
+test('berry reed gives azure eggs a small hatch buffer', () => {
+  const world = makeWorldForTest({ initialFishCount: 40 });
+  world.simTimeSec = 40;
+  world.water.hygiene01 = 1;
+
+  for (const fish of world.fish) {
+    forceFishAliveAdultFed(fish);
+    fish.speciesId = 'AZURE_DART';
+  }
+
+  const mother = world.fish[0];
+  const father = world.fish[1] ?? mother;
+
+  world.birthsCount = 4;
+  assert.equal(world.addBerryReedPlant().ok, true);
+
+  world.eggs.push({
+    id: world.nextEggId++,
+    x: 250,
+    y: 260,
+    laidAtSec: 20,
+    hatchAtSec: 30,
+    motherId: mother.id,
+    fatherId: father.id,
+    motherTraits: { ...mother.traits },
+    fatherTraits: { ...father.traits },
+    speciesId: 'AZURE_DART',
+    state: 'INCUBATING',
+    canBeEaten: true,
+    nutrition: 0.25
+  });
+
+  const fishCountBefore = world.fish.length;
+  withStubbedRandom(0.55, () => world.update(0.01));
+
+  assert.equal(world.eggs.length, 0);
+  assert.equal(world.fish.length, fishCountBefore + 1, 'berry support should let this egg hatch at this roll');
+});
+
 test('dead fish state and reason persist', () => {
   const world = makeWorldForTest();
   const fish = world.fish[0];
