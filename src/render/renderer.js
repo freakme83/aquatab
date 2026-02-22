@@ -220,7 +220,7 @@ export class Renderer {
       const plantPose = this.#getBerryReedPlantPose(plant, time, sx, sy);
       const { baseX, baseY, h, swayPx } = plantPose;
 
-      ctx.strokeStyle = 'hsla(136deg 38% 42% / 0.9)';
+      ctx.strokeStyle = 'hsla(26deg 30% 36% / 0.9)';
       ctx.lineWidth = Math.max(1.4, 2 * sx);
       ctx.beginPath();
       ctx.moveTo(baseX, baseY);
@@ -245,14 +245,14 @@ export class Renderer {
       const { x, y, branchX, branchY } = fruitPose;
       const r = Math.max(1, (fruit.radius ?? 2.2) * ((sx + sy) * 0.5));
 
-      ctx.strokeStyle = 'hsla(130deg 38% 40% / 0.75)';
+      ctx.strokeStyle = 'hsla(28deg 24% 34% / 0.72)';
       ctx.lineWidth = Math.max(0.8, 1.05 * sx);
       ctx.beginPath();
       ctx.moveTo(branchX, branchY);
       ctx.lineTo(x, y);
       ctx.stroke();
 
-      ctx.fillStyle = 'hsla(332deg 58% 66% / 0.9)';
+      ctx.fillStyle = 'hsla(338deg 54% 64% / 0.9)';
       ctx.beginPath();
       ctx.arc(x, y, r, 0, TAU);
       ctx.fill();

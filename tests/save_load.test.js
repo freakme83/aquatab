@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { World } from '../src/engine/world.js';
+import { CONFIG } from '../src/config.js';
 
 function withStubbedRandom(value, fn) {
   const original = Math.random;
@@ -167,6 +168,46 @@ test('egg incubation data persists and hatches after due time', () => {
   assert.equal(baby.history.bornInAquarium, true);
 });
 
+
+test('berry reed gives azure eggs a small hatch buffer', () => {
+  const world = makeWorldForTest({ initialFishCount: 40 });
+  world.simTimeSec = 40;
+  world.water.hygiene01 = 1;
+
+  for (const fish of world.fish) {
+    forceFishAliveAdultFed(fish);
+    fish.speciesId = 'AZURE_DART';
+  }
+
+  const mother = world.fish[0];
+  const father = world.fish[1] ?? mother;
+
+  world.birthsCount = 4;
+  assert.equal(world.addBerryReedPlant().ok, true);
+
+  world.eggs.push({
+    id: world.nextEggId++,
+    x: 250,
+    y: 260,
+    laidAtSec: 20,
+    hatchAtSec: 30,
+    motherId: mother.id,
+    fatherId: father.id,
+    motherTraits: { ...mother.traits },
+    fatherTraits: { ...father.traits },
+    speciesId: 'AZURE_DART',
+    state: 'INCUBATING',
+    canBeEaten: true,
+    nutrition: 0.25
+  });
+
+  const fishCountBefore = world.fish.length;
+  withStubbedRandom(0.55, () => world.update(0.01));
+
+  assert.equal(world.eggs.length, 0);
+  assert.equal(world.fish.length, fishCountBefore + 1, 'berry support should let this egg hatch at this roll');
+});
+
 test('dead fish state and reason persist', () => {
   const world = makeWorldForTest();
   const fish = world.fish[0];
@@ -231,6 +272,41 @@ test('births count and berry reed entities persist through save/load', () => {
   assert.equal(loaded.fruits[0].u, 0.88);
   assert.equal(loaded.fruits[0].v, 1.5);
 });
+
+
+test('berry reed starts small and grows only when hygiene threshold is met', () => {
+  const world = makeWorldForTest();
+  world.birthsCount = 5;
+  world.water.hygiene01 = 1;
+  assert.equal(world.addBerryReedPlant().ok, true);
+  const plant = world.berryReedPlants[0];
+
+  assert.ok(plant.height < plant.maxHeight);
+  assert.equal(Number(world.getBerryReedFruitCapacity(plant).toFixed(2)), 4);
+
+  const initialGrowthSec = plant.growthElapsedSec;
+  world.water.hygiene01 = 0.35;
+  world.update(600);
+  assert.equal(plant.growthElapsedSec, initialGrowthSec);
+
+  world.water.hygiene01 = 1;
+  const referenceSec = CONFIG.fish.age.stageBaseSec.juvenileEndSec;
+  world.update(referenceSec);
+  assert.ok(world.getBerryReedFruitCapacity(plant) >= 5.9 && world.getBerryReedFruitCapacity(plant) <= 6.1);
+  assert.ok(plant.height > plant.spawnHeight);
+
+  plant.growthElapsedSec = referenceSec * 2;
+  world.water.hygiene01 = 1;
+  world.update(1);
+  const capacityAtCap = world.getBerryReedFruitCapacity(plant);
+  const heightAtCap = plant.height;
+  assert.ok(capacityAtCap >= 11.9 && capacityAtCap <= 12.01);
+
+  world.update(referenceSec * 2);
+  assert.ok(world.getBerryReedFruitCapacity(plant) >= 11.9 && world.getBerryReedFruitCapacity(plant) <= 12.01);
+  assert.equal(plant.height, heightAtCap);
+});
+
 
 test('name uniqueness and next-id counters remain valid after load', () => {
   const world = makeWorldForTest();
