@@ -15,8 +15,6 @@ export class Panel {
     this.currentInspectorSpeciesTab = 'LAB_MINNOW';
     this.lastInspectorSignature = null;
     this.lastObservedSelectedFishId = null;
-    this.lastInspectorFishList = [];
-    this.lastInspectorSimTimeSec = 0;
 
     this.tabButtons = [...this.root.querySelectorAll('.tab-button')];
     this.tabContents = [...this.root.querySelectorAll('.tab-content')];
@@ -186,8 +184,11 @@ export class Panel {
       return result;
     });
 
-    this.addAzureDartButton?.addEventListener('pointerup', (event) => {
-      event.preventDefault();
+    this.addAzureDartButton?.addEventListener('click', () => {
+      this.handlers.onAddAzureDart?.();
+    });
+
+    this.addAzureDartButton?.addEventListener('click', () => {
       this.handlers.onAddAzureDart?.();
     });
 
@@ -246,7 +247,6 @@ export class Panel {
         this.handlers.onFishSelect?.(null);
         this.lastInspectorSignature = null;
         this.lastObservedSelectedFishId = null;
-        this.updateFishInspector(this.lastInspectorFishList, null, this.lastInspectorSimTimeSec);
         return;
       }
 
@@ -254,7 +254,7 @@ export class Panel {
       if (detailTabButton) {
         this.currentInspectorDetailTab = detailTabButton.dataset.fishDetailTab === 'history' ? 'history' : 'info';
         this.lastInspectorSignature = null;
-        this.lastObservedSelectedFishId = null;
+    this.lastObservedSelectedFishId = null;
         return;
       }
 
@@ -527,8 +527,6 @@ export class Panel {
 
   updateFishInspector(fishList, selectedFishId, simTimeSec) {
     if (!this.fishInspector) return;
-    this.lastInspectorFishList = Array.isArray(fishList) ? [...fishList] : [];
-    this.lastInspectorSimTimeSec = Number.isFinite(simTimeSec) ? simTimeSec : 0;
 
     const activeInput = this.fishInspector.querySelector('[data-fish-name-input]:focus');
     if (activeInput) return;
@@ -556,7 +554,6 @@ export class Panel {
     const selectedHungerPct = selectedFish ? Math.round((selectedFish.hunger01 ?? 0) * 100) : -1;
     const selectedWellbeingPct = selectedFish ? Math.round((selectedFish.wellbeing01 ?? 0) * 100) : -1;
     const selectedGrowthPct = selectedFish ? Math.round((selectedFish.growth01 ?? 0) * 100) : -1;
-    const selectedStressTier = selectedFish ? (selectedFish.stressTier ?? 'CALM') : 'none';
     const selectedHistorySnapshot = selectedFish
       ? `${selectedFish.history?.mealsEaten ?? 0}|${selectedFish.history?.mateCount ?? 0}|${selectedFish.history?.childrenIds?.length ?? 0}|${selectedFish.history?.deathSimTimeSec ?? ''}|${selectedFish.repro?.state ?? ''}|${selectedFish.deathReason ?? ''}`
       : 'none';
@@ -569,7 +566,6 @@ export class Panel {
       + `::hunger=${selectedHungerPct}`
       + `::wellbeing=${selectedWellbeingPct}`
       + `::growth=${selectedGrowthPct}`
-      + `::stress=${selectedStressTier}`
       + `::history=${selectedHistorySnapshot}`
       + `::detailTab=${this.currentInspectorDetailTab}`
       + `::speciesTab=${this.currentInspectorSpeciesTab}`;
@@ -583,15 +579,11 @@ export class Panel {
         const deadClass = fish.lifeState !== 'ALIVE' ? ' fishRow--dead' : '';
         const stageLabel = typeof fish.lifeStageLabel === 'function' ? fish.lifeStageLabel() : (fish.lifeStage ?? '');
         const state = `${stageLabel} · ${fish.hungerState}`;
-        const isPregnant = fish.sex === 'female' && (fish.repro?.state === 'GRAVID' || fish.repro?.state === 'LAYING');
-        const sexMarkup = isPregnant
-          ? '<span class="fish-row-sex--pregnant">female</span>'
-          : this.#escapeHtml(fish.sex);
         const liveName = fish.name?.trim() || '';
         const draftName = this.nameDraftByFishId.get(fish.id) ?? liveName;
         const rawLabel = draftName || 'Unnamed';
         const label = this.#escapeHtml(rawLabel);
-        return `<button type="button" class="fish-row${selectedClass}${deadClass}" data-fish-id="${fish.id}">${label} · ${sexMarkup} · ${state}</button>`;
+        return `<button type="button" class="fish-row${selectedClass}${deadClass}" data-fish-id="${fish.id}">${label} · ${fish.sex} · ${state}</button>`;
       })
       .join('');
 
@@ -641,24 +633,19 @@ export class Panel {
     const pregnantMarkup = isPregnant
       ? '<div class="status-line status--pregnant">pregnant</div>'
       : '';
-    const stressTier = fish.stressTier === 'STRESSED' ? 'STRESSED' : (fish.stressTier === 'PRESSURED' ? 'PRESSURED' : 'CALM');
-    const stressMarkup = stressTier === 'CALM'
-      ? ''
-      : `<div class="status-line ${stressTier === 'STRESSED' ? 'status--stressed' : 'status--pressured'}">${stressTier === 'STRESSED' ? 'stressed' : 'pressured'}</div>`;
 
     const speciesLabel = fish.speciesId === 'AZURE_DART' ? 'Azure Dart' : 'Lab Minnow';
     const infoRows = `
       <label class="control-group fish-name-group"><span>Name</span><input type="text" maxlength="24" value="${this.#escapeAttribute(draftName)}" data-fish-name-input placeholder="Fish name" /></label>
       <div class="stat-row"><span>Fish ID</span><strong>${fish.id}</strong></div>
       <div class="stat-row"><span>Species</span><strong>${speciesLabel}</strong></div>
-      <div class="stat-row"><span>Sex</span><strong class="${isPregnant ? 'sex--pregnant' : ''}">${fish.sex}</strong></div>
+      <div class="stat-row"><span>Sex</span><strong>${fish.sex}</strong></div>
       <div class="stat-row"><span>Life Stage</span><strong>${typeof fish.lifeStageLabel === 'function' ? fish.lifeStageLabel() : (fish.lifeStage ?? '')}</strong></div>
       <div class="stat-row"><span>Hunger</span><strong>${fish.hungerState} (${Math.round(fish.hunger01 * 100)}%)</strong></div>
       <div class="stat-row"><span>Wellbeing</span><strong>${Math.round(fish.wellbeing01 * 100)}%</strong></div>
       <div class="stat-row"><span>Growth</span><strong>${Math.round((fish.growth01 ?? 0) * 100)}%</strong></div>
       <div class="stat-row"><span>Aquarium Time</span><strong>${aquariumTime}</strong></div>
       ${pregnantMarkup}
-      ${stressMarkup}
     `;
 
     const history = fish.history ?? {};

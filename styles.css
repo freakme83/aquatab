@@ -421,11 +421,8 @@ input[type='range'] {
 
 
 .fish-inspector {
-  display: flex;
-  flex-direction: column;
+  display: grid;
   gap: 10px;
-  height: 100%;
-  min-height: 0;
 }
 
 .inspector-species-tabs {
@@ -454,12 +451,8 @@ input[type='range'] {
 .fish-list {
   display: grid;
   gap: 6px;
-  flex: 1 1 auto;
-  min-height: 150px;
-  max-height: none;
+  max-height: 180px;
   overflow-y: auto;
-  padding-right: 2px;
-  scrollbar-gutter: stable;
 }
 
 .fish-row {
@@ -483,17 +476,9 @@ input[type='range'] {
   background: rgba(56, 117, 167, 0.35);
 }
 
-.fish-row-sex--pregnant {
-  color: #2ecc71;
-  font-weight: 600;
-}
-
 .fish-detail {
   border-top: 1px solid var(--deck-border);
   padding-top: 8px;
-  min-height: 170px;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
 }
 
 .fish-empty {
@@ -503,13 +488,19 @@ input[type='range'] {
 }
 
 .tab-content[data-content='fish'] {
-  overflow: hidden;
-  scrollbar-gutter: stable;
+  overflow-y: auto;
 }
 
-.tab-content[data-content='fish'].active {
-  display: flex;
-  flex-direction: column;
+.fish-inspector {
+  grid-template-rows: auto minmax(160px, 1fr) auto;
+  min-height: 0;
+}
+
+.fish-list {
+  min-height: 120px;
+  max-height: none;
+  overflow-y: auto;
+  padding-right: 2px;
 }
 
 
@@ -538,7 +529,6 @@ input[type='range'] {
 
 .fish-detail-pane {
   display: none;
-  min-height: 132px;
 }
 
 .fish-detail-pane.active {
@@ -553,20 +543,6 @@ input[type='range'] {
 .status--pregnant {
   color: #2ecc71;
   font-weight: 600;
-}
-
-.status--pressured {
-  color: #f39c12;
-  font-weight: 600;
-}
-
-.status--stressed {
-  color: #e74c3c;
-  font-weight: 700;
-}
-
-.sex--pregnant {
-  color: #2ecc71;
 }
 
 

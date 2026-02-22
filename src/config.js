@@ -226,66 +226,6 @@ export const CONFIG = Object.freeze({
       ageSensitivityEdgeBoost: 0.6
     },
 
-    populationStress: {
-      capacityUnits: 20,
-      sizeRatioMin: 0.35,
-      sizeRatioMax: 1.25,
-      sizeRatioPower: 1.15,
-      pressuredThreshold: 0.72,
-      stressedThreshold: 0.92,
-      stageWeights: {
-        BABY: 0.45,
-        JUVENILE: 0.75,
-        ADULT: 1.0,
-        OLD: 0.90
-      },
-      speciesDensitySensitivity: {
-        LAB_MINNOW: 1.0,
-        AZURE_DART: 0.72
-      },
-      reproductionFactor: {
-        LAB_MINNOW: {
-          CALM: 1.0,
-          PRESSURED: 0.72,
-          STRESSED: 0.38
-        },
-        AZURE_DART: {
-          CALM: 1.0,
-          PRESSURED: 0.88,
-          STRESSED: 0.68
-        }
-      },
-      behavior: {
-        speedFactor: {
-          CALM: 1.0,
-          PRESSURED: 0.93,
-          STRESSED: 0.84
-        },
-        visionFactor: {
-          CALM: 1.0,
-          PRESSURED: 0.94,
-          STRESSED: 0.88
-        },
-        surfaceBias: {
-          CALM: 0.0,
-          PRESSURED: 0.18,
-          STRESSED: 0.36
-        }
-      },
-      visuals: {
-        saturationFactor: {
-          CALM: 1.0,
-          PRESSURED: 0.94,
-          STRESSED: 0.86
-        },
-        lightnessFactor: {
-          CALM: 1.0,
-          PRESSURED: 0.98,
-          STRESSED: 0.94
-        }
-      }
-    },
-
   }
 });
 
