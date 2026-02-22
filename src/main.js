@@ -15,6 +15,8 @@ const AUTOSAVE_INTERVAL_MS = 10_000;
 const INACTIVITY_AWAY_THRESHOLD_SIM_SEC = 300;
 const FULLSCREEN_HINT_SESSION_KEY = 'aquatab_fullscreen_hint_seen';
 const RESIZE_DEBOUNCE_MS = 120;
+const WORLD_WIDTH = 1200;
+const WORLD_HEIGHT = 700;
 
 const startScreen = document.getElementById('startScreen');
 const appRoot = document.getElementById('appRoot');
@@ -663,14 +665,10 @@ function refreshDevModeUI() {
 
 function worldToClientPoint(worldX, worldY) {
   if (!renderer || !world) return null;
+  const screenPoint = renderer.toScreenPoint(worldX, worldY);
+  if (!screenPoint) return null;
   const canvasRect = canvas.getBoundingClientRect();
-  const { x, y, width, height } = renderer.tankRect;
-  if (!width || !height || world.bounds.width <= 0 || world.bounds.height <= 0) return null;
-
-  return {
-    x: canvasRect.left + x + (worldX / world.bounds.width) * width,
-    y: canvasRect.top + y + (worldY / world.bounds.height) * height
-  };
+  return { x: canvasRect.left + screenPoint.x, y: canvasRect.top + screenPoint.y };
 }
 
 function hideCorpseAction() {
@@ -712,7 +710,6 @@ corpseActionButton.addEventListener('click', () => {
 function resize() {
   if (!started || !world || !renderer) return;
   const { width, height } = measureCanvasSize();
-  world.resize(width, height);
   renderer.resize(width, height);
 }
 
@@ -995,15 +992,14 @@ function startSimulation({ savedPayload = null } = {}) {
   autoPauseOverlayOpen = false;
   clearAwaySnapshot();
 
-  const initialSize = measureCanvasSize();
   if (savedPayload?.saveVersion === SAVE_VERSION) {
     world = World.fromJSON(savedPayload, {
-      width: initialSize.width,
-      height: initialSize.height,
+      width: WORLD_WIDTH,
+      height: WORLD_HEIGHT,
       initialFishCount
     });
   } else {
-    world = new World(initialSize.width, initialSize.height, initialFishCount);
+    world = new World(WORLD_WIDTH, WORLD_HEIGHT, initialFishCount);
   }
   renderer = new Renderer(canvas, world);
   lastInteractionSimTimeSec = world.simTimeSec;
