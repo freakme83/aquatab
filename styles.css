@@ -55,6 +55,61 @@ body::before {
   opacity: 0.12;
 }
 
+body.cinema-mode {
+  cursor: none;
+}
+
+body.cinema-mode .ui-deck,
+body.cinema-mode .deck-toggle,
+body.cinema-mode .start-screen,
+body.cinema-mode .info-modal-backdrop,
+body.cinema-mode [data-cinema-hide='true'] {
+  display: none !important;
+  pointer-events: none !important;
+}
+
+body.cinema-mode .page-layout {
+  grid-template-columns: 1fr;
+  gap: 0;
+  padding: 0;
+}
+
+body.cinema-mode .tank-stage,
+body.cinema-mode .tank-shell,
+body.cinema-mode #aquariumCanvas {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  border-radius: 0;
+}
+
+body.cinema-mode .tank-shell {
+  box-shadow: none;
+}
+
+.fullscreen-hint {
+  position: fixed;
+  right: 22px;
+  bottom: 20px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(212, 238, 255, 0.3);
+  background: rgba(8, 18, 30, 0.44);
+  color: rgba(234, 247, 255, 0.92);
+  font-size: 0.74rem;
+  letter-spacing: 0.03em;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 360ms ease, transform 360ms ease;
+  pointer-events: none;
+  z-index: 25;
+}
+
+.fullscreen-hint.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 
 .start-screen {
   position: fixed;
