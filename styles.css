@@ -439,6 +439,7 @@ input[type='range'] {
   padding: 5px 8px;
   font-size: 0.78rem;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .inspector-species-tab.active {
@@ -519,6 +520,7 @@ input[type='range'] {
   padding: 5px 8px;
   font-size: 0.78rem;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .fish-detail-tab.active {
@@ -554,6 +556,11 @@ input[type='range'] {
   text-decoration: underline;
   cursor: pointer;
   font: inherit;
+  touch-action: manipulation;
+}
+
+button {
+  touch-action: manipulation;
 }
 
 .history-fish-link:hover {
