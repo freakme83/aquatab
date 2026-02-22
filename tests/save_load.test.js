@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { World } from '../src/engine/world.js';
+import { CONFIG } from '../src/config.js';
 
 function withStubbedRandom(value, fn) {
   const original = Math.random;
@@ -231,6 +232,41 @@ test('births count and berry reed entities persist through save/load', () => {
   assert.equal(loaded.fruits[0].u, 0.88);
   assert.equal(loaded.fruits[0].v, 1.5);
 });
+
+
+test('berry reed starts small and grows only when hygiene threshold is met', () => {
+  const world = makeWorldForTest();
+  world.birthsCount = 5;
+  world.water.hygiene01 = 1;
+  assert.equal(world.addBerryReedPlant().ok, true);
+  const plant = world.berryReedPlants[0];
+
+  assert.ok(plant.height < plant.maxHeight);
+  assert.equal(Number(world.getBerryReedFruitCapacity(plant).toFixed(2)), 4);
+
+  const initialGrowthSec = plant.growthElapsedSec;
+  world.water.hygiene01 = 0.35;
+  world.update(600);
+  assert.equal(plant.growthElapsedSec, initialGrowthSec);
+
+  world.water.hygiene01 = 1;
+  const referenceSec = CONFIG.fish.age.stageBaseSec.juvenileEndSec;
+  world.update(referenceSec);
+  assert.ok(world.getBerryReedFruitCapacity(plant) >= 5.9 && world.getBerryReedFruitCapacity(plant) <= 6.1);
+  assert.ok(plant.height > plant.spawnHeight);
+
+  plant.growthElapsedSec = referenceSec * 2;
+  world.water.hygiene01 = 1;
+  world.update(1);
+  const capacityAtCap = world.getBerryReedFruitCapacity(plant);
+  const heightAtCap = plant.height;
+  assert.ok(capacityAtCap >= 11.9 && capacityAtCap <= 12.01);
+
+  world.update(referenceSec * 2);
+  assert.ok(world.getBerryReedFruitCapacity(plant) >= 11.9 && world.getBerryReedFruitCapacity(plant) <= 12.01);
+  assert.equal(plant.height, heightAtCap);
+});
+
 
 test('name uniqueness and next-id counters remain valid after load', () => {
   const world = makeWorldForTest();
