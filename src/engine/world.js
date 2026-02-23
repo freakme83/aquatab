@@ -111,6 +111,8 @@ export const WATER_SAVE_KEYS = [
   'installProgress01',
   'maintenanceProgress01',
   'maintenanceCooldownSec',
+  'upgradeProgress01',
+  'upgradeTargetTier',
   'filterUnlocked',
   'filterEnabled',
   'effectiveFilter01',
@@ -337,12 +339,16 @@ function deserializeWater(data, defaults) {
   out.installProgress01 = clamp01(Number.isFinite(out.installProgress01) ? out.installProgress01 : 0);
   out.maintenanceProgress01 = clamp01(Number.isFinite(out.maintenanceProgress01) ? out.maintenanceProgress01 : 0);
   out.maintenanceCooldownSec = Math.max(0, Number.isFinite(out.maintenanceCooldownSec) ? out.maintenanceCooldownSec : 0);
+  out.upgradeProgress01 = clamp01(Number.isFinite(out.upgradeProgress01) ? out.upgradeProgress01 : 0);
+  out.upgradeTargetTier = Math.max(0, Math.min(3, Math.floor(Number.isFinite(out.upgradeTargetTier) ? out.upgradeTargetTier : 0)));
   out.filterInstalled = Boolean(out.filterInstalled);
   out.filterUnlocked = Boolean(out.filterUnlocked);
   out.filterEnabled = Boolean(out.filterEnabled ?? true);
   out.effectiveFilter01 = clamp01(Number.isFinite(out.effectiveFilter01) ? out.effectiveFilter01 : 0);
   out.filterTier = Math.max(0, Math.min(3, Math.floor(Number.isFinite(out.filterTier) ? out.filterTier : (out.filterInstalled ? 1 : 0))));
   if (out.filterInstalled && out.filterTier < 1) out.filterTier = 1;
+  if (out.upgradeTargetTier <= out.filterTier) out.upgradeTargetTier = 0;
+  if (out.upgradeProgress01 <= 0) out.upgradeTargetTier = 0;
   return out;
 }
 
@@ -1218,6 +1224,8 @@ export class World {
       installProgress01: 0,
       maintenanceProgress01: 0,
       maintenanceCooldownSec: 0,
+      upgradeProgress01: 0,
+      upgradeTargetTier: 0,
       filterUnlocked: this.filterUnlocked,
       filterEnabled: true,
       effectiveFilter01: 0,
@@ -1424,7 +1432,7 @@ export class World {
 
   toggleWaterFilterEnabled() {
     const water = this.water;
-    if (!water?.filterInstalled || water.installProgress01 > 0 || water.maintenanceProgress01 > 0) return water?.filterEnabled ?? false;
+    if (!water?.filterInstalled || water.installProgress01 > 0 || water.maintenanceProgress01 > 0 || water.upgradeProgress01 > 0) return water?.filterEnabled ?? false;
     water.filterEnabled = !water.filterEnabled;
     return water.filterEnabled;
   }
@@ -1439,8 +1447,8 @@ export class World {
 
   getFilterTierUnlockFeeds(tier) {
     if (tier <= 1) return this.initialFishCount * 4;
-    if (tier === 2) return this.initialFishCount * 8;
-    if (tier >= 3) return this.initialFishCount * 12;
+    if (tier === 2) return this.initialFishCount * 10;
+    if (tier >= 3) return this.initialFishCount * 16;
     return this.initialFishCount * 4;
   }
 
@@ -1454,9 +1462,9 @@ export class World {
     const unlockFeeds = this.getFilterTierUnlockFeeds(nextTier);
     if (!isDevMode() && this.foodsConsumedCount < unlockFeeds) return false;
 
-    water.filterTier = nextTier;
-    water.dirt01 = clamp01(water.dirt01 - 0.05);
-    water.hygiene01 = clamp01(water.hygiene01 + 0.05);
+    water.upgradeTargetTier = nextTier;
+    water.upgradeProgress01 = 0.000001;
+    water.filterEnabled = false;
     return true;
   }
 
@@ -1524,10 +1532,25 @@ export class World {
       }
     }
 
+    if (water.upgradeProgress01 > 0) {
+      water.upgradeProgress01 = clamp(water.upgradeProgress01 + dtSec / FILTER_INSTALL_DURATION_SEC, 0, 1);
+      water.filterEnabled = false;
+      if (water.upgradeProgress01 >= 1) {
+        const upgradedTier = Math.max(water.filterTier, water.upgradeTargetTier || (water.filterTier + 1));
+        water.filterTier = Math.max(1, Math.min(3, Math.floor(upgradedTier)));
+        water.filter01 = 1;
+        water.upgradeProgress01 = 0;
+        water.upgradeTargetTier = 0;
+        water.filterEnabled = true;
+      }
+    }
+
     const isMaintaining = water.maintenanceProgress01 > 0;
+    const isUpgrading = water.upgradeProgress01 > 0;
     const hasWorkingFilter = water.filterInstalled
       && water.filterEnabled
       && !isMaintaining
+      && !isUpgrading
       && water.filter01 > FILTER_DEPLETED_THRESHOLD_01;
     const effectiveFilter01 = hasWorkingFilter ? water.filter01 : 0;
     const filterTier = Math.max(0, Math.min(3, Math.floor(water.filterTier ?? 0)));
