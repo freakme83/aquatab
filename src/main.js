@@ -845,6 +845,7 @@ function tick(now) {
     filterNextTierUnlockFeeds: world.getFilterTierUnlockFeeds?.((world.water.filterTier ?? 0) + 1) ?? 0,
     foodsNeededForNextTier: Math.max(0, (world.getFilterTierUnlockFeeds?.((world.water.filterTier ?? 0) + 1) ?? 0) - world.foodsConsumedCount),
     installProgress01: world.water.installProgress01,
+    upgradeProgress01: world.water.upgradeProgress01,
     maintenanceProgress01: world.water.maintenanceProgress01,
     maintenanceCooldownSec: world.water.maintenanceCooldownSec,
     filterDepletedThreshold01: world.filterDepletedThreshold01,

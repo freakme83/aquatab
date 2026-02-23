@@ -359,6 +359,7 @@ export class Panel {
     filterNextTierUnlockFeeds,
     foodsNeededForNextTier,
     installProgress01,
+    upgradeProgress01,
     maintenanceProgress01,
     maintenanceCooldownSec,
     filterDepletedThreshold01,
@@ -404,6 +405,7 @@ export class Panel {
     const consumed = Math.max(0, Math.floor(foodsConsumedCount ?? 0));
     const target = Math.max(0, Math.floor(filterUnlockThreshold ?? 0));
     const isInstalling = (installProgress01 ?? 0) > 0;
+    const isUpgrading = (upgradeProgress01 ?? 0) > 0;
     const isMaintaining = (maintenanceProgress01 ?? 0) > 0;
 
     if (this.filterAccordion) {
@@ -420,6 +422,8 @@ export class Panel {
         this.filterMessage.textContent = `To install the filter: feed your fish ${target} times.`;
       } else if (isInstalling) {
         this.filterMessage.textContent = `Installing... ${Math.round((installProgress01 ?? 0) * 100)}%`;
+      } else if (isUpgrading) {
+        this.filterMessage.textContent = `Changing filter... ${Math.round((upgradeProgress01 ?? 0) * 100)}%`;
       } else if (!filterInstalled) {
         this.filterMessage.textContent = 'Filter available. Install to start cleaning water.';
       } else {
@@ -427,13 +431,15 @@ export class Panel {
       }
     }
 
-    if (this.filterInstallProgressRow) this.filterInstallProgressRow.hidden = !isInstalling;
-    if (this.filterInstallBarTrack) this.filterInstallBarTrack.hidden = !isInstalling;
-    if (this.filterInstallProgress) this.filterInstallProgress.textContent = `${Math.round((installProgress01 ?? 0) * 100)}%`;
-    if (this.filterInstallBar) this.filterInstallBar.style.width = `${Math.round((installProgress01 ?? 0) * 100)}%`;
+    const activeFilterProgress01 = isInstalling ? (installProgress01 ?? 0) : (isUpgrading ? (upgradeProgress01 ?? 0) : 0);
+    const showFilterProgress = isInstalling || isUpgrading;
+    if (this.filterInstallProgressRow) this.filterInstallProgressRow.hidden = !showFilterProgress;
+    if (this.filterInstallBarTrack) this.filterInstallBarTrack.hidden = !showFilterProgress;
+    if (this.filterInstallProgress) this.filterInstallProgress.textContent = `${Math.round(activeFilterProgress01 * 100)}%`;
+    if (this.filterInstallBar) this.filterInstallBar.style.width = `${Math.round(activeFilterProgress01 * 100)}%`;
 
     if (this.installFilterButton) {
-      const canInstall = filterUnlocked && !filterInstalled && !isInstalling;
+      const canInstall = filterUnlocked && !filterInstalled && !isInstalling && !isUpgrading;
       this.installFilterButton.hidden = !canInstall;
       this.installFilterButton.disabled = !canInstall;
     }
@@ -454,7 +460,7 @@ export class Panel {
           statusLabel = 'MAINTENANCE DUE';
           statusColor = '#f1a04f';
         } else {
-          statusLabel = 'ON';
+          statusLabel = isUpgrading ? 'OFF' : 'ON';
           statusColor = '#84e89a';
         }
       }
@@ -480,7 +486,7 @@ export class Panel {
     const nextUnlock = Math.max(0, Math.floor(filterNextTierUnlockFeeds ?? 0));
     const neededFeeds = Math.max(0, Math.floor(foodsNeededForNextTier ?? 0));
     const showUpgrade = filterInstalled && tier < 3;
-    const canUpgrade = showUpgrade && (isDevMode() || neededFeeds <= 0) && !isInstalling && !isMaintaining && filterEnabled;
+    const canUpgrade = showUpgrade && (isDevMode() || neededFeeds <= 0) && !isInstalling && !isUpgrading && !isMaintaining && filterEnabled;
 
     if (this.filterTierRow) this.filterTierRow.hidden = !filterInstalled;
     if (this.filterTier) this.filterTier.textContent = `Tier ${Math.max(1, tier)}/3`;
@@ -502,7 +508,7 @@ export class Panel {
     }
 
     if (this.maintainFilterButton) {
-      const canMaintain = filterInstalled && !isInstalling && !isMaintaining && (maintenanceCooldownSec ?? 0) <= 0;
+      const canMaintain = filterInstalled && !isInstalling && !isUpgrading && !isMaintaining && (maintenanceCooldownSec ?? 0) <= 0;
       this.maintainFilterButton.hidden = !filterInstalled;
       this.maintainFilterButton.disabled = !canMaintain;
     }

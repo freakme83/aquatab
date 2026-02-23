@@ -528,7 +528,7 @@ export class Renderer {
     const { scale: worldScale, offsetX, offsetY, viewWidth, viewHeight } = this.camera;
     const tier = Math.max(1, Math.min(3, Math.floor(water.filterTier ?? 1)));
     const width = Math.max(16, 28 * worldScale);
-    const tierHeightScale = 1 + (tier - 1) * 0.1;
+    const tierHeightScale = 1 + (tier - 1) * 0.14;
     const height = Math.max(26, 52 * worldScale * tierHeightScale);
 
     return {
@@ -564,13 +564,11 @@ export class Renderer {
     let ledColor = 'rgba(170, 180, 188, 0.45)';
     if (water.filterEnabled) {
       if (health <= depletedThreshold01) {
-        ledColor = 'rgba(255, 82, 82, 0.96)';
+        ledColor = isBlinkOn ? 'rgba(255, 82, 82, 0.96)' : 'rgba(122, 46, 46, 0.45)';
       } else if (health <= warningThreshold01) {
         ledColor = 'rgba(246, 163, 74, 0.96)';
-      } else if (isBlinkOn) {
-        ledColor = 'rgba(96, 255, 140, 0.95)';
       } else {
-        ledColor = 'rgba(52, 120, 72, 0.45)';
+        ledColor = 'rgba(96, 255, 140, 0.95)';
       }
     }
 
@@ -594,7 +592,7 @@ export class Renderer {
     if ((water.effectiveFilter01 ?? 0) > 0) {
       const bubbleCount = this.quality === 'high' ? 4 : 2;
       for (let i = 0; i < bubbleCount; i += 1) {
-        const bubbleY = y + moduleH * 0.88 - ((time * 0.05 + i * 8) % (moduleH * 0.75));
+        const bubbleY = y + moduleH * 0.82 - ((time * 0.05 + i * 8) % (moduleH * 0.9));
         const bubbleX = x - 4 - Math.sin(time * 0.004 + i * 1.3) * 2;
         ctx.beginPath();
         ctx.fillStyle = 'rgba(188, 234, 255, 0.33)';
