@@ -99,6 +99,8 @@ const BERRY_REED_MAX_GROWTH_PHASES = 2;
 const BERRY_REED_GROWTH_REFERENCE_SEC = Math.max(60, AGE_CONFIG.stageBaseSec?.juvenileEndSec ?? 50 * 60);
 const BERRY_REED_MAX_GROWTH_ELAPSED_SEC = BERRY_REED_GROWTH_REFERENCE_SEC * BERRY_REED_MAX_GROWTH_PHASES;
 const MIN_SIM_SPEED_MULTIPLIER = 0.5;
+const SPEED_UNLOCK_2X_AT_SEC = 30 * 60;
+const SPEED_UNLOCK_3X_AT_SEC = 120 * 60;
 const REPRO_PRESSURE_START_COUNT = Math.max(6, Math.round(WATER_REFERENCE_FISH_COUNT * 0.9));
 const REPRO_PRESSURE_CRITICAL_COUNT = Math.max(REPRO_PRESSURE_START_COUNT + 2, Math.round(WATER_REFERENCE_FISH_COUNT * 1.7));
 
@@ -831,7 +833,7 @@ export class World {
     this.birthsCount = Math.max(0, Math.floor(Number.isFinite(source.birthsCount) ? source.birthsCount : 0));
     // Compatibility note: older saves included `realTimeSec` as a parallel clock.
     // We intentionally ignore it and keep `simTimeSec` as the only canonical sim time.
-    this.speedMultiplier = Math.max(MIN_SIM_SPEED_MULTIPLIER, Math.min(getMaxSimSpeedMultiplier(), Number.isFinite(source.speedMultiplier) ? source.speedMultiplier : this.speedMultiplier));
+    this.speedMultiplier = Math.max(MIN_SIM_SPEED_MULTIPLIER, Math.min(this.getAvailableSimSpeedMultiplierCap(), Number.isFinite(source.speedMultiplier) ? source.speedMultiplier : this.speedMultiplier));
     const fishArchiveSource = Array.isArray(source.fishArchive) ? source.fishArchive : source.fish;
     const fishArchive = Array.isArray(fishArchiveSource)
       ? fishArchiveSource.map((entry) => Fish.fromJSON(entry, this.bounds))
@@ -1154,8 +1156,39 @@ export class World {
   setSpeedMultiplier(value) {
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) return this.speedMultiplier;
-    this.speedMultiplier = Math.max(MIN_SIM_SPEED_MULTIPLIER, Math.min(getMaxSimSpeedMultiplier(), parsed));
+    this.speedMultiplier = Math.max(MIN_SIM_SPEED_MULTIPLIER, Math.min(this.getAvailableSimSpeedMultiplierCap(), parsed));
     return this.speedMultiplier;
+  }
+
+  getAvailableSimSpeedMultiplierCap() {
+    if (isDevMode()) return getMaxSimSpeedMultiplier();
+    if (this.simTimeSec >= SPEED_UNLOCK_3X_AT_SEC) return 3;
+    if (this.simTimeSec >= SPEED_UNLOCK_2X_AT_SEC) return 2;
+    return 1;
+  }
+
+  getSpeedUnlockState() {
+    const currentTimeSec = Math.max(0, Math.floor(this.simTimeSec));
+    const speedCap = this.getAvailableSimSpeedMultiplierCap();
+    const pendingUnlocks = [];
+
+    if (!isDevMode() && currentTimeSec < SPEED_UNLOCK_2X_AT_SEC) {
+      pendingUnlocks.push({
+        targetMultiplier: 2,
+        unlockAtSec: SPEED_UNLOCK_2X_AT_SEC,
+        remainingSec: SPEED_UNLOCK_2X_AT_SEC - currentTimeSec
+      });
+    }
+
+    if (!isDevMode() && currentTimeSec < SPEED_UNLOCK_3X_AT_SEC) {
+      pendingUnlocks.push({
+        targetMultiplier: 3,
+        unlockAtSec: SPEED_UNLOCK_3X_AT_SEC,
+        remainingSec: SPEED_UNLOCK_3X_AT_SEC - currentTimeSec
+      });
+    }
+
+    return { speedCap, pendingUnlocks };
   }
 
   isFeatureUnlocked(featureId) {

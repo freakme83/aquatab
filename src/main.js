@@ -683,7 +683,8 @@ function refreshDevModeUI() {
   if (!panel) return;
   panel.sync({
     speedMultiplier: world?.speedMultiplier ?? 1,
-    paused: world?.paused ?? false
+    paused: world?.paused ?? false,
+    speedCap: world?.getAvailableSimSpeedMultiplierCap?.() ?? 1
   });
 }
 
@@ -830,6 +831,8 @@ function tick(now) {
   if (ecosystemFailed) return;
   renderer.render(now, renderDelta);
 
+  const speedUnlockState = world.getSpeedUnlockState?.() ?? { speedCap: world.getAvailableSimSpeedMultiplierCap?.() ?? 1, pendingUnlocks: [] };
+
   panel.updateStats({
     simTimeSec: world.simTimeSec,
     fishCount: world.fish.length,
@@ -858,7 +861,9 @@ function tick(now) {
     azureDartCount: world.getAzureDartCount?.() ?? 0,
     canAddSiltSifter: world.canAddSiltSifter?.() ?? false,
     siltSifterCount: world.getSiltSifterCount?.() ?? 0,
-    siltSifterUnlockBirths: 10
+    siltSifterUnlockBirths: 10,
+    simSpeedCap: speedUnlockState.speedCap,
+    simSpeedPendingUnlocks: speedUnlockState.pendingUnlocks
   });
   panel.updateFishInspector(world.getFishInspectorList?.() ?? world.fish, world.selectedFishId, world.simTimeSec);
   updateCorpseActionButton();
@@ -1113,7 +1118,8 @@ function startSimulation({ savedPayload = null } = {}) {
 
   panel.sync({
     speedMultiplier: world.speedMultiplier,
-    paused: world.paused
+    paused: world.paused,
+    speedCap: world.getAvailableSimSpeedMultiplierCap?.() ?? 1
   });
 
   resize();
