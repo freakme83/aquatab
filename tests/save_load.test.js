@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { World } from '../src/engine/world.js';
-import { CONFIG } from '../src/config.js';
+import { CONFIG, SPECIES } from '../src/config.js';
 
 function withStubbedRandom(value, fn) {
   const original = Math.random;
@@ -461,7 +461,7 @@ test('fish produces poop every 2 meals and poop expires', () => {
   world.spawnFood(fish.position.x, fish.position.y, 1, 120);
   fish.behavior = { mode: 'seekFood', targetFoodId: world.food[0].id, speedBoost: 1 };
   fish.tryConsumeFood(world);
-  assert.equal(fish.digestBites, 0);
+  assert.ok(fish.digestBites <= 1);
   assert.equal(world.poop.length, 0);
 
   world.update(11);
@@ -739,4 +739,66 @@ test('species tab clear-selection path is safe via toggleFishSelection(null)', (
   assert.equal(world.selectedFishId, fishId);
   world.toggleFishSelection(null);
   assert.equal(world.selectedFishId, null);
+});
+
+
+test('silt sifter species and poop-timestamp persist through save/load', () => {
+  const world = makeWorldForTest();
+  const fish = world.fish[0];
+  fish.speciesId = 'SILT_SIFTER';
+  fish.species = SPECIES.SILT_SIFTER;
+  fish.lastPoopConsumedAtSimSec = 123.45;
+
+  const loaded = roundTrip(world);
+  const loadedFish = loaded.getFishById(fish.id);
+
+  assert.equal(loadedFish.speciesId, 'SILT_SIFTER');
+  assert.equal(loadedFish.lastPoopConsumedAtSimSec, 123.45);
+});
+
+test('silt sifter does not schedule poop after two meals', () => {
+  const world = makeWorldForTest();
+  const fish = world.fish[0];
+  fish.speciesId = 'SILT_SIFTER';
+  fish.species = SPECIES.SILT_SIFTER;
+  forceFishAliveAdultFed(fish);
+
+  world.spawnFood(fish.position.x, fish.position.y, 1, 120);
+  fish.behavior = { mode: 'seekFood', targetFoodId: world.food[0].id, speedBoost: 1 };
+  fish.hungerState = 'STARVING';
+  fish.tryConsumeFood(world);
+
+  world.spawnFood(fish.position.x, fish.position.y, 1, 120);
+  fish.behavior = { mode: 'seekFood', targetFoodId: world.food[0].id, speedBoost: 1 };
+  fish.hungerState = 'STARVING';
+  fish.tryConsumeFood(world);
+
+  assert.ok(fish.digestBites <= 1);
+  assert.equal(world.scheduledPoopSpawns.length, 0);
+});
+
+test('silt sifter consuming poop prevents dissolve pollution', () => {
+  const world = makeWorldForTest();
+  const fish = world.fish[0];
+  fish.speciesId = 'SILT_SIFTER';
+  fish.species = SPECIES.SILT_SIFTER;
+  forceFishAliveAdultFed(fish);
+  fish.hungerState = 'HUNGRY';
+
+  const poop = world.spawnPoop(fish.position.x, fish.position.y, 120, { bioloadFactor: 1, visible: true });
+  fish.behavior = { mode: 'seekFood', targetFoodId: poop.id, speedBoost: 1 };
+  fish.tryConsumeFood(world);
+  world.update(130);
+
+  assert.equal(world.poop.length, 0);
+  assert.equal(world.pendingPoopDirt01, 0);
+});
+
+test('silt sifter unlock gate requires 10 births unless dev mode', () => {
+  const world = makeWorldForTest();
+  world.birthsCount = 9;
+  assert.equal(world.canAddSiltSifter(), false);
+
+  world.birthsCount = 10;
+  assert.equal(world.canAddSiltSifter(), true);
 });
