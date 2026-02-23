@@ -195,9 +195,7 @@ function serializePoop(poop) {
 function deserializePoop(data, bounds, swimHeight) {
   const source = data && typeof data === 'object' ? data : {};
   const position = clampPosition(source, bounds, swimHeight);
-  const type = source.type === 'floaty' || source.type === 'neutral' || source.type === 'pellet'
-    ? source.type
-    : 'pellet';
+  const type = 'pellet';
   return {
     id: Number.isFinite(source.id) ? source.id : 0,
     x: position.x,
@@ -205,7 +203,7 @@ function deserializePoop(data, bounds, swimHeight) {
     ttlSec: Math.max(0, Number.isFinite(source.ttlSec) ? source.ttlSec : POOP_DEFAULT_TTL_SEC),
     maxTtlSec: Math.max(1, Number.isFinite(source.maxTtlSec) ? source.maxTtlSec : POOP_DEFAULT_TTL_SEC),
     vx: Number.isFinite(source.vx) ? source.vx : 0,
-    vy: Number.isFinite(source.vy) ? source.vy : (type === 'floaty' ? -POOP_BASE_DRIFT_SPEED : POOP_BASE_DRIFT_SPEED),
+    vy: Math.abs(Number.isFinite(source.vy) ? source.vy : POOP_BASE_DRIFT_SPEED),
     type,
     canBeEaten: Boolean(source.canBeEaten ?? true),
     nutrition: Math.max(0, Number.isFinite(source.nutrition) ? source.nutrition : 0.1),
@@ -967,11 +965,9 @@ export class World {
   spawnPoop(x, y, ttlSec = POOP_DEFAULT_TTL_SEC, options = {}) {
     const clampedX = clamp(x, 0, this.bounds.width);
     const clampedY = clamp(y, 0, this.#swimHeight());
-    const type = pickPoopTypeByWeight();
+    const type = 'pellet';
 
-    let initialVy = POOP_BASE_DRIFT_SPEED;
-    if (type === 'floaty') initialVy = -POOP_BASE_DRIFT_SPEED;
-    else if (type === 'neutral') initialVy = rand(-POOP_BASE_DRIFT_SPEED * 0.3, POOP_BASE_DRIFT_SPEED * 0.3);
+    const initialVy = POOP_BASE_DRIFT_SPEED;
 
     const bioloadFactor = Math.max(0, Number.isFinite(options?.bioloadFactor) ? options.bioloadFactor : 1);
     const isVisible = options?.visible !== false;
@@ -1995,28 +1991,15 @@ export class World {
       const item = this.poop[i];
       if (Number.isFinite(item.ttlSec)) item.ttlSec -= simDt;
 
-      const type = item.type === 'floaty' || item.type === 'neutral' || item.type === 'pellet'
-        ? item.type
-        : 'pellet';
+      const type = 'pellet';
       item.type = type;
 
       item.vx = Number.isFinite(item.vx) ? item.vx : 0;
-      item.vy = Number.isFinite(item.vy) ? item.vy : (type === 'floaty' ? -POOP_BASE_DRIFT_SPEED : POOP_BASE_DRIFT_SPEED);
+      item.vy = Math.abs(Number.isFinite(item.vy) ? item.vy : POOP_BASE_DRIFT_SPEED);
 
-      if (type === 'pellet') {
-        const blend = Math.min(1, simDt * 1.5);
-        item.vy += (POOP_BASE_DRIFT_SPEED - item.vy) * blend;
-        item.vx *= POOP_DRIFT_DAMPING;
-      } else if (type === 'floaty') {
-        const blend = Math.min(1, simDt * 1.5);
-        item.vy += (-POOP_BASE_DRIFT_SPEED - item.vy) * blend;
-        item.vx += rand(-POOP_JITTER, POOP_JITTER) * simDt;
-      } else {
-        item.vy *= POOP_DRIFT_DAMPING;
-        item.vx *= POOP_DRIFT_DAMPING;
-        item.vy += rand(-POOP_JITTER, POOP_JITTER) * simDt;
-        item.vx += rand(-POOP_JITTER, POOP_JITTER) * simDt;
-      }
+      const blend = Math.min(1, simDt * 1.5);
+      item.vy += (POOP_BASE_DRIFT_SPEED - item.vy) * blend;
+      item.vx *= POOP_DRIFT_DAMPING;
 
       item.vx *= POOP_DRIFT_DAMPING;
       item.vy *= POOP_DRIFT_DAMPING;
@@ -2035,12 +2018,7 @@ export class World {
         }
       } else if (item.y <= 0) {
         item.y = 0;
-        if (type === 'floaty') {
-          item.vy = 0;
-          item.vx *= 0.97;
-        } else {
-          item.vy = Math.max(0, item.vy);
-        }
+        item.vy = Math.max(0, item.vy);
       }
 
       if (Number.isFinite(item.ttlSec) && item.ttlSec <= 0) {

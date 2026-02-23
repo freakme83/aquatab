@@ -1047,19 +1047,20 @@ export class Fish {
       if (this.position.x >= effectiveMaxX - 8) this.bottomSweepDirection = -1;
       if (this.position.x <= effectiveMinX + 8) this.bottomSweepDirection = 1;
 
-      const laneMinY = this.bounds.height * 0.86;
-      const laneMaxY = this.bounds.height * 0.96;
+      const laneMinY = this.bounds.height * 0.8;
+      const laneMaxY = this.bounds.height * 0.97;
       if (!Number.isFinite(this.bottomSweepLaneY) || this.bottomSweepLaneY < laneMinY || this.bottomSweepLaneY > laneMaxY) {
         this.bottomSweepLaneY = rand(laneMinY, laneMaxY);
       }
-      if (Math.random() < 0.08) {
-        this.bottomSweepLaneY = clamp(this.bottomSweepLaneY + rand(-4, 4), laneMinY, laneMaxY);
+      if (Math.random() < 0.2) {
+        this.bottomSweepLaneY = clamp(this.bottomSweepLaneY + rand(-12, 12), laneMinY, laneMaxY);
       }
 
       const probeChance = clamp(bottom.probeChancePerRetarget ?? 0.24, 0, 1);
       const probeUp = Math.random() < probeChance
         ? rand(bottom.probeDepthMinPx ?? 3, bottom.probeDepthMaxPx ?? 14)
         : rand(0, 3);
+      const verticalWobble = rand(-10, 10);
 
       const targetX = this.bottomSweepDirection > 0
         ? effectiveMaxX - rand(0, 12)
@@ -1067,7 +1068,7 @@ export class Fish {
 
       return {
         x: clamp(targetX, movement.minX, movement.maxX),
-        y: clamp(this.bottomSweepLaneY - probeUp, movement.minY, movement.maxY)
+        y: clamp(this.bottomSweepLaneY + verticalWobble - probeUp, movement.minY, movement.maxY)
       };
     }
 
@@ -1131,8 +1132,8 @@ export class Fish {
       ? this.bounds.height * (bandStart01 + (bandEnd01 - bandStart01) * 0.72)
       : (bandStart + bandEnd) * 0.5;
     const distance = center - this.position.y;
-    const span = Math.max(8, (bandEnd - bandStart) * (allowExcursion ? 0.75 : 0.5));
-    const strength = (bottom.steerBiasStrength ?? 1.3) * (allowExcursion ? 0.55 : 1);
+    const span = Math.max(8, (bandEnd - bandStart) * (allowExcursion ? 0.8 : 0.85));
+    const strength = (bottom.steerBiasStrength ?? 1.3) * (allowExcursion ? 0.55 : 0.72);
     const pull = clamp(distance / span, -1, 1) * strength;
     return { x: 0, y: pull };
   }

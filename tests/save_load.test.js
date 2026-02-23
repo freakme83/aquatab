@@ -493,18 +493,19 @@ test('poop survives save/load as optional field', () => {
   assert.equal(world3.poop.length, 0);
 });
 
-test('poop spawn type distribution uses weighted random bands', () => {
-  const worldPellet = makeWorldForTest();
-  withStubbedRandom(0.2, () => worldPellet.spawnPoop(20, 20));
-  assert.equal(worldPellet.poop[0].type, 'pellet');
+test('poop always sinks as pellet-like type', () => {
+  const worldA = makeWorldForTest();
+  withStubbedRandom(0.2, () => worldA.spawnPoop(20, 20));
+  assert.equal(worldA.poop[0].type, 'pellet');
 
-  const worldNeutral = makeWorldForTest();
-  withStubbedRandom(0.8, () => worldNeutral.spawnPoop(20, 20));
-  assert.equal(worldNeutral.poop[0].type, 'neutral');
+  const worldB = makeWorldForTest();
+  withStubbedRandom(0.95, () => worldB.spawnPoop(20, 20));
+  assert.equal(worldB.poop[0].type, 'pellet');
 
-  const worldFloaty = makeWorldForTest();
-  withStubbedRandom(0.95, () => worldFloaty.spawnPoop(20, 20));
-  assert.equal(worldFloaty.poop[0].type, 'floaty');
+  worldB.poop[0].y = 10;
+  worldB.poop[0].vy = -2;
+  worldB.update(0.2);
+  assert.ok(worldB.poop[0].vy >= 0, 'poop velocity should be downward/non-negative after update');
 });
 
 test('water filter tier and feed counters persist through save-load', () => {

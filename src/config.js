@@ -291,7 +291,7 @@ export const SPECIES = Object.freeze({
     displayName: 'Silt Sifter',
     diet: ['poop', 'pellet_when_starving'],
     adultSizeScale: 0.86,
-    speedScale: 0.7,
+    speedScale: 0.84,
     lifespanScale: 1.3,
     reproductionScale: 1.3,
     clutchSizes: [1, 3],
