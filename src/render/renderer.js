@@ -7,6 +7,7 @@ import { CONFIG } from '../config.js';
 
 const TAU = Math.PI * 2;
 const rand = (min, max) => min + Math.random() * (max - min);
+const SELECTION_PULSE_DURATION_MS = 2000;
 
 export class Renderer {
   constructor(canvas, world) {
@@ -25,6 +26,8 @@ export class Renderer {
 
     this.backgroundCanvas = document.createElement('canvas');
     this.vignetteCanvas = document.createElement('canvas');
+    this.lastObservedSelectedFishId = null;
+    this.selectionPulse = { fishId: null, startedAtMs: 0 };
     this.#buildPlants();
   }
 
@@ -135,6 +138,7 @@ export class Renderer {
 
     ctx.save();
     this.#clipTankWater(ctx);
+    this.#syncSelectionPulse(time);
     this.#drawCachedBackground(ctx);
     this.#drawPollutionTint(ctx);
     this.#drawWaterPlants(ctx, time);
@@ -154,6 +158,28 @@ export class Renderer {
 
     this.#drawTankFrame(ctx);
     if (this.debugBounds) this.#drawDebugBounds(ctx);
+  }
+
+  #syncSelectionPulse(timeMs) {
+    const selectedFishId = this.world.selectedFishId ?? null;
+    if (selectedFishId !== this.lastObservedSelectedFishId) {
+      this.lastObservedSelectedFishId = selectedFishId;
+      this.selectionPulse = {
+        fishId: selectedFishId,
+        startedAtMs: selectedFishId ? timeMs : 0
+      };
+    }
+  }
+
+  #selectionPulseProgress(fishId, timeMs) {
+    if (!fishId || fishId !== this.selectionPulse.fishId) return 0;
+
+    const elapsedMs = timeMs - this.selectionPulse.startedAtMs;
+    if (!Number.isFinite(elapsedMs) || elapsedMs < 0 || elapsedMs > SELECTION_PULSE_DURATION_MS) {
+      return 0;
+    }
+
+    return 1 - elapsedMs / SELECTION_PULSE_DURATION_MS;
   }
 
   #createParticles(count) {
@@ -796,10 +822,17 @@ export class Renderer {
       }
     }
 
-    if (fish.id === this.world.selectedFishId) {
-      ctx.strokeStyle = 'rgba(152, 230, 255, 0.8)';
-      ctx.lineWidth = 1.1;
-      ctx.stroke(bodyPath);
+    const selectionPulse = this.#selectionPulseProgress(fish.id, time);
+    if (selectionPulse > 0) {
+      const pulseElapsedMs = (1 - selectionPulse) * SELECTION_PULSE_DURATION_MS;
+      const blink = 0.62 + Math.sin((pulseElapsedMs / 1000) * TAU * 2.1) * 0.22;
+      const radius = Math.max(bodyLength, bodyHeight) * 0.58 + worldScale * 5;
+      const alpha = Math.max(0, Math.min(1, selectionPulse * blink));
+      ctx.strokeStyle = `rgba(166, 236, 255, ${alpha})`;
+      ctx.lineWidth = Math.max(1, worldScale * 2.1);
+      ctx.beginPath();
+      ctx.arc(0, 0, radius, 0, TAU);
+      ctx.stroke();
     }
 
     if (this.quality === 'high' && !isSkeleton) {
