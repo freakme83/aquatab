@@ -521,7 +521,9 @@ function showFilterToast(textValue) {
 }
 
 function speciesLabel(speciesId) {
-  return speciesId === 'AZURE_DART' ? 'Azure Dart' : 'Lab Minnow';
+  if (speciesId === 'AZURE_DART') return 'Azure Dart';
+  if (speciesId === 'SILT_SIFTER') return 'Silt Sifter';
+  return 'Lab Minnow';
 }
 
 function fishDisplayName(fish) {
@@ -852,7 +854,10 @@ function tick(now) {
     canAddBerryReed: world.canAddBerryReedPlant?.() ?? false,
     berryReedPlantCount: world.berryReedPlants?.length ?? 0,
     canAddAzureDart: world.canAddAzureDart?.() ?? false,
-    azureDartCount: world.getAzureDartCount?.() ?? 0
+    azureDartCount: world.getAzureDartCount?.() ?? 0,
+    canAddSiltSifter: world.canAddSiltSifter?.() ?? false,
+    siltSifterCount: world.getSiltSifterCount?.() ?? 0,
+    siltSifterUnlockBirths: 10
   });
   panel.updateFishInspector(world.getFishInspectorList?.() ?? world.fish, world.selectedFishId, world.simTimeSec);
   updateCorpseActionButton();
@@ -1067,6 +1072,7 @@ function startSimulation({ savedPayload = null } = {}) {
       return result;
     },
     onAddAzureDart: () => world.addAzureDartSchool?.(),
+    onAddSiltSifter: () => world.addSiltSifterSchool?.(),
     onGrantUnlockPrereqs: () => world.grantAllUnlockPrerequisites?.(),
     onRestartConfirm: () => restartToStartScreen()
   };
