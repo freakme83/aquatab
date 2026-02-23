@@ -13,6 +13,10 @@ const SAVE_STORAGE_KEY = 'aquatab_save_v1';
 const SAVE_VERSION = 1;
 const AUTOSAVE_INTERVAL_MS = 10_000;
 const INACTIVITY_AWAY_THRESHOLD_SIM_SEC = 300;
+const FULLSCREEN_HINT_SESSION_KEY = 'aquatab_fullscreen_hint_seen';
+const RESIZE_DEBOUNCE_MS = 120;
+const WORLD_WIDTH = 1200;
+const WORLD_HEIGHT = 700;
 
 const startScreen = document.getElementById('startScreen');
 const appRoot = document.getElementById('appRoot');
@@ -31,6 +35,7 @@ const buyCoffeeButton = document.getElementById('buyCoffeeButton');
 const canvas = document.getElementById('aquariumCanvas');
 const panelRoot = document.getElementById('panelRoot');
 const tankShell = canvas.closest('.tank-shell');
+const fullscreenTarget = tankShell || canvas.parentElement || canvas;
 
 let world = null;
 let renderer = null;
@@ -50,6 +55,14 @@ let lastTimingDebugLogAtSec = -1;
 let lastTrendSampleSimTimeSec = null;
 let lastTrendSampleHygiene01 = null;
 let smoothedHygieneDeltaPerMin = 0;
+let resizeDebounceId = null;
+
+const fullscreenHint = document.createElement('div');
+fullscreenHint.className = 'fullscreen-hint';
+fullscreenHint.textContent = 'Press F for fullscreen';
+fullscreenHint.hidden = true;
+fullscreenHint.setAttribute('data-cinema-hide', 'true');
+document.body.appendChild(fullscreenHint);
 
 function computeCleanlinessTrend(simTimeSec, hygiene01) {
   const currentSimTime = Number.isFinite(simTimeSec) ? simTimeSec : 0;
@@ -168,6 +181,7 @@ corpseActionButton.style.color = '#eaf7ff';
 corpseActionButton.style.fontSize = '12px';
 corpseActionButton.style.cursor = 'pointer';
 document.body.appendChild(corpseActionButton);
+corpseActionButton.setAttribute('data-cinema-hide', 'true');
 
 const filterToast = document.createElement('div');
 filterToast.hidden = true;
@@ -184,6 +198,7 @@ filterToast.style.fontSize = '12px';
 filterToast.style.zIndex = '30';
 filterToast.style.pointerEvents = 'none';
 document.body.appendChild(filterToast);
+filterToast.setAttribute('data-cinema-hide', 'true');
 
 const ecosystemFailedOverlay = document.createElement('div');
 ecosystemFailedOverlay.hidden = true;
@@ -233,6 +248,7 @@ ecosystemFailedActions.append(ecosystemFailedRestartButton);
 ecosystemFailedCard.append(ecosystemFailedTitle, ecosystemFailedBody, ecosystemFailedActions);
 ecosystemFailedOverlay.append(ecosystemFailedCard);
 document.body.appendChild(ecosystemFailedOverlay);
+ecosystemFailedOverlay.setAttribute('data-cinema-hide', 'true');
 
 const autoPauseOverlay = document.createElement('div');
 autoPauseOverlay.hidden = true;
@@ -293,6 +309,38 @@ autoPauseActions.append(autoPauseResumeButton);
 autoPauseCard.append(autoPauseTitle, autoPauseSubtitle, autoPauseList, autoPauseStarving, autoPauseActions);
 autoPauseOverlay.append(autoPauseCard);
 document.body.appendChild(autoPauseOverlay);
+autoPauseOverlay.setAttribute('data-cinema-hide', 'true');
+
+function syncCinemaMode() {
+  const inFullscreen = document.fullscreenElement === fullscreenTarget;
+  document.body.classList.toggle('cinema-mode', inFullscreen);
+  if (inFullscreen) {
+    fullscreenHint.hidden = true;
+    fullscreenHint.classList.remove('is-visible');
+  }
+}
+
+async function toggleFullscreen() {
+  if (!started || !fullscreenTarget) return;
+  if (document.fullscreenElement) {
+    await document.exitFullscreen();
+  } else {
+    await fullscreenTarget.requestFullscreen();
+  }
+}
+
+function showFullscreenHintOnce() {
+  if (sessionStorage.getItem(FULLSCREEN_HINT_SESSION_KEY) === '1') return;
+  sessionStorage.setItem(FULLSCREEN_HINT_SESSION_KEY, '1');
+  fullscreenHint.hidden = false;
+  requestAnimationFrame(() => fullscreenHint.classList.add('is-visible'));
+  window.setTimeout(() => {
+    fullscreenHint.classList.remove('is-visible');
+    window.setTimeout(() => {
+      fullscreenHint.hidden = true;
+    }, 420);
+  }, 3600);
+}
 
 
 const infoModalCopy = {
@@ -617,14 +665,10 @@ function refreshDevModeUI() {
 
 function worldToClientPoint(worldX, worldY) {
   if (!renderer || !world) return null;
+  const screenPoint = renderer.toScreenPoint(worldX, worldY);
+  if (!screenPoint) return null;
   const canvasRect = canvas.getBoundingClientRect();
-  const { x, y, width, height } = renderer.tankRect;
-  if (!width || !height || world.bounds.width <= 0 || world.bounds.height <= 0) return null;
-
-  return {
-    x: canvasRect.left + x + (worldX / world.bounds.width) * width,
-    y: canvasRect.top + y + (worldY / world.bounds.height) * height
-  };
+  return { x: canvasRect.left + screenPoint.x, y: canvasRect.top + screenPoint.y };
 }
 
 function hideCorpseAction() {
@@ -666,12 +710,25 @@ corpseActionButton.addEventListener('click', () => {
 function resize() {
   if (!started || !world || !renderer) return;
   const { width, height } = measureCanvasSize();
-  world.resize(width, height);
   renderer.resize(width, height);
 }
 
-window.addEventListener('resize', resize);
+function queueResize() {
+  window.clearTimeout(resizeDebounceId);
+  resizeDebounceId = window.setTimeout(() => {
+    resizeDebounceId = null;
+    resize();
+  }, RESIZE_DEBOUNCE_MS);
+}
+
+window.addEventListener('resize', queueResize);
+window.addEventListener('orientationchange', queueResize);
+window.visualViewport?.addEventListener('resize', queueResize);
 new ResizeObserver(resize).observe(tankShell || canvas);
+document.addEventListener('fullscreenchange', () => {
+  syncCinemaMode();
+  queueResize();
+});
 
 /* -------------------------------------------------------------------------- */
 /* Simulation/render drivers (single active driver rule)                       */
@@ -855,6 +912,26 @@ window.addEventListener('beforeunload', () => {
 });
 
 document.addEventListener('keydown', (event) => {
+  const target = event.target;
+  const isEditableTarget = target instanceof Element
+    && (target.matches('input, textarea, [contenteditable]:not([contenteditable="false"])') || target.closest('[contenteditable]:not([contenteditable="false"])'));
+
+  if (!isEditableTarget && event.code === 'KeyF' && !event.ctrlKey && !event.metaKey) {
+    event.preventDefault();
+    fullscreenHint.hidden = true;
+    fullscreenHint.classList.remove('is-visible');
+    toggleFullscreen().catch(() => {});
+    return;
+  }
+
+  if (!isEditableTarget && event.key === 'Enter' && event.altKey && !event.ctrlKey && !event.metaKey) {
+    event.preventDefault();
+    fullscreenHint.hidden = true;
+    fullscreenHint.classList.remove('is-visible');
+    toggleFullscreen().catch(() => {});
+    return;
+  }
+
   if (!event.ctrlKey || !event.shiftKey || event.code !== 'KeyD') return;
   event.preventDefault();
   const enabled = toggleDevMode();
@@ -915,15 +992,14 @@ function startSimulation({ savedPayload = null } = {}) {
   autoPauseOverlayOpen = false;
   clearAwaySnapshot();
 
-  const initialSize = measureCanvasSize();
   if (savedPayload?.saveVersion === SAVE_VERSION) {
     world = World.fromJSON(savedPayload, {
-      width: initialSize.width,
-      height: initialSize.height,
+      width: WORLD_WIDTH,
+      height: WORLD_HEIGHT,
       initialFishCount
     });
   } else {
-    world = new World(initialSize.width, initialSize.height, initialFishCount);
+    world = new World(WORLD_WIDTH, WORLD_HEIGHT, initialFishCount);
   }
   renderer = new Renderer(canvas, world);
   lastInteractionSimTimeSec = world.simTimeSec;
@@ -1018,6 +1094,7 @@ function startSimulation({ savedPayload = null } = {}) {
 
   startAutosave();
   syncDriversToVisibility();
+  showFullscreenHintOnce();
 }
 
 continueSimButton?.addEventListener('click', () => {
