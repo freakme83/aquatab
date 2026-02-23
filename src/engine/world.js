@@ -1344,29 +1344,25 @@ export class World {
     return this.fish.filter((fish) => fish.speciesId === SILT_SIFTER_SPECIES_ID && fish.lifeState === 'ALIVE').length;
   }
 
-  addSiltSifterSchool(count = 2) {
+  addSiltSifterSchool() {
     if (!this.canAddSiltSifter()) return false;
-    const aliveNow = this.getSiltSifterCount();
-    const targetCount = clamp(Math.round(count), 2, SILT_SIFTER_MAX_PLAYER_COUNT - aliveNow);
-    if (!Number.isFinite(targetCount) || targetCount <= 0) return false;
 
-    const femaleCount = Math.ceil(targetCount * 0.5);
-    const maleCount = Math.max(0, targetCount - femaleCount);
-    const sexes = [
-      ...Array.from({ length: femaleCount }, () => 'female'),
-      ...Array.from({ length: maleCount }, () => 'male')
-    ];
+    const femaleCount = this.fish.filter((fish) => fish.speciesId === SILT_SIFTER_SPECIES_ID && fish.sex === 'female' && fish.lifeState === 'ALIVE').length;
+    const maleCount = this.fish.filter((fish) => fish.speciesId === SILT_SIFTER_SPECIES_ID && fish.sex === 'male' && fish.lifeState === 'ALIVE').length;
+    const sex = femaleCount <= maleCount ? 'female' : 'male';
 
-    for (const sex of sexes) {
-      const fish = this.#createFish({
-        speciesId: SILT_SIFTER_SPECIES_ID,
-        sex,
-        initialAgeSec: rand(0, Math.max(1, AGE_CONFIG.stageBaseSec?.babyEndSec ?? 100))
-      });
-      fish.spawnTimeSec = this.simTimeSec - rand(20, 90);
-      fish.ageSecCached = Math.max(0, this.simTimeSec - fish.spawnTimeSec);
-      this.fish.push(fish);
-    }
+    const babyEndSec = Math.max(1, AGE_CONFIG.stageBaseSec?.babyEndSec ?? 600);
+    const juvenileSeedAgeSec = babyEndSec + rand(10, Math.max(20, babyEndSec * 0.35));
+
+    const fish = this.#createFish({
+      speciesId: SILT_SIFTER_SPECIES_ID,
+      sex,
+      initialAgeSec: juvenileSeedAgeSec
+    });
+    fish.spawnTimeSec = this.simTimeSec - juvenileSeedAgeSec;
+    fish.ageSecCached = juvenileSeedAgeSec;
+    fish.updateLifeCycle(this.simTimeSec);
+    this.fish.push(fish);
 
     return true;
   }

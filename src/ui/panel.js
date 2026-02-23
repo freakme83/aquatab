@@ -79,10 +79,6 @@ export class Panel {
     this.siltSifterState = this.root.querySelector('[data-silt-sifter-state]');
     this.siltSifterReqBirths = this.root.querySelector('[data-silt-sifter-req-births]');
     this.siltSifterRow = this.root.querySelector('[data-silt-sifter-row]');
-    this.siltSifterCountDown = this.root.querySelector('[data-control="siltSifterCountDown"]');
-    this.siltSifterCountUp = this.root.querySelector('[data-control="siltSifterCountUp"]');
-    this.siltSifterCountValue = this.root.querySelector('[data-silt-sifter-count]');
-    this.siltSifterSpawnCount = 2;
 
     this.installFilterButton = this.root.querySelector('[data-control="installFilter"]');
     this.maintainFilterButton = this.root.querySelector('[data-control="maintainFilter"]');
@@ -200,18 +196,8 @@ export class Panel {
       this.handlers.onAddAzureDart?.();
     });
 
-    this.siltSifterCountDown?.addEventListener('click', () => {
-      this.siltSifterSpawnCount = Math.max(2, this.siltSifterSpawnCount - 1);
-      if (this.siltSifterCountValue) this.siltSifterCountValue.textContent = String(this.siltSifterSpawnCount);
-    });
-
-    this.siltSifterCountUp?.addEventListener('click', () => {
-      this.siltSifterSpawnCount = Math.min(4, this.siltSifterSpawnCount + 1);
-      if (this.siltSifterCountValue) this.siltSifterCountValue.textContent = String(this.siltSifterSpawnCount);
-    });
-
     this.addSiltSifterButton?.addEventListener('click', () => {
-      this.handlers.onAddSiltSifter?.(this.siltSifterSpawnCount);
+      this.handlers.onAddSiltSifter?.();
     });
 
     this.grantUnlockPrereqsButton?.addEventListener('click', () => {
@@ -581,12 +567,10 @@ export class Panel {
     }
     if (this.siltSifterRow) this.siltSifterRow.classList.toggle('is-locked', !siltUnlocked);
     if (this.addSiltSifterButton) {
-      this.addSiltSifterButton.disabled = !siltUnlocked;
-      this.#setSpeciesButtonReady(this.addSiltSifterButton, siltUnlocked);
+      const atCap = (siltSifterCount ?? 0) >= 4;
+      this.addSiltSifterButton.disabled = !siltUnlocked || atCap;
+      this.#setSpeciesButtonReady(this.addSiltSifterButton, siltUnlocked && !atCap);
     }
-    if (this.siltSifterCountDown) this.siltSifterCountDown.disabled = !siltUnlocked || this.siltSifterSpawnCount <= 2;
-    if (this.siltSifterCountUp) this.siltSifterCountUp.disabled = !siltUnlocked || this.siltSifterSpawnCount >= 4;
-    if (this.siltSifterCountValue) this.siltSifterCountValue.textContent = String(this.siltSifterSpawnCount);
   }
 
   updateFishInspector(fishList, selectedFishId, simTimeSec) {

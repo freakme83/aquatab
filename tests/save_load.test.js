@@ -803,3 +803,28 @@ test('silt sifter unlock gate requires 10 births unless dev mode', () => {
   world.birthsCount = 10;
   assert.equal(world.canAddSiltSifter(), true);
 });
+
+
+test('silt sifter add button spawns one juvenile per click and caps at four total', () => {
+  const world = makeWorldForTest();
+  world.birthsCount = 10;
+
+  const before = world.getSiltSifterCount();
+  assert.equal(before, 0);
+
+  assert.equal(world.addSiltSifterSchool(), true);
+  assert.equal(world.getSiltSifterCount(), 1);
+
+  const s1 = world.fish.filter((f) => f.speciesId === 'SILT_SIFTER')[0];
+  assert.ok(s1);
+  assert.equal(s1.lifeStage, 'JUVENILE');
+
+  assert.equal(world.addSiltSifterSchool(), true);
+  assert.equal(world.addSiltSifterSchool(), true);
+  assert.equal(world.addSiltSifterSchool(), true);
+  assert.equal(world.getSiltSifterCount(), 4);
+
+  assert.equal(world.canAddSiltSifter(), false);
+  assert.equal(world.addSiltSifterSchool(), false, 'should not add beyond max 4');
+  assert.equal(world.getSiltSifterCount(), 4);
+});

@@ -1072,7 +1072,7 @@ function startSimulation({ savedPayload = null } = {}) {
       return result;
     },
     onAddAzureDart: () => world.addAzureDartSchool?.(),
-    onAddSiltSifter: (count) => world.addSiltSifterSchool?.(count),
+    onAddSiltSifter: () => world.addSiltSifterSchool?.(),
     onGrantUnlockPrereqs: () => world.grantAllUnlockPrerequisites?.(),
     onRestartConfirm: () => restartToStartScreen()
   };
