@@ -42,6 +42,12 @@ const LAB_MINNOW_SPECIES_ID = 'LAB_MINNOW';
 const AZURE_DART_SPECIES_ID = 'AZURE_DART';
 const AZURE_DART_UNLOCK_HYGIENE01 = 0.8;
 const AZURE_DART_MAX_PLAYER_COUNT = 4;
+const SILT_SIFTER_SPECIES_ID = 'SILT_SIFTER';
+const SILT_SIFTER_UNLOCK_BIRTHS = 10;
+const SILT_SIFTER_MAX_PLAYER_COUNT = 4;
+const SILT_SIFTER_RECENT_POOP_MIN_SEC = 180;
+const SILT_SIFTER_RECENT_POOP_MAX_SEC = 300;
+const POOP_DISSOLVE_DIRT_UNITS = Math.max(0, CONFIG.world.poop?.dissolveDirtUnits ?? POOP_DIRT_PER_SEC * POOP_DEFAULT_TTL_SEC);
 
 const FEMALE_NAME_POOL = Array.isArray(CONFIG.FEMALE_NAME_POOL) ? CONFIG.FEMALE_NAME_POOL : [];
 const MALE_NAME_POOL = Array.isArray(CONFIG.MALE_NAME_POOL) ? CONFIG.MALE_NAME_POOL : [];
@@ -494,7 +500,7 @@ export class World {
     this.fruits = [];
     this.nextBerryReedPlantId = 1;
     this.nextFruitId = 1;
-    this.speciesUnlocks = { berryReed: false, azureDart: false };
+    this.speciesUnlocks = { berryReed: false, azureDart: false, siltSifter: false };
 
     // Global environment state (will grow over time).
     this.water = this.#createInitialWaterState();
@@ -1009,6 +1015,15 @@ export class World {
     return true;
   }
 
+  consumePoop(poopId, fishId = null) {
+    const index = this.poop.findIndex((entry) => entry.id === poopId && entry.canBeEaten !== false);
+    if (index < 0) return 0;
+
+    const [poop] = this.poop.splice(index, 1);
+    if (fishId != null) this.emit('poop:consume', { poopId, fishId });
+    return Math.max(0.05, Number.isFinite(poop?.nutrition) ? poop.nutrition : 0.1);
+  }
+
   consumeFood(foodId, amountToConsume = 0.5) {
     const food = this.food.find((entry) => entry.id === foodId);
     if (!food) return 0;
@@ -1037,6 +1052,9 @@ export class World {
   getEdibleTargetsForFish(fish) {
     if ((fish?.speciesId ?? DEFAULT_SPECIES_ID) === AZURE_DART_SPECIES_ID) {
       return this.fruits;
+    }
+    if ((fish?.speciesId ?? DEFAULT_SPECIES_ID) === SILT_SIFTER_SPECIES_ID) {
+      return [...this.poop, ...this.food];
     }
     return this.food;
   }
@@ -1223,6 +1241,7 @@ export class World {
     if (isDevMode()) {
       this.speciesUnlocks.berryReed = true;
       this.speciesUnlocks.azureDart = true;
+      this.speciesUnlocks.siltSifter = true;
       return;
     }
 
@@ -1233,6 +1252,8 @@ export class World {
     const azureReadyNow = (this.berryReedPlants?.length ?? 0) >= 1
       && (this.water?.hygiene01 ?? 0) >= AZURE_DART_UNLOCK_HYGIENE01;
     if (azureReadyNow) this.speciesUnlocks.azureDart = true;
+
+    if (this.birthsCount >= SILT_SIFTER_UNLOCK_BIRTHS) this.speciesUnlocks.siltSifter = true;
   }
 
   canAddBerryReedPlant() {
@@ -1310,6 +1331,46 @@ export class World {
     fish.spawnTimeSec = this.simTimeSec;
     fish.ageSecCached = 0;
     this.fish.push(fish);
+
+    return true;
+  }
+
+
+  canAddSiltSifter() {
+    const underCap = this.getSiltSifterCount() < SILT_SIFTER_MAX_PLAYER_COUNT;
+    if (!underCap) return false;
+    this.#refreshSpeciesUnlocks();
+    if (isDevMode()) return true;
+    return this.speciesUnlocks.siltSifter;
+  }
+
+  getSiltSifterCount() {
+    return this.fish.filter((fish) => fish.speciesId === SILT_SIFTER_SPECIES_ID && fish.lifeState === 'ALIVE').length;
+  }
+
+  addSiltSifterSchool(count = 2) {
+    if (!this.canAddSiltSifter()) return false;
+    const aliveNow = this.getSiltSifterCount();
+    const targetCount = clamp(Math.round(count), 2, SILT_SIFTER_MAX_PLAYER_COUNT - aliveNow);
+    if (!Number.isFinite(targetCount) || targetCount <= 0) return false;
+
+    const femaleCount = Math.ceil(targetCount * 0.5);
+    const maleCount = Math.max(0, targetCount - femaleCount);
+    const sexes = [
+      ...Array.from({ length: femaleCount }, () => 'female'),
+      ...Array.from({ length: maleCount }, () => 'male')
+    ];
+
+    for (const sex of sexes) {
+      const fish = this.#createFish({
+        speciesId: SILT_SIFTER_SPECIES_ID,
+        sex,
+        initialAgeSec: rand(0, Math.max(1, AGE_CONFIG.stageBaseSec?.babyEndSec ?? 100))
+      });
+      fish.spawnTimeSec = this.simTimeSec - rand(20, 90);
+      fish.ageSecCached = Math.max(0, this.simTimeSec - fish.spawnTimeSec);
+      this.fish.push(fish);
+    }
 
     return true;
   }
@@ -1491,8 +1552,7 @@ export class World {
 
     const bioloadDirt = WATER_BIOLOAD_DIRT_PER_SEC * bioload * dtSec;
     const expiredFoodDirt = expiredFoodCount * WATER_DIRT_PER_EXPIRED_FOOD;
-    const poopDirtFromEntities = this.poop.reduce((sum, entry) => sum + POOP_DIRT_PER_SEC * Math.max(0, entry.bioloadFactor ?? 1), 0) * dtSec;
-    const poopDirt = poopDirtFromEntities + Math.max(0, this.pendingPoopDirt01 ?? 0) * dtSec;
+    const poopDirt = Math.max(0, this.pendingPoopDirt01 ?? 0);
     this.pendingPoopDirt01 = 0;
     water.dirt01 = clamp(water.dirt01 + bioloadDirt + expiredFoodDirt + poopDirt, 0, 1);
 
@@ -1721,6 +1781,13 @@ export class World {
     if ((a.speciesId ?? DEFAULT_SPECIES_ID) !== (b.speciesId ?? DEFAULT_SPECIES_ID)) return;
     if (!this.#isMateEligible(a, nowSec) || !this.#isMateEligible(b, nowSec)) return;
 
+    if ((a.speciesId ?? DEFAULT_SPECIES_ID) === SILT_SIFTER_SPECIES_ID) {
+      const recentWindowSec = rand(SILT_SIFTER_RECENT_POOP_MIN_SEC, SILT_SIFTER_RECENT_POOP_MAX_SEC);
+      const aRecent = Number.isFinite(a.lastPoopConsumedAtSimSec) && (nowSec - a.lastPoopConsumedAtSimSec) <= recentWindowSec;
+      const bRecent = Number.isFinite(b.lastPoopConsumedAtSimSec) && (nowSec - b.lastPoopConsumedAtSimSec) <= recentWindowSec;
+      if (!aRecent || !bRecent) return;
+    }
+
     const key = a.id < b.id ? `${a.id}|${b.id}` : `${b.id}|${a.id}`;
     const nextTryAt = this.matePairNextTryAt.get(key) ?? 0;
     if (nowSec < nextTryAt) return;
@@ -1781,14 +1848,19 @@ export class World {
     const species = getSpeciesConfig(speciesId);
     const clutchSizes = speciesId === AZURE_DART_SPECIES_ID
       ? [3, 4, 5]
-      : CLUTCH_SIZE;
-    const baseClutchCount = speciesId === AZURE_DART_SPECIES_ID
+      : (speciesId === SILT_SIFTER_SPECIES_ID ? [1, 3] : CLUTCH_SIZE);
+    let baseClutchCount = speciesId === AZURE_DART_SPECIES_ID
       ? clutchSizes[Math.floor(rand(0, clutchSizes.length))]
       : Math.max(1, randIntInclusive(clutchSizes, 2, 4));
+    if (speciesId === SILT_SIFTER_SPECIES_ID) {
+      const roll = Math.random();
+      baseClutchCount = roll < 0.45 ? 1 : (roll < 0.9 ? 2 : 3);
+    }
     const populationPressure01 = this.#getPopulationPressure01(speciesId);
     const clutchPressureFactor = 1 - (populationPressure01 * 0.45);
     const clutchCount = Math.max(1, Math.round(baseClutchCount * clutchPressureFactor));
     const reproScale = getSpeciesReproductionScale(speciesId);
+    const motherCooldownScale = speciesId === SILT_SIFTER_SPECIES_ID ? 1.5 : reproScale;
     const baseLayY = Math.max(0, this.#swimHeight() - 14);
 
     for (let i = 0; i < clutchCount; i += 1) {
@@ -1818,7 +1890,7 @@ export class World {
     }
 
     female.repro.state = 'COOLDOWN';
-    female.repro.cooldownUntilSec = nowSec + randRange(MOTHER_COOLDOWN_SEC, 600, 1080) * reproScale;
+    female.repro.cooldownUntilSec = nowSec + randRange(MOTHER_COOLDOWN_SEC, 600, 1080) * motherCooldownScale;
     female.repro.dueAtSec = null;
     female.repro.fatherId = null;
     female.repro.layTargetX = null;
@@ -1973,6 +2045,7 @@ export class World {
 
       if (Number.isFinite(item.ttlSec) && item.ttlSec <= 0) {
         this.poop.splice(i, 1);
+        this.pendingPoopDirt01 = (this.pendingPoopDirt01 ?? 0) + POOP_DISSOLVE_DIRT_UNITS * Math.max(0, item.bioloadFactor ?? 1);
       }
     }
   }
@@ -1987,7 +2060,7 @@ export class World {
       const fish = this.getFishById(entry.fishId);
       if (fish && fish.lifeState === 'ALIVE') {
         const factor = getSpeciesPoopBioloadFactor(fish.speciesId);
-        const visible = fish.speciesId !== AZURE_DART_SPECIES_ID;
+        const visible = fish.speciesId !== AZURE_DART_SPECIES_ID && (fish.species?.poopEnabled !== false);
         this.spawnPoop(fish.position.x, fish.position.y, POOP_DEFAULT_TTL_SEC, { bioloadFactor: factor, visible });
       }
       this.scheduledPoopSpawns.splice(i, 1);
