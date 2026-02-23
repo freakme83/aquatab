@@ -41,7 +41,10 @@ export class Renderer {
     this.canvas.width = Math.floor(width * this.dpr);
     this.canvas.height = Math.floor(height * this.dpr);
 
-    const margin = Math.max(12, Math.min(width, height) * 0.035);
+    const baseMargin = Math.max(12, Math.min(width, height) * 0.035);
+    const isMobilePortrait = (window.matchMedia?.('(pointer: coarse)')?.matches ?? false)
+      && window.innerHeight > window.innerWidth;
+    const margin = isMobilePortrait ? Math.max(8, Math.min(12, baseMargin)) : baseMargin;
     this.tankRect = {
       x: margin,
       y: margin,
