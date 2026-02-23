@@ -213,6 +213,7 @@ export class Fish {
     this.cruiseRate = rand(0.35, 0.7);
 
     this.bottomSweepDirection = Math.random() < 0.5 ? -1 : 1;
+    this.bottomSweepLaneY = Number.isFinite(options.bottomSweepLaneY) ? options.bottomSweepLaneY : null;
     this.target = this.#pickTarget();
     this.lastDistanceMoved = 0;
 
@@ -318,6 +319,7 @@ export class Fish {
     fish.lastPoopConsumedAtSimSec = Number.isFinite(source.lastPoopConsumedAtSimSec) ? source.lastPoopConsumedAtSimSec : null;
     if (!fish.behavior || typeof fish.behavior !== 'object') fish.behavior = { mode: 'wander', targetFoodId: null, targetKind: null, speedBoost: 1 };
     if (!('targetKind' in fish.behavior)) fish.behavior.targetKind = null;
+    fish.bottomSweepLaneY = Number.isFinite(source.bottomSweepLaneY) ? source.bottomSweepLaneY : null;
 
     if (!fish.position || !Number.isFinite(fish.position.x) || !Number.isFinite(fish.position.y)) {
       fish.position = { x: bounds.width * 0.5, y: bounds.height * 0.5 };
@@ -452,6 +454,7 @@ export class Fish {
   }
 
   playProbability(nearAlgae = false) {
+    if (this.speciesId === 'SILT_SIFTER' || this.species?.renderStyle === 'SILT_SIFTER') return 0;
     if (this.lifeStage === 'OLD') return 0;
 
     if (this.lifeStage === 'BABY') return nearAlgae ? 0.8 : 0.5;
@@ -1035,24 +1038,36 @@ export class Fish {
 
     if (bottom) {
       const movement = this.#movementBounds();
-      const edgePad = Math.max(8, this.size * 1.2);
-      const minX = movement.minX + edgePad;
-      const maxX = movement.maxX - edgePad;
-      if (this.position.x >= maxX) this.bottomSweepDirection = -1;
-      if (this.position.x <= minX) this.bottomSweepDirection = 1;
-      if (Math.random() < 0.05) this.bottomSweepDirection *= -1;
+      const sweepInset = clamp(this.bounds.width * 0.12, 24, 120);
+      const minSweepX = clamp(movement.minX + sweepInset, movement.minX, movement.maxX);
+      const maxSweepX = clamp(movement.maxX - sweepInset, movement.minX, movement.maxX);
+      const effectiveMinX = Math.min(minSweepX, maxSweepX - 16);
+      const effectiveMaxX = Math.max(maxSweepX, minSweepX + 16);
 
-      const targetEdgeX = this.bottomSweepDirection > 0 ? maxX : minX;
-      const sideJitter = rand(-22, 22);
-      const yNearBottom = movement.maxY - rand(2, 10);
+      if (this.position.x >= effectiveMaxX - 8) this.bottomSweepDirection = -1;
+      if (this.position.x <= effectiveMinX + 8) this.bottomSweepDirection = 1;
+
+      const laneMinY = this.bounds.height * 0.86;
+      const laneMaxY = this.bounds.height * 0.96;
+      if (!Number.isFinite(this.bottomSweepLaneY) || this.bottomSweepLaneY < laneMinY || this.bottomSweepLaneY > laneMaxY) {
+        this.bottomSweepLaneY = rand(laneMinY, laneMaxY);
+      }
+      if (Math.random() < 0.08) {
+        this.bottomSweepLaneY = clamp(this.bottomSweepLaneY + rand(-4, 4), laneMinY, laneMaxY);
+      }
+
       const probeChance = clamp(bottom.probeChancePerRetarget ?? 0.24, 0, 1);
       const probeUp = Math.random() < probeChance
         ? rand(bottom.probeDepthMinPx ?? 3, bottom.probeDepthMaxPx ?? 14)
-        : rand(0, 4);
+        : rand(0, 3);
+
+      const targetX = this.bottomSweepDirection > 0
+        ? effectiveMaxX - rand(0, 12)
+        : effectiveMinX + rand(0, 12);
 
       return {
-        x: clamp(targetEdgeX + sideJitter, movement.minX, movement.maxX),
-        y: clamp(yNearBottom - probeUp, movement.minY, movement.maxY)
+        x: clamp(targetX, movement.minX, movement.maxX),
+        y: clamp(this.bottomSweepLaneY - probeUp, movement.minY, movement.maxY)
       };
     }
 
@@ -1123,6 +1138,7 @@ export class Fish {
   }
 
   #schoolingVector(world, nowSec) {
+    if (this.speciesId === 'SILT_SIFTER' || this.species?.renderStyle === 'SILT_SIFTER') return { x: 0, y: 0 };
     const schooling = this.species?.schooling ?? {};
     if (!schooling.enabled || !world?.fish?.length) return { x: 0, y: 0 };
 
