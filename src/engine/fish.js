@@ -212,6 +212,7 @@ export class Fish {
     this.cruisePhase = rand(0, TAU);
     this.cruiseRate = rand(0.35, 0.7);
 
+    this.bottomSweepDirection = Math.random() < 0.5 ? -1 : 1;
     this.target = this.#pickTarget();
     this.lastDistanceMoved = 0;
 
@@ -227,7 +228,7 @@ export class Fish {
     this.skeletonAtSec = null;
     this.corpseRemoved = false;
     this.corpseDirtApplied01 = 0;
-    this.behavior = { mode: 'wander', targetFoodId: null, speedBoost: 1 };
+    this.behavior = { mode: 'wander', targetFoodId: null, targetKind: null, speedBoost: 1 };
     this.eatAnimTimer = 0;
     this.eatAnimDuration = 0.22;
 
@@ -315,6 +316,8 @@ export class Fish {
     fish.waterPenalty01 = clamp01(Number.isFinite(fish.waterPenalty01) ? fish.waterPenalty01 : 0);
     fish.digestBites = Math.max(0, Math.floor(fish.digestBites ?? 0));
     fish.lastPoopConsumedAtSimSec = Number.isFinite(source.lastPoopConsumedAtSimSec) ? source.lastPoopConsumedAtSimSec : null;
+    if (!fish.behavior || typeof fish.behavior !== 'object') fish.behavior = { mode: 'wander', targetFoodId: null, targetKind: null, speedBoost: 1 };
+    if (!('targetKind' in fish.behavior)) fish.behavior.targetKind = null;
 
     if (!fish.position || !Number.isFinite(fish.position.x) || !Number.isFinite(fish.position.y)) {
       fish.position = { x: bounds.width * 0.5, y: bounds.height * 0.5 };
@@ -381,7 +384,7 @@ export class Fish {
       this.deathReason = 'STARVATION';
       this.hungerState = 'DEAD';
       this.currentSpeed = 0;
-      this.behavior = { mode: 'deadSink', targetFoodId: null, speedBoost: 1 };
+      this.behavior = { mode: 'deadSink', targetFoodId: null, targetKind: null, speedBoost: 1 };
     }
   }
 
@@ -463,7 +466,7 @@ export class Fish {
     this._worldRef = world ?? null;
 
     if (this.lifeState !== 'ALIVE') {
-      this.behavior = { mode: 'deadSink', targetFoodId: null, speedBoost: 1 };
+      this.behavior = { mode: 'deadSink', targetFoodId: null, targetKind: null, speedBoost: 1 };
       this.#updateHoverAfterBehavior(world?.simTimeSec ?? 0);
       return;
     }
@@ -472,6 +475,7 @@ export class Fish {
       this.behavior = {
         mode: 'seekLayTarget',
         targetFoodId: null,
+        targetKind: null,
         speedBoost: 1
       };
       this.target = { x: this.repro.layTargetX, y: this.repro.layTargetY };
@@ -484,6 +488,7 @@ export class Fish {
       this.behavior = {
         mode: isRunner ? 'playEvade' : 'playChase',
         targetFoodId: null,
+        targetKind: null,
         speedBoost: isRunner ? PLAY_RUNNER_SPEED_BOOST : PLAY_SPEED_BOOST,
         targetFishId: this.playState.targetFishId
       };
@@ -495,14 +500,14 @@ export class Fish {
     const poopSeekingEvenWhenFed = speciesDiet.includes('poop');
 
     if (this.hungerState === 'FED' && !poopSeekingEvenWhenFed) {
-      this.behavior = { mode: 'wander', targetFoodId: null, speedBoost: 1 };
+      this.behavior = { mode: 'wander', targetFoodId: null, targetKind: null, speedBoost: 1 };
       this.#updateHoverAfterBehavior(world?.simTimeSec ?? 0);
       return;
     }
 
     const visibleFood = this.#findNearestFood(world);
     if (!visibleFood) {
-      this.behavior = { mode: 'wander', targetFoodId: null, speedBoost: 1 };
+      this.behavior = { mode: 'wander', targetFoodId: null, targetKind: null, speedBoost: 1 };
       this.#updateHoverAfterBehavior(world?.simTimeSec ?? 0);
       return;
     }
@@ -510,6 +515,7 @@ export class Fish {
     this.behavior = {
       mode: 'seekFood',
       targetFoodId: visibleFood.id,
+      targetKind: visibleFood.kind ?? null,
       speedBoost: FOOD_SPEED_BOOST[this.hungerState] ?? 1
     };
     this.target = { x: visibleFood.x, y: visibleFood.y };
@@ -526,7 +532,10 @@ export class Fish {
     // Pursuit: keep the target synced to the pellet's *current* position.
     if (this.behavior.mode === 'seekFood' && this.behavior.targetFoodId) {
       const targetFood = this.#findTargetFoodById(this._worldRef, this.behavior.targetFoodId);
-      if (targetFood) this.target = { x: targetFood.x, y: targetFood.y };
+      if (targetFood) {
+        this.target = { x: targetFood.x, y: targetFood.y };
+        this.behavior.targetKind = targetFood.kind ?? this.behavior.targetKind ?? null;
+      }
     }
 
     if (this.behavior.mode === 'playChase' && this.behavior.targetFishId && this._worldRef?.fish) {
@@ -576,7 +585,8 @@ export class Fish {
     const schooling = this.#schoolingVector(this._worldRef, nowSec);
     desiredX += schooling.x;
     desiredY += schooling.y;
-    const bottomBias = this.#bottomDwellerBiasVector();
+    const chasingPoop = this.behavior?.mode === 'seekFood' && this.behavior?.targetKind === 'poop';
+    const bottomBias = this.#bottomDwellerBiasVector(chasingPoop);
     desiredX += bottomBias.x;
     desiredY += bottomBias.y;
 
@@ -731,7 +741,7 @@ export class Fish {
       this.deathReason = 'OLD_AGE';
       this.hungerState = 'DEAD';
       this.currentSpeed = 0;
-      this.behavior = { mode: 'deadSink', targetFoodId: null, speedBoost: 1 };
+      this.behavior = { mode: 'deadSink', targetFoodId: null, targetKind: null, speedBoost: 1 };
     }
   }
 
@@ -1025,17 +1035,24 @@ export class Fish {
 
     if (bottom) {
       const movement = this.#movementBounds();
-      const minX = movement.minX;
-      const maxX = movement.maxX;
-      const stepX = rand(bottom.scanStepXMinPx ?? 35, bottom.scanStepXMaxPx ?? 125);
-      const dir = this.facing >= 0 ? 1 : -1;
+      const edgePad = Math.max(8, this.size * 1.2);
+      const minX = movement.minX + edgePad;
+      const maxX = movement.maxX - edgePad;
+      if (this.position.x >= maxX) this.bottomSweepDirection = -1;
+      if (this.position.x <= minX) this.bottomSweepDirection = 1;
+      if (Math.random() < 0.05) this.bottomSweepDirection *= -1;
+
+      const targetEdgeX = this.bottomSweepDirection > 0 ? maxX : minX;
+      const sideJitter = rand(-22, 22);
+      const yNearBottom = movement.maxY - rand(2, 10);
       const probeChance = clamp(bottom.probeChancePerRetarget ?? 0.24, 0, 1);
-      const probeDepth = Math.random() < probeChance ? rand(bottom.probeDepthMinPx ?? 3, bottom.probeDepthMaxPx ?? 14) : 0;
-      const baseY = this.bounds.height * clamp(bottom.preferredBandStart01 ?? 0.75, 0, 1);
-      const jitterY = rand(-(bottom.scanJitterYMaxPx ?? 18), bottom.scanJitterYMaxPx ?? 18);
+      const probeUp = Math.random() < probeChance
+        ? rand(bottom.probeDepthMinPx ?? 3, bottom.probeDepthMaxPx ?? 14)
+        : rand(0, 4);
+
       return {
-        x: clamp(this.position.x + dir * stepX, minX, maxX),
-        y: clamp(baseY + Math.max(0, probeDepth) + jitterY, movement.minY, movement.maxY)
+        x: clamp(targetEdgeX + sideJitter, movement.minX, movement.maxX),
+        y: clamp(yNearBottom - probeUp, movement.minY, movement.maxY)
       };
     }
 
@@ -1086,16 +1103,22 @@ export class Fish {
 
 
 
-  #bottomDwellerBiasVector() {
+  #bottomDwellerBiasVector(allowExcursion = false) {
     const bottom = this.species?.bottomDweller;
     if (!bottom) return { x: 0, y: 0 };
 
-    const bandStart = this.bounds.height * clamp(bottom.preferredBandStart01 ?? 0.75, 0, 1);
-    const bandEnd = this.bounds.height * clamp(bottom.preferredBandEnd01 ?? 1, 0, 1);
-    const center = (bandStart + bandEnd) * 0.5;
+    const baseStart01 = clamp(bottom.preferredBandStart01 ?? 0.75, 0, 1);
+    const bandStart01 = allowExcursion ? Math.max(0.58, baseStart01 - 0.14) : baseStart01;
+    const bandEnd01 = clamp(bottom.preferredBandEnd01 ?? 1, bandStart01, 1);
+    const bandStart = this.bounds.height * bandStart01;
+    const bandEnd = this.bounds.height * bandEnd01;
+    const center = allowExcursion
+      ? this.bounds.height * (bandStart01 + (bandEnd01 - bandStart01) * 0.72)
+      : (bandStart + bandEnd) * 0.5;
     const distance = center - this.position.y;
-    const span = Math.max(8, (bandEnd - bandStart) * 0.5);
-    const pull = clamp(distance / span, -1, 1) * (bottom.steerBiasStrength ?? 1.3);
+    const span = Math.max(8, (bandEnd - bandStart) * (allowExcursion ? 0.75 : 0.5));
+    const strength = (bottom.steerBiasStrength ?? 1.3) * (allowExcursion ? 0.55 : 1);
+    const pull = clamp(distance / span, -1, 1) * strength;
     return { x: 0, y: pull };
   }
 
