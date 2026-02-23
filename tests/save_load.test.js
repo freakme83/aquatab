@@ -401,6 +401,7 @@ test('world update advances canonical sim clock for motion and lifecycle', () =>
 
 test('speed multiplier scales canonical sim clock and persists through save-load', () => {
   const world = makeWorldForTest();
+  world.simTimeSec = 30 * 60;
   world.setSpeedMultiplier(2);
 
   const simStart = world.simTimeSec;
@@ -420,6 +421,25 @@ test('speed multiplier scales canonical sim clock and persists through save-load
   assert.equal(loaded.simTimeSec, loadedSimStart + 2);
   assert.equal(loaded.debugTiming.simDt, 2);
   assert.equal(loaded.debugTiming.motionDt, 2);
+});
+
+
+test('simulation speed cap unlocks from 1x to 2x at 30m and 3x at 120m', () => {
+  const world = makeWorldForTest();
+
+  world.setSpeedMultiplier(3);
+  assert.equal(world.speedMultiplier, 1);
+  assert.equal(world.getAvailableSimSpeedMultiplierCap(), 1);
+
+  world.simTimeSec = 30 * 60;
+  world.setSpeedMultiplier(3);
+  assert.equal(world.speedMultiplier, 2);
+  assert.equal(world.getAvailableSimSpeedMultiplierCap(), 2);
+
+  world.simTimeSec = 120 * 60;
+  world.setSpeedMultiplier(3);
+  assert.equal(world.speedMultiplier, 3);
+  assert.equal(world.getAvailableSimSpeedMultiplierCap(), 3);
 });
 
 test('laying clutch uses updated egg range of 2 to 4', () => {

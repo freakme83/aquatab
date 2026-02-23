@@ -90,6 +90,8 @@ export class Panel {
     this.upgradeFilterButton = this.root.querySelector('[data-control="upgradeFilter"]');
 
     this.speedValue = this.root.querySelector('[data-value="simSpeed"]');
+    this.simSpeedGroup = this.root.querySelector('[data-sim-speed-group]');
+    this.simSpeedCondition = this.root.querySelector('[data-sim-speed-condition]');
     this.fishInspector = this.root.querySelector('[data-fish-inspector]');
 
     this.devSection = document.createElement('section');
@@ -299,12 +301,15 @@ export class Panel {
 
 
 
-  refreshSpeedControl() {
+  refreshSpeedControl(speedCap = getMaxSimSpeedMultiplier()) {
     if (!this.speedSlider) return;
-    this.speedSlider.max = String(getMaxSimSpeedMultiplier());
+    const normalizedCap = Math.max(1, Math.min(getMaxSimSpeedMultiplier(), Number(speedCap) || 1));
+    this.speedSlider.max = String(normalizedCap);
     const current = Number(this.speedSlider.value);
-    const clamped = Math.max(0.5, Math.min(getMaxSimSpeedMultiplier(), Number.isFinite(current) ? current : 1));
+    const clamped = Math.max(0.5, Math.min(normalizedCap, Number.isFinite(current) ? current : 1));
     this.speedSlider.value = String(clamped);
+    this.speedSlider.disabled = normalizedCap <= 1;
+    this.simSpeedGroup?.classList.toggle('is-dim', normalizedCap <= 1);
     if (this.speedValue) this.speedValue.textContent = `${clamped.toFixed(1)}x`;
   }
 
@@ -313,9 +318,9 @@ export class Panel {
     this.devSection.hidden = !isDevMode();
   }
 
-  sync({ speedMultiplier, paused }) {
-    this.refreshSpeedControl();
-    const clampedSpeed = Math.max(0.5, Math.min(getMaxSimSpeedMultiplier(), Number(speedMultiplier) || 1));
+  sync({ speedMultiplier, paused, speedCap = getMaxSimSpeedMultiplier() }) {
+    this.refreshSpeedControl(speedCap);
+    const clampedSpeed = Math.max(0.5, Math.min(speedCap, Number(speedMultiplier) || 1));
     this.speedSlider.value = String(clampedSpeed);
     this.speedValue.textContent = `${clampedSpeed.toFixed(1)}x`;
     this.toggleButton.textContent = paused ? 'Resume' : 'Pause';
@@ -358,10 +363,12 @@ export class Panel {
     azureDartCount,
     canAddSiltSifter,
     siltSifterCount,
-    siltSifterUnlockBirths
+    siltSifterUnlockBirths,
+    simSpeedCap,
+    simSpeedPendingUnlocks
   }) {
     this.updateDevSection();
-    this.refreshSpeedControl();
+    this.refreshSpeedControl(simSpeedCap ?? getMaxSimSpeedMultiplier());
 
     if (this.simTimeStat) {
       const totalSec = Math.max(0, Math.floor(simTimeSec ?? 0));
@@ -369,6 +376,19 @@ export class Panel {
       const mm = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0');
       const ss = String(totalSec % 60).padStart(2, '0');
       this.simTimeStat.textContent = `${hh}:${mm}:${ss}`;
+    }
+
+    const pendingUnlocks = Array.isArray(simSpeedPendingUnlocks) ? simSpeedPendingUnlocks : [];
+    if (this.simSpeedCondition) {
+      if (pendingUnlocks.length === 0) {
+        this.simSpeedCondition.hidden = true;
+        this.simSpeedCondition.textContent = '';
+      } else {
+        const nextUnlock = pendingUnlocks[0];
+        const unlockMinute = Math.ceil((nextUnlock.unlockAtSec ?? 0) / 60);
+        this.simSpeedCondition.hidden = false;
+        this.simSpeedCondition.textContent = `${nextUnlock.targetMultiplier}x unlocks at minute ${unlockMinute}.`;
+      }
     }
 
     this.fishCountStat.textContent = String(fishCount);
