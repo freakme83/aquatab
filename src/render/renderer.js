@@ -721,6 +721,7 @@ export class Renderer {
 
     const sat = Math.max(18, Math.min(76, 52 * (rp.saturationMult ?? 1)));
     const isAzureDart = fish.speciesId === 'AZURE_DART';
+    const isSiltSifter = fish.speciesId === 'SILT_SIFTER';
 
     ctx.save();
     ctx.translate(position.x, position.y);
@@ -728,7 +729,16 @@ export class Renderer {
     ctx.scale(orientation.facing, 1);
 
     const bodyPath = new Path2D();
-    bodyPath.ellipse(0, 0, bodyLength * 0.5, bodyHeight * 0.5, 0, 0, TAU);
+    if (isSiltSifter) {
+      bodyPath.moveTo(-bodyLength * 0.56, 0);
+      bodyPath.quadraticCurveTo(-bodyLength * 0.36, bodyHeight * 0.58, bodyLength * 0.1, bodyHeight * 0.48);
+      bodyPath.quadraticCurveTo(bodyLength * 0.46, bodyHeight * 0.22, bodyLength * 0.56, 0);
+      bodyPath.quadraticCurveTo(bodyLength * 0.44, -bodyHeight * 0.22, bodyLength * 0.08, -bodyHeight * 0.48);
+      bodyPath.quadraticCurveTo(-bodyLength * 0.34, -bodyHeight * 0.58, -bodyLength * 0.56, 0);
+      bodyPath.closePath();
+    } else {
+      bodyPath.ellipse(0, 0, bodyLength * 0.5, bodyHeight * 0.5, 0, 0, TAU);
+    }
 
     if (isSkeleton) {
       ctx.fillStyle = 'hsl(36deg 8% 72%)';
@@ -736,6 +746,23 @@ export class Renderer {
     } else if (isDead) {
       ctx.fillStyle = 'hsl(0deg 0% 56%)';
       ctx.fill(bodyPath);
+    } else if (isSiltSifter) {
+      const grad = ctx.createLinearGradient(-bodyLength * 0.52, 0, bodyLength * 0.56, 0);
+      grad.addColorStop(0, 'hsl(38deg 18% 46%)');
+      grad.addColorStop(0.42, 'hsl(70deg 16% 41%)');
+      grad.addColorStop(1, 'hsl(55deg 11% 35%)');
+      ctx.fillStyle = grad;
+      ctx.fill(bodyPath);
+
+      ctx.strokeStyle = 'rgba(48, 64, 52, 0.35)';
+      ctx.lineWidth = Math.max(1, bodyHeight * 0.1);
+      for (let i = 0; i < 3; i += 1) {
+        const yy = (-0.24 + i * 0.24) * bodyHeight;
+        ctx.beginPath();
+        ctx.moveTo(-bodyLength * 0.18, yy);
+        ctx.lineTo(bodyLength * 0.33, yy + Math.sin(i + time * 0.002) * bodyHeight * 0.04);
+        ctx.stroke();
+      }
     } else if (isAzureDart) {
       const baseHue = Math.max(190, Math.min(232, fish.colorHue ?? 212));
       const pattern = Math.max(0, Math.min(1, fish.traits?.colorPatternSeed ?? 0.5));
@@ -792,6 +819,10 @@ export class Renderer {
       ctx.lineTo(-bodyLength * 0.86, bodyHeight * 0.22 + tailWag * 0.8);
       ctx.lineTo(-bodyLength * 0.98, 0);
       ctx.lineTo(-bodyLength * 0.86, -bodyHeight * 0.22 - tailWag * 0.8);
+    } else if (isSiltSifter) {
+      ctx.lineTo(-bodyLength * 0.82, bodyHeight * 0.25 + tailWag * 0.42);
+      ctx.lineTo(-bodyLength * 0.95, 0);
+      ctx.lineTo(-bodyLength * 0.82, -bodyHeight * 0.25 - tailWag * 0.42);
     } else {
       ctx.lineTo(-bodyLength * 0.84, bodyHeight * 0.35 + tailWag);
       ctx.lineTo(-bodyLength * 0.84, -bodyHeight * 0.35 - tailWag);

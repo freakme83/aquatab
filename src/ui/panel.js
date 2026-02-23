@@ -75,6 +75,14 @@ export class Panel {
     this.azureDartReqBerry = this.root.querySelector('[data-azure-req-berry]');
     this.azureDartReqCleanliness = this.root.querySelector('[data-azure-req-cleanliness]');
     this.azureDartRow = this.root.querySelector('[data-azure-dart-row]');
+    this.addSiltSifterButton = this.root.querySelector('[data-control="addSiltSifter"]');
+    this.siltSifterState = this.root.querySelector('[data-silt-sifter-state]');
+    this.siltSifterReqBirths = this.root.querySelector('[data-silt-sifter-req-births]');
+    this.siltSifterRow = this.root.querySelector('[data-silt-sifter-row]');
+    this.siltSifterCountDown = this.root.querySelector('[data-control="siltSifterCountDown"]');
+    this.siltSifterCountUp = this.root.querySelector('[data-control="siltSifterCountUp"]');
+    this.siltSifterCountValue = this.root.querySelector('[data-silt-sifter-count]');
+    this.siltSifterSpawnCount = 2;
 
     this.installFilterButton = this.root.querySelector('[data-control="installFilter"]');
     this.maintainFilterButton = this.root.querySelector('[data-control="maintainFilter"]');
@@ -192,8 +200,18 @@ export class Panel {
       this.handlers.onAddAzureDart?.();
     });
 
-    this.addAzureDartButton?.addEventListener('click', () => {
-      this.handlers.onAddAzureDart?.();
+    this.siltSifterCountDown?.addEventListener('click', () => {
+      this.siltSifterSpawnCount = Math.max(2, this.siltSifterSpawnCount - 1);
+      if (this.siltSifterCountValue) this.siltSifterCountValue.textContent = String(this.siltSifterSpawnCount);
+    });
+
+    this.siltSifterCountUp?.addEventListener('click', () => {
+      this.siltSifterSpawnCount = Math.min(4, this.siltSifterSpawnCount + 1);
+      if (this.siltSifterCountValue) this.siltSifterCountValue.textContent = String(this.siltSifterSpawnCount);
+    });
+
+    this.addSiltSifterButton?.addEventListener('click', () => {
+      this.handlers.onAddSiltSifter?.(this.siltSifterSpawnCount);
     });
 
     this.grantUnlockPrereqsButton?.addEventListener('click', () => {
@@ -262,7 +280,8 @@ export class Panel {
     this.fishInspector.addEventListener('click', (event) => {
       const speciesTabButton = event.target.closest('[data-inspector-species-tab]');
       if (speciesTabButton) {
-        const nextSpecies = speciesTabButton.dataset.inspectorSpeciesTab === 'AZURE_DART' ? 'AZURE_DART' : 'LAB_MINNOW';
+        const tab = speciesTabButton.dataset.inspectorSpeciesTab;
+        const nextSpecies = tab === 'AZURE_DART' ? 'AZURE_DART' : (tab === 'SILT_SIFTER' ? 'SILT_SIFTER' : 'LAB_MINNOW');
         this.currentInspectorSpeciesTab = nextSpecies;
         this.currentInspectorSelectedFishId = null;
         this.handlers.onFishSelect?.(null);
@@ -349,7 +368,10 @@ export class Panel {
     canAddBerryReed,
     berryReedPlantCount,
     canAddAzureDart,
-    azureDartCount
+    azureDartCount,
+    canAddSiltSifter,
+    siltSifterCount,
+    siltSifterUnlockBirths
   }) {
     this.updateDevSection();
     this.refreshSpeedControl();
@@ -544,6 +566,27 @@ export class Panel {
       this.addAzureDartButton.disabled = !azureUnlocked;
       this.#setSpeciesButtonReady(this.addAzureDartButton, azureUnlocked);
     }
+
+    const siltRequiredBirths = Math.max(1, Math.floor(siltSifterUnlockBirths ?? 10));
+    const siltBirthProgress = Math.max(0, Math.floor(birthsCount ?? 0));
+    const siltUnlocked = Boolean(canAddSiltSifter);
+    if (this.siltSifterReqBirths) {
+      this.siltSifterReqBirths.textContent = `Requires: ${siltRequiredBirths} births (${Math.min(siltBirthProgress, siltRequiredBirths)}/${siltRequiredBirths})${isDevMode() ? ' ✓' : ''}`;
+    }
+    if (this.siltSifterState) {
+      this.siltSifterState.textContent = (siltSifterCount ?? 0) >= 4 ? 'Added' : (siltUnlocked ? 'Ready' : 'Locked');
+      this.siltSifterState.style.color = (siltSifterCount ?? 0) >= 4
+        ? '#84e89a'
+        : (siltUnlocked ? '#cfeeff' : '');
+    }
+    if (this.siltSifterRow) this.siltSifterRow.classList.toggle('is-locked', !siltUnlocked);
+    if (this.addSiltSifterButton) {
+      this.addSiltSifterButton.disabled = !siltUnlocked;
+      this.#setSpeciesButtonReady(this.addSiltSifterButton, siltUnlocked);
+    }
+    if (this.siltSifterCountDown) this.siltSifterCountDown.disabled = !siltUnlocked || this.siltSifterSpawnCount <= 2;
+    if (this.siltSifterCountUp) this.siltSifterCountUp.disabled = !siltUnlocked || this.siltSifterSpawnCount >= 4;
+    if (this.siltSifterCountValue) this.siltSifterCountValue.textContent = String(this.siltSifterSpawnCount);
   }
 
   updateFishInspector(fishList, selectedFishId, simTimeSec) {
@@ -634,10 +677,12 @@ export class Panel {
 
     const labActive = this.currentInspectorSpeciesTab === 'LAB_MINNOW';
     const azureActive = this.currentInspectorSpeciesTab === 'AZURE_DART';
+    const siltActive = this.currentInspectorSpeciesTab === 'SILT_SIFTER';
     const speciesTabsHtml = `
       <div class="inspector-species-tabs" role="tablist" aria-label="Fish species">
         <button type="button" class="inspector-species-tab${labActive ? ' active' : ''}" data-inspector-species-tab="LAB_MINNOW" role="tab" aria-selected="${labActive}">Lab Minnow</button>
         <button type="button" class="inspector-species-tab${azureActive ? ' active' : ''}" data-inspector-species-tab="AZURE_DART" role="tab" aria-selected="${azureActive}">Azure Dart</button>
+        <button type="button" class="inspector-species-tab${siltActive ? ' active' : ''}" data-inspector-species-tab="SILT_SIFTER" role="tab" aria-selected="${siltActive}">Silt Sifter</button>
       </div>
     `;
 
@@ -673,7 +718,9 @@ export class Panel {
       ? '<div class="status-line status--pregnant">pregnant</div>'
       : '';
 
-    const speciesLabel = fish.speciesId === 'AZURE_DART' ? 'Azure Dart' : 'Lab Minnow';
+    const speciesLabel = fish.speciesId === 'AZURE_DART'
+      ? 'Azure Dart'
+      : (fish.speciesId === 'SILT_SIFTER' ? 'Silt Sifter' : 'Lab Minnow');
     const infoRows = `
       <label class="control-group fish-name-group"><span>Name</span><input type="text" maxlength="24" value="${this.#escapeAttribute(draftName)}" data-fish-name-input placeholder="Fish name" /></label>
       <div class="stat-row"><span>Fish ID</span><strong>${fish.id}</strong></div>
