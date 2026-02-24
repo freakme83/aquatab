@@ -561,6 +561,11 @@ input[type='range'] {
   background: rgba(56, 117, 167, 0.35);
 }
 
+.fish-row__name--pregnant {
+  color: #2ecc71;
+}
+
+
 .fish-detail {
   border-top: 1px solid var(--deck-border);
   padding-top: 8px;
