@@ -29,6 +29,7 @@ export class Panel {
     this.fishCountStat = this.root.querySelector('[data-stat="fishCount"]');
     this.cleanlinessStat = this.root.querySelector('[data-stat="cleanliness"]');
     this.cleanlinessTrendStat = this.root.querySelector('[data-stat="cleanlinessTrend"]');
+    this.eggsSummaryRoot = this.root.querySelector('[data-stat="eggsSummary"]');
     if (!this.cleanlinessTrendStat && this.cleanlinessStat?.closest('.stat-row')) {
       const row = document.createElement('div');
       row.className = 'stat-row';
@@ -367,7 +368,8 @@ export class Panel {
     siltSifterCount,
     siltSifterUnlockBirths,
     simSpeedCap,
-    simSpeedPendingUnlocks
+    simSpeedPendingUnlocks,
+    eggsBySpecies = []
   }) {
     this.updateDevSection();
     this.refreshSpeedControl(simSpeedCap ?? getMaxSimSpeedMultiplier());
@@ -408,6 +410,19 @@ export class Panel {
         Dropping: '#f0a13a',
         'Dropping fast': '#ea5f5f'
       }[trendLabel];
+    }
+
+    if (this.eggsSummaryRoot) {
+      const eggRows = Array.isArray(eggsBySpecies)
+        ? eggsBySpecies
+          .filter((entry) => Number.isFinite(entry?.count) && entry.count > 0)
+          .map((entry) => {
+            const species = this.#escapeHtml(entry.speciesLabel || 'Unknown');
+            const count = Math.floor(entry.count);
+            return `<div class="stat-row stat-row--eggs"><span>${count} eggs in the tank (${species})</span></div>`;
+          })
+        : [];
+      this.eggsSummaryRoot.innerHTML = eggRows.join('');
     }
 
     const consumed = Math.max(0, Math.floor(foodsConsumedCount ?? 0));
@@ -584,8 +599,8 @@ export class Panel {
     const siltRequiredBirths = Math.max(1, Math.floor(siltSifterUnlockBirths ?? 10));
     const siltBirthProgress = Math.max(0, Math.floor(birthsCount ?? 0));
     const siltUnlocked = Boolean(canAddSiltSifter);
-    this.inspectorAzureUnlocked = azureUnlocked;
-    this.inspectorSiltUnlocked = siltUnlocked;
+    this.inspectorAzureUnlocked = this.inspectorAzureUnlocked || azureUnlocked || (azureDartCount ?? 0) > 0;
+    this.inspectorSiltUnlocked = this.inspectorSiltUnlocked || siltUnlocked || (siltSifterCount ?? 0) > 0;
     if (this.siltSifterReqBirths) {
       this.siltSifterReqBirths.textContent = `Requires: ${siltRequiredBirths} births (${Math.min(siltBirthProgress, siltRequiredBirths)}/${siltRequiredBirths})${isDevMode() ? ' ✓' : ''}`;
     }
@@ -639,10 +654,19 @@ export class Panel {
 
     const selectedFishAnySpecies = sorted.find((fish) => fish.id === selectedFishId) ?? null;
     const selectedChanged = selectedFishId !== this.lastObservedSelectedFishId;
-    if (selectedChanged && (selectedFishAnySpecies?.speciesId === 'AZURE_DART' || selectedFishAnySpecies?.speciesId === 'LAB_MINNOW')) {
+    if (selectedChanged && (
+      selectedFishAnySpecies?.speciesId === 'AZURE_DART'
+      || selectedFishAnySpecies?.speciesId === 'SILT_SIFTER'
+      || selectedFishAnySpecies?.speciesId === 'LAB_MINNOW'
+    )) {
       this.currentInspectorSpeciesTab = selectedFishAnySpecies.speciesId;
     }
     this.lastObservedSelectedFishId = selectedFishId ?? null;
+
+    const hasAzureFishInSession = sorted.some((fish) => (fish.speciesId ?? 'LAB_MINNOW') === 'AZURE_DART');
+    const hasSiltFishInSession = sorted.some((fish) => (fish.speciesId ?? 'LAB_MINNOW') === 'SILT_SIFTER');
+    if (hasAzureFishInSession) this.inspectorAzureUnlocked = true;
+    if (hasSiltFishInSession) this.inspectorSiltUnlocked = true;
 
     const visibleSpeciesTabs = ['LAB_MINNOW'];
     if (this.inspectorAzureUnlocked) visibleSpeciesTabs.push('AZURE_DART');
@@ -682,11 +706,13 @@ export class Panel {
         const deadClass = fish.lifeState !== 'ALIVE' ? ' fishRow--dead' : '';
         const stageLabel = typeof fish.lifeStageLabel === 'function' ? fish.lifeStageLabel() : (fish.lifeStage ?? '');
         const state = `${stageLabel} · ${fish.hungerState}`;
+        const isPregnant = fish.sex === 'female' && (fish.repro?.state === 'GRAVID' || fish.repro?.state === 'LAYING');
         const liveName = fish.name?.trim() || '';
         const draftName = this.nameDraftByFishId.get(fish.id) ?? liveName;
         const rawLabel = draftName || 'Unnamed';
         const label = this.#escapeHtml(rawLabel);
-        return `<button type="button" class="fish-row${selectedClass}${deadClass}" data-fish-id="${fish.id}">${label} · ${fish.sex} · ${state}</button>`;
+        const pregnantClass = isPregnant ? ' fish-row__name--pregnant' : '';
+        return `<button type="button" class="fish-row${selectedClass}${deadClass}" data-fish-id="${fish.id}"><span class="fish-row__name${pregnantClass}">${label}</span> · ${fish.sex} · ${state}</button>`;
       })
       .join('');
 
@@ -762,7 +788,7 @@ export class Panel {
     const motherValue = this.#historyFishReference(history.motherId);
     const fatherValue = this.#historyFishReference(history.fatherId);
     const lifetimeValue = this.#formatMMSS(typeof fish.getLifeTimeSec === 'function' ? fish.getLifeTimeSec(simTimeSec) : 0);
-    const [childrenSummary, childrenMarkup] = this.#historyFishReferenceList(history.childrenIds);
+    const [childrenSummary] = this.#historyFishReferenceList(history.childrenIds);
 
     const historyRows = `
       <div class="stat-row"><span>Mother</span><strong>${motherValue}</strong></div>
@@ -773,7 +799,6 @@ export class Panel {
       <div class="stat-row"><span>Meals eaten</span><strong>${Math.max(0, Math.floor(history.mealsEaten ?? 0))}</strong></div>
       <div class="stat-row"><span>Times mated</span><strong>${Math.max(0, Math.floor(history.mateCount ?? 0))}</strong></div>
       <div class="stat-row"><span>Children</span><strong>${childrenSummary}</strong></div>
-      <div class="history-children-list">${childrenMarkup}</div>
     `;
 
     const tabInfoActive = this.currentInspectorDetailTab !== 'history';
