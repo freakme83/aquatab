@@ -599,8 +599,8 @@ export class Panel {
     const siltRequiredBirths = Math.max(1, Math.floor(siltSifterUnlockBirths ?? 10));
     const siltBirthProgress = Math.max(0, Math.floor(birthsCount ?? 0));
     const siltUnlocked = Boolean(canAddSiltSifter);
-    this.inspectorAzureUnlocked = azureUnlocked;
-    this.inspectorSiltUnlocked = siltUnlocked;
+    this.inspectorAzureUnlocked = this.inspectorAzureUnlocked || azureUnlocked || (azureDartCount ?? 0) > 0;
+    this.inspectorSiltUnlocked = this.inspectorSiltUnlocked || siltUnlocked || (siltSifterCount ?? 0) > 0;
     if (this.siltSifterReqBirths) {
       this.siltSifterReqBirths.textContent = `Requires: ${siltRequiredBirths} births (${Math.min(siltBirthProgress, siltRequiredBirths)}/${siltRequiredBirths})${isDevMode() ? ' ✓' : ''}`;
     }
@@ -654,10 +654,19 @@ export class Panel {
 
     const selectedFishAnySpecies = sorted.find((fish) => fish.id === selectedFishId) ?? null;
     const selectedChanged = selectedFishId !== this.lastObservedSelectedFishId;
-    if (selectedChanged && (selectedFishAnySpecies?.speciesId === 'AZURE_DART' || selectedFishAnySpecies?.speciesId === 'LAB_MINNOW')) {
+    if (selectedChanged && (
+      selectedFishAnySpecies?.speciesId === 'AZURE_DART'
+      || selectedFishAnySpecies?.speciesId === 'SILT_SIFTER'
+      || selectedFishAnySpecies?.speciesId === 'LAB_MINNOW'
+    )) {
       this.currentInspectorSpeciesTab = selectedFishAnySpecies.speciesId;
     }
     this.lastObservedSelectedFishId = selectedFishId ?? null;
+
+    const hasAzureFishInSession = sorted.some((fish) => (fish.speciesId ?? 'LAB_MINNOW') === 'AZURE_DART');
+    const hasSiltFishInSession = sorted.some((fish) => (fish.speciesId ?? 'LAB_MINNOW') === 'SILT_SIFTER');
+    if (hasAzureFishInSession) this.inspectorAzureUnlocked = true;
+    if (hasSiltFishInSession) this.inspectorSiltUnlocked = true;
 
     const visibleSpeciesTabs = ['LAB_MINNOW'];
     if (this.inspectorAzureUnlocked) visibleSpeciesTabs.push('AZURE_DART');
