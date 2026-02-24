@@ -877,7 +877,14 @@ function tick(now) {
     siltSifterUnlockBirths: 10,
     simSpeedCap: speedUnlockState.speedCap,
     simSpeedPendingUnlocks: speedUnlockState.pendingUnlocks,
-    eggsBySpecies: summarizeEggsBySpecies()
+    eggsBySpecies: summarizeEggsBySpecies(),
+    waterDebug: {
+      hygiene01: world.water?.hygiene01,
+      dirt01: world.water?.dirt01,
+      filter01: world.water?.filter01,
+      effectiveFilter01: world.water?.effectiveFilter01,
+      filterEnabled: world.water?.filterEnabled
+    }
   });
   panel.updateFishInspector(world.getFishInspectorList?.() ?? world.fish, world.selectedFishId, world.simTimeSec);
   updateCorpseActionButton();

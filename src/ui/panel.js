@@ -30,6 +30,10 @@ export class Panel {
     this.cleanlinessStat = this.root.querySelector('[data-stat="cleanliness"]');
     this.cleanlinessTrendStat = this.root.querySelector('[data-stat="cleanlinessTrend"]');
     this.eggsSummaryRoot = this.root.querySelector('[data-stat="eggsSummary"]');
+    this.statsPanel = this.root.querySelector('[data-content="stats"]');
+    this.devWaterStatsRoot = document.createElement('div');
+    this.devWaterStatsRoot.hidden = true;
+    this.statsPanel?.appendChild(this.devWaterStatsRoot);
     if (!this.cleanlinessTrendStat && this.cleanlinessStat?.closest('.stat-row')) {
       const row = document.createElement('div');
       row.className = 'stat-row';
@@ -317,8 +321,12 @@ export class Panel {
   }
 
   updateDevSection() {
-    if (!this.devSection) return;
-    this.devSection.hidden = !isDevMode();
+    const devMode = isDevMode();
+    if (this.devSection) this.devSection.hidden = !devMode;
+    if (this.devWaterStatsRoot) {
+      this.devWaterStatsRoot.hidden = !devMode;
+      if (!devMode) this.devWaterStatsRoot.innerHTML = '';
+    }
   }
 
   sync({ speedMultiplier, paused, speedCap = getMaxSimSpeedMultiplier() }) {
@@ -369,7 +377,8 @@ export class Panel {
     siltSifterUnlockBirths,
     simSpeedCap,
     simSpeedPendingUnlocks,
-    eggsBySpecies = []
+    eggsBySpecies = [],
+    waterDebug = null
   }) {
     this.updateDevSection();
     this.refreshSpeedControl(simSpeedCap ?? getMaxSimSpeedMultiplier());
@@ -423,6 +432,28 @@ export class Panel {
           })
         : [];
       this.eggsSummaryRoot.innerHTML = eggRows.join('');
+    }
+
+    if (this.devWaterStatsRoot) {
+      const debug = waterDebug && typeof waterDebug === 'object' ? waterDebug : {};
+      if (isDevMode()) {
+        const hygiene01 = Number.isFinite(debug.hygiene01) ? debug.hygiene01 : 0;
+        const dirt01 = Number.isFinite(debug.dirt01) ? debug.dirt01 : 0;
+        const filter01Value = Number.isFinite(debug.filter01) ? debug.filter01 : 0;
+        const effectiveFilter01 = Number.isFinite(debug.effectiveFilter01) ? debug.effectiveFilter01 : 0;
+        const filterEnabled = Boolean(debug.filterEnabled);
+        this.devWaterStatsRoot.hidden = false;
+        this.devWaterStatsRoot.innerHTML = `
+          <div class="stat-row"><span>DEV · hygiene01</span><strong>${hygiene01.toFixed(4)}</strong></div>
+          <div class="stat-row"><span>DEV · dirt01</span><strong>${dirt01.toFixed(4)}</strong></div>
+          <div class="stat-row"><span>DEV · filter01</span><strong>${filter01Value.toFixed(4)}</strong></div>
+          <div class="stat-row"><span>DEV · effectiveFilter01</span><strong>${effectiveFilter01.toFixed(4)}</strong></div>
+          <div class="stat-row"><span>DEV · filterEnabled</span><strong>${filterEnabled ? 'true' : 'false'}</strong></div>
+        `;
+      } else {
+        this.devWaterStatsRoot.hidden = true;
+        this.devWaterStatsRoot.innerHTML = '';
+      }
     }
 
     const consumed = Math.max(0, Math.floor(foodsConsumedCount ?? 0));
