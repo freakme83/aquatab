@@ -779,7 +779,7 @@ export class Panel {
     const motherValue = this.#historyFishReference(history.motherId);
     const fatherValue = this.#historyFishReference(history.fatherId);
     const lifetimeValue = this.#formatMMSS(typeof fish.getLifeTimeSec === 'function' ? fish.getLifeTimeSec(simTimeSec) : 0);
-    const [childrenSummary, childrenMarkup] = this.#historyFishReferenceList(history.childrenIds);
+    const [childrenSummary] = this.#historyFishReferenceList(history.childrenIds);
 
     const historyRows = `
       <div class="stat-row"><span>Mother</span><strong>${motherValue}</strong></div>
@@ -790,7 +790,6 @@ export class Panel {
       <div class="stat-row"><span>Meals eaten</span><strong>${Math.max(0, Math.floor(history.mealsEaten ?? 0))}</strong></div>
       <div class="stat-row"><span>Times mated</span><strong>${Math.max(0, Math.floor(history.mateCount ?? 0))}</strong></div>
       <div class="stat-row"><span>Children</span><strong>${childrenSummary}</strong></div>
-      <div class="history-children-list">${childrenMarkup}</div>
     `;
 
     const tabInfoActive = this.currentInspectorDetailTab !== 'history';
