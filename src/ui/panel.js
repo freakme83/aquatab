@@ -790,10 +790,14 @@ export class Panel {
   }
 
   #fishDetailsMarkup(fish, simTimeSec) {
-    const canDiscard = fish.lifeState === 'DEAD' && !fish.corpseRemoved;
+    const corpseDirtApplied01 = Number.isFinite(fish.corpseDirtApplied01) ? fish.corpseDirtApplied01 : 0;
+    const canDiscard = fish.lifeState === 'DEAD' && !fish.corpseRemoved && corpseDirtApplied01 <= 0;
     const liveName = fish.name?.trim() || '';
     const draftName = this.nameDraftByFishId.get(fish.id) ?? liveName;
-    const aquariumTime = this.#formatMMSS(fish.ageSeconds(simTimeSec));
+    const aquariumClockSec = fish.lifeState === 'DEAD' && Number.isFinite(fish.deadAtSec)
+      ? fish.deadAtSec
+      : simTimeSec;
+    const aquariumTime = this.#formatMMSS(fish.ageSeconds(aquariumClockSec));
 
     const isPregnant = fish.sex === 'female' && (fish.repro?.state === 'GRAVID' || fish.repro?.state === 'LAYING');
     const pregnantMarkup = isPregnant
@@ -842,7 +846,7 @@ export class Panel {
       </div>
       <div class="fish-detail-pane${tabInfoActive ? ' active' : ''}" data-fish-detail-pane="info">${infoRows}</div>
       <div class="fish-detail-pane${tabHistoryActive ? ' active' : ''}" data-fish-detail-pane="history">${historyRows}</div>
-      ${canDiscard ? '<div class="button-row"><button type="button" data-fish-discard>Discard</button></div>' : ''}
+      ${canDiscard ? '<div class="button-row"><button type="button" data-fish-discard>Remove from tank</button></div>' : ''}
     `;
   }
 
