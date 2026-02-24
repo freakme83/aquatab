@@ -846,7 +846,7 @@ export class Panel {
       </div>
       <div class="fish-detail-pane${tabInfoActive ? ' active' : ''}" data-fish-detail-pane="info">${infoRows}</div>
       <div class="fish-detail-pane${tabHistoryActive ? ' active' : ''}" data-fish-detail-pane="history">${historyRows}</div>
-      ${canDiscard ? '<div class="button-row"><button type="button" data-fish-discard>Discard</button></div>' : ''}
+      ${canDiscard ? '<div class="button-row"><button type="button" data-fish-discard>Remove from tank</button></div>' : ''}
     `;
   }
 
