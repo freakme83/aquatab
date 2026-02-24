@@ -398,6 +398,11 @@ h2 {
   color: var(--text-main);
 }
 
+.stat-row--eggs {
+  color: #2ecc71;
+}
+
+
 
 .control-group.is-dim {
   opacity: 0.58;
