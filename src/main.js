@@ -33,6 +33,8 @@ const infoModalContent = document.getElementById('infoModalContent');
 const infoModalClose = document.getElementById('infoModalClose');
 const infoModalButtons = Array.from(document.querySelectorAll('[data-info-modal]'));
 const buyCoffeeButton = document.getElementById('buyCoffeeButton');
+const aboutSeoStart = document.getElementById('aboutSeoStart');
+const aboutSeoFooter = document.getElementById('aboutSeoFooter');
 
 const canvas = document.getElementById('aquariumCanvas');
 const panelRoot = document.getElementById('panelRoot');
@@ -58,6 +60,8 @@ let lastTrendSampleSimTimeSec = null;
 let lastTrendSampleHygiene01 = null;
 let smoothedHygieneDeltaPerMin = 0;
 let resizeDebounceId = null;
+
+let aboutSeoFooterDetails = null;
 
 const fullscreenHint = document.createElement('div');
 fullscreenHint.className = 'fullscreen-hint';
@@ -1028,11 +1032,30 @@ function restartToStartScreen() {
 
   appRoot.hidden = true;
   startScreen.hidden = false;
+  if (aboutSeoFooter) aboutSeoFooter.hidden = true;
+  if (aboutSeoStart) aboutSeoStart.open = true;
   refreshSavedStartPanel();
+}
+
+function syncAboutSeoForSimulation() {
+  if (!aboutSeoStart || !aboutSeoFooter) return;
+
+  aboutSeoStart.open = false;
+
+  if (!aboutSeoFooterDetails) {
+    aboutSeoFooterDetails = aboutSeoStart.cloneNode(true);
+    aboutSeoFooterDetails.id = 'aboutSeoInGame';
+    aboutSeoFooter.appendChild(aboutSeoFooterDetails);
+  }
+
+  aboutSeoFooterDetails.open = false;
+  aboutSeoFooter.hidden = false;
 }
 
 function startSimulation({ savedPayload = null } = {}) {
   if (started) return;
+
+  syncAboutSeoForSimulation();
 
   const selectedFishCount = Number.parseInt(startFishSlider?.value ?? String(DEFAULT_INITIAL_FISH_COUNT), 10);
   const initialFishCount = Number.isFinite(selectedFishCount) ? selectedFishCount : DEFAULT_INITIAL_FISH_COUNT;
