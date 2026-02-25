@@ -187,6 +187,40 @@ body.cinema-mode .tank-shell {
   filter: none;
 }
 
+
+.about-seo {
+  margin: 10px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid rgba(157, 210, 255, 0.16);
+  color: rgba(201, 219, 233, 0.82);
+  font-size: 0.84rem;
+  line-height: 1.55;
+  max-width: 720px;
+}
+
+.about-seo summary {
+  cursor: pointer;
+  color: rgba(222, 238, 250, 0.86);
+  font-size: 0.85rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.about-seo p {
+  margin: 8px 0 0;
+}
+
+.about-seo-footer {
+  width: min(100%, 1024px);
+  margin: 56px auto 28px;
+  padding: 0 clamp(20px, 3.5vw, 48px);
+}
+
+.about-seo-footer .about-seo {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
 .saved-start-meta {
   margin: 14px 0 0;
   border-top: 1px solid rgba(157, 210, 255, 0.2);
@@ -505,6 +539,11 @@ input[type='range'] {
     transform: translateY(0);
     opacity: 1;
     pointer-events: auto;
+  }
+
+  .about-seo-footer {
+    margin-top: 34px;
+    padding-bottom: calc(var(--controls-dock-height) + env(safe-area-inset-bottom, 0px) + 12px);
   }
 }
 
