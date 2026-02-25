@@ -870,6 +870,9 @@ function tick(now) {
     maintenanceCooldownSec: world.water.maintenanceCooldownSec,
     filterDepletedThreshold01: world.filterDepletedThreshold01,
     birthsCount: world.birthsCount,
+    nestbrushUnlockBirths: 3,
+    canAddNestbrush: world.canAddNestbrush?.() ?? false,
+    nestbrushAdded: Boolean(world.nestbrush),
     berryReedUnlockBirths: 4,
     berryReedUnlockCleanlinessPct: 80,
     canAddBerryReed: world.canAddBerryReedPlant?.() ?? false,
@@ -1091,6 +1094,19 @@ function startSimulation({ savedPayload = null } = {}) {
     onFilterMaintain: () => world.maintainWaterFilter?.(),
     onFilterTogglePower: () => world.toggleWaterFilterEnabled?.(),
     onFilterUpgrade: () => world.upgradeWaterFilter?.(),
+    onAddNestbrush: () => {
+      const result = world.addNestbrush?.() ?? { ok: false, reason: 'WORLD_NOT_READY' };
+      if (result.ok) {
+        showFilterToast('Nestbrush added');
+        return result;
+      }
+
+      if (result.reason === 'MAX_COUNT') showFilterToast('Nestbrush already added');
+      else if (result.reason === 'LOCKED') showFilterToast('Nestbrush locked');
+      else if (result.reason === 'WORLD_NOT_READY') showFilterToast('Not ready yet');
+
+      return result;
+    },
     onAddBerryReed: () => {
       const result = world.addBerryReedPlant?.() ?? { ok: false, reason: 'WORLD_NOT_READY' };
       if (result.ok) {

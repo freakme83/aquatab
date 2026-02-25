@@ -143,6 +143,7 @@ export class Renderer {
     this.#drawPollutionTint(ctx);
     this.#drawWaterPlants(ctx, time);
     this.#drawBerryReed(ctx, time);
+    this.#drawNestbrush(ctx, time);
     this.#drawGroundAlgae(ctx, time);
     this.#drawPlayEffects(ctx, time);
     this.#drawWaterParticles(ctx, delta);
@@ -150,7 +151,7 @@ export class Renderer {
     this.#drawFilterModule(ctx, time);
     this.#drawFood(ctx);
     this.#drawPoop(ctx);
-    this.#drawEggs(ctx);
+    this.#drawEggs(ctx, time);
     this.#drawFxParticles(ctx);
     this.#drawFishSchool(ctx, time);
     this.#drawCachedVignette(ctx);
@@ -382,6 +383,47 @@ export class Renderer {
       branchX,
       branchY
     };
+  }
+
+
+  #drawNestbrush(ctx, time) {
+    const { scale: worldScale, offsetX, offsetY } = this.camera;
+    const nestbrush = this.world.nestbrush;
+    if (!nestbrush) return;
+
+    const stage = Math.max(1, Math.min(3, Math.floor(nestbrush.stage ?? 1)));
+    const width = (22 + (stage - 1) * 10) * worldScale;
+    const baseX = offsetX + nestbrush.x * worldScale;
+    const baseY = offsetY + nestbrush.bottomY * worldScale;
+    const height = nestbrush.height * worldScale;
+    const sway = Math.sin((time / 1000) * (nestbrush.swayRate ?? 0.001) + (nestbrush.swayPhase ?? 0)) * (6 * worldScale);
+
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = 'hsla(106deg 42% 32% / 0.95)';
+    ctx.lineWidth = Math.max(1.4, 2.1 * worldScale);
+
+    ctx.beginPath();
+    ctx.moveTo(baseX, baseY);
+    ctx.bezierCurveTo(baseX - width * 0.15 + sway * 0.2, baseY - height * 0.32, baseX + width * 0.12 + sway * 0.8, baseY - height * 0.68, baseX + sway, baseY - height);
+    ctx.stroke();
+
+    const branchCount = 5 + (stage - 1) * 2;
+    for (let i = 0; i < branchCount; i += 1) {
+      const pose = this.world.getNestbrushBranchPose?.(i, time / 1000);
+      if (!pose) continue;
+      ctx.beginPath();
+      ctx.moveTo(offsetX + pose.startX * worldScale, offsetY + pose.startY * worldScale);
+      ctx.quadraticCurveTo(
+        offsetX + ((pose.startX + pose.endX) * 0.5) * worldScale,
+        offsetY + (pose.startY - (2 + (i % 3)) ) * worldScale,
+        offsetX + pose.endX * worldScale,
+        offsetY + pose.endY * worldScale
+      );
+      ctx.stroke();
+    }
+
+    ctx.restore();
   }
 
 
@@ -675,12 +717,17 @@ export class Renderer {
   }
 
 
-  #drawEggs(ctx) {
+  #drawEggs(ctx, time) {
     const { scale: worldScale, offsetX, offsetY } = this.camera;
 
     for (const egg of this.world.eggs ?? []) {
-      const x = offsetX + egg.x * worldScale;
-      const y = offsetY + egg.y * worldScale;
+      const nestbrushPos = egg?.isProtectedByNestbrush
+        ? this.world.getNestbrushEggWorldPosition?.(egg, time / 1000)
+        : null;
+      const eggX = nestbrushPos?.x ?? egg.x;
+      const eggY = nestbrushPos?.y ?? egg.y;
+      const x = offsetX + eggX * worldScale;
+      const y = offsetY + eggY * worldScale;
       const r = 2.2 * worldScale;
 
       ctx.beginPath();
