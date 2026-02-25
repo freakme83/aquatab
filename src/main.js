@@ -35,6 +35,7 @@ const infoModalButtons = Array.from(document.querySelectorAll('[data-info-modal]
 const buyCoffeeButton = document.getElementById('buyCoffeeButton');
 const aboutSeoStart = document.getElementById('aboutSeoStart');
 const aboutSeoFooter = document.getElementById('aboutSeoFooter');
+const aboutSeoInGame = document.getElementById('aboutSeoInGame');
 
 const canvas = document.getElementById('aquariumCanvas');
 const panelRoot = document.getElementById('panelRoot');
@@ -61,7 +62,6 @@ let lastTrendSampleHygiene01 = null;
 let smoothedHygieneDeltaPerMin = 0;
 let resizeDebounceId = null;
 
-let aboutSeoFooterDetails = null;
 
 const fullscreenHint = document.createElement('div');
 fullscreenHint.className = 'fullscreen-hint';
@@ -1038,17 +1038,10 @@ function restartToStartScreen() {
 }
 
 function syncAboutSeoForSimulation() {
-  if (!aboutSeoStart || !aboutSeoFooter) return;
+  if (!aboutSeoStart || !aboutSeoFooter || !aboutSeoInGame) return;
 
   aboutSeoStart.open = false;
-
-  if (!aboutSeoFooterDetails) {
-    aboutSeoFooterDetails = aboutSeoStart.cloneNode(true);
-    aboutSeoFooterDetails.id = 'aboutSeoInGame';
-    aboutSeoFooter.appendChild(aboutSeoFooterDetails);
-  }
-
-  aboutSeoFooterDetails.open = false;
+  aboutSeoInGame.open = false;
   aboutSeoFooter.hidden = false;
 }
 
