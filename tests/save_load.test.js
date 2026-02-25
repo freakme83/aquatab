@@ -631,9 +631,9 @@ test('nestbrush unlock, single-instance cap, and growth gating work', () => {
   assert.equal(world.nestbrush.growthProgressSec, initialProgress);
 
   world.water.hygiene01 = 0.95;
-  world.update(240);
+  world.update(720);
   assert.equal(world.nestbrush.stage, 2);
-  world.update(240);
+  world.update(720);
   assert.equal(world.nestbrush.stage, 3);
   assert.equal(world.getNestbrushCapacity(), 12);
 });

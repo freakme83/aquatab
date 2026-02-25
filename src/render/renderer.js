@@ -395,31 +395,57 @@ export class Renderer {
     const baseX = offsetX + nestbrush.x * worldScale;
     const baseY = offsetY + nestbrush.bottomY * worldScale;
     const height = nestbrush.height * worldScale;
-    const spread = (24 + (stage - 1) * 18) * worldScale;
-    const sway = Math.sin((time / 1000) * (nestbrush.swayRate ?? 0.001) + (nestbrush.swayPhase ?? 0)) * (3.5 * worldScale);
+    const stageProgress01 = Math.max(0, Math.min(1, (nestbrush.growthProgressSec ?? 0) / 720));
+    const previewGrowth01 = stage < 3 ? Math.pow(stageProgress01, 1.8) : 0;
+    const organicStage = stage + previewGrowth01;
+    const spread = (22 + (organicStage - 1) * 18) * worldScale;
+    const sway = Math.sin((time / 1000) * (nestbrush.swayRate ?? 0.001) + (nestbrush.swayPhase ?? 0)) * (3 * worldScale);
 
     ctx.save();
-    ctx.lineCap = 'round';
 
-    // Compact shrub mass (short + horizontal growth), not a trunk-like tree.
-    const clumpCenterY = baseY - height * 0.38;
-    const blobCount = 7 + stage * 2;
-    for (let i = 0; i < blobCount; i += 1) {
-      const t = i / Math.max(1, blobCount - 1);
-      const side = t * 2 - 1;
-      const layer = i % 3;
-      const blobX = baseX + side * spread * (0.35 + 0.45 * Math.abs(side)) + sway * (0.45 + 0.3 * (1 - Math.abs(side)));
-      const blobY = clumpCenterY + (layer - 1) * height * 0.16 - (1 - Math.abs(side)) * height * 0.14;
-      const blobRx = (3.6 + stage * 0.7 + (i % 2) * 0.8) * worldScale;
-      const blobRy = (2.4 + stage * 0.45 + ((i + 1) % 2) * 0.6) * worldScale;
-      ctx.fillStyle = `hsla(${108 + (i % 3) * 5}deg ${44 + stage * 4}% ${28 + (i % 4) * 2}% / ${0.82 - (i % 2) * 0.08})`;
-      ctx.beginPath();
-      ctx.ellipse(blobX, blobY, blobRx, blobRy, 0, 0, TAU);
-      ctx.fill();
+    // Round-dot shrub clump with slight spacing.
+    const clumpCenterY = baseY - height * 0.34;
+    const rows = [
+      { y: -height * 0.06, count: 4 + stage, widthFactor: 0.72 },
+      { y: -height * 0.20, count: 3 + stage, widthFactor: 0.56 },
+      { y: -height * 0.32, count: 2 + stage, widthFactor: 0.42 }
+    ];
+
+    for (const [rowIndex, row] of rows.entries()) {
+      const rowCount = row.count;
+      const laneHalf = spread * row.widthFactor;
+      const spacing = rowCount > 1 ? (laneHalf * 2) / (rowCount - 1) : 0;
+      const circleRadius = (2.2 + rowIndex * 0.45 + stage * 0.35) * worldScale;
+
+      for (let i = 0; i < rowCount; i += 1) {
+        const xOffset = rowCount > 1 ? (-laneHalf + spacing * i) : 0;
+        const norm = rowCount > 1 ? i / (rowCount - 1) : 0.5;
+        const sideWeight = Math.abs(norm * 2 - 1);
+        const leafX = baseX + xOffset + sway * (0.5 + (1 - sideWeight) * 0.4);
+        const leafY = clumpCenterY + row.y - sideWeight * height * 0.07;
+
+        ctx.fillStyle = `hsla(${111 + ((i + rowIndex) % 3) * 4}deg ${56 + stage * 3}% ${34 + (i % 2) * 3}% / 0.88)`;
+        ctx.beginPath();
+        ctx.arc(leafX, leafY, circleRadius, 0, TAU);
+        ctx.fill();
+      }
     }
 
-    ctx.strokeStyle = 'hsla(110deg 40% 22% / 0.88)';
-    ctx.lineWidth = Math.max(1, 1.4 * worldScale);
+    // Organic pre-growth: tiny side buds appear and gradually grow before stage step.
+    if (stage < 3 && previewGrowth01 > 0.001) {
+      const budRadius = (0.9 + 3.1 * previewGrowth01) * worldScale;
+      const budInset = spread * (0.94 + 0.12 * previewGrowth01);
+      const budY = clumpCenterY - height * (0.11 + 0.05 * previewGrowth01);
+      for (const dir of [-1, 1]) {
+        ctx.fillStyle = 'hsla(116deg 62% 37% / 0.9)';
+        ctx.beginPath();
+        ctx.arc(baseX + dir * budInset + sway * 0.6, budY, budRadius, 0, TAU);
+        ctx.fill();
+      }
+    }
+
+    ctx.strokeStyle = 'hsla(112deg 35% 24% / 0.72)';
+    ctx.lineWidth = Math.max(0.8, 1.1 * worldScale);
     const branchCount = 5 + (stage - 1) * 2;
     for (let i = 0; i < branchCount; i += 1) {
       const pose = this.world.getNestbrushBranchPose?.(i, time / 1000);
@@ -428,17 +454,16 @@ export class Renderer {
       ctx.moveTo(offsetX + pose.startX * worldScale, offsetY + pose.startY * worldScale);
       ctx.quadraticCurveTo(
         offsetX + ((pose.startX + pose.endX) * 0.52) * worldScale,
-        offsetY + ((pose.startY + pose.endY) * 0.5 - 1.3) * worldScale,
+        offsetY + ((pose.startY + pose.endY) * 0.5 - 0.8) * worldScale,
         offsetX + pose.endX * worldScale,
         offsetY + pose.endY * worldScale
       );
       ctx.stroke();
     }
 
-    // subtle base tuft anchored to bottom
-    ctx.fillStyle = 'hsla(102deg 38% 26% / 0.72)';
+    ctx.fillStyle = 'hsla(104deg 44% 30% / 0.68)';
     ctx.beginPath();
-    ctx.ellipse(baseX + sway * 0.25, baseY - height * 0.08, spread * 0.62, Math.max(2, height * 0.18), 0, 0, TAU);
+    ctx.ellipse(baseX + sway * 0.25, baseY - height * 0.07, spread * 0.55, Math.max(1.8, height * 0.15), 0, 0, TAU);
     ctx.fill();
 
     ctx.restore();

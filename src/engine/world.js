@@ -50,7 +50,7 @@ const SILT_SIFTER_RECENT_POOP_MAX_SEC = 300;
 const POOP_DISSOLVE_DIRT_UNITS = Math.max(0, CONFIG.world.poop?.dissolveDirtUnits ?? POOP_DIRT_PER_SEC * POOP_DEFAULT_TTL_SEC);
 const NESTBRUSH_UNLOCK_BIRTHS = 3;
 const NESTBRUSH_GROWTH_MIN_HYGIENE01 = 0.85;
-const NESTBRUSH_STAGE_GROWTH_SEC = 240;
+const NESTBRUSH_STAGE_GROWTH_SEC = 720;
 const NESTBRUSH_MAX_STAGE = 3;
 const NESTBRUSH_CAPACITY_BY_STAGE = [4, 8, 12];
 const NESTBRUSH_INCUBATION_PENALTY_MULTIPLIER = 1.18;
@@ -1493,7 +1493,8 @@ export class World {
     fish.ageSecCached = juvenileSeedAgeSec;
     fish.updateLifeCycle(this.simTimeSec);
     if (fish.lifeStage === 'BABY') {
-      const guaranteedJuvenileAgeSec = babyEndSec * 1.25;
+      const fishBabyEndSec = Math.max(30, babyEndSec + (fish.stageShiftBabySec ?? 0));
+      const guaranteedJuvenileAgeSec = fishBabyEndSec / Math.max(0.001, fish.growthRate ?? 1) + 12;
       fish.spawnTimeSec = this.simTimeSec - guaranteedJuvenileAgeSec;
       fish.ageSecCached = guaranteedJuvenileAgeSec;
       fish.updateLifeCycle(this.simTimeSec);
