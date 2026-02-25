@@ -392,22 +392,34 @@ export class Renderer {
     if (!nestbrush) return;
 
     const stage = Math.max(1, Math.min(3, Math.floor(nestbrush.stage ?? 1)));
-    const width = (22 + (stage - 1) * 10) * worldScale;
     const baseX = offsetX + nestbrush.x * worldScale;
     const baseY = offsetY + nestbrush.bottomY * worldScale;
     const height = nestbrush.height * worldScale;
-    const sway = Math.sin((time / 1000) * (nestbrush.swayRate ?? 0.001) + (nestbrush.swayPhase ?? 0)) * (6 * worldScale);
+    const spread = (24 + (stage - 1) * 18) * worldScale;
+    const sway = Math.sin((time / 1000) * (nestbrush.swayRate ?? 0.001) + (nestbrush.swayPhase ?? 0)) * (3.5 * worldScale);
 
     ctx.save();
     ctx.lineCap = 'round';
-    ctx.strokeStyle = 'hsla(106deg 42% 32% / 0.95)';
-    ctx.lineWidth = Math.max(1.4, 2.1 * worldScale);
 
-    ctx.beginPath();
-    ctx.moveTo(baseX, baseY);
-    ctx.bezierCurveTo(baseX - width * 0.15 + sway * 0.2, baseY - height * 0.32, baseX + width * 0.12 + sway * 0.8, baseY - height * 0.68, baseX + sway, baseY - height);
-    ctx.stroke();
+    // Compact shrub mass (short + horizontal growth), not a trunk-like tree.
+    const clumpCenterY = baseY - height * 0.38;
+    const blobCount = 7 + stage * 2;
+    for (let i = 0; i < blobCount; i += 1) {
+      const t = i / Math.max(1, blobCount - 1);
+      const side = t * 2 - 1;
+      const layer = i % 3;
+      const blobX = baseX + side * spread * (0.35 + 0.45 * Math.abs(side)) + sway * (0.45 + 0.3 * (1 - Math.abs(side)));
+      const blobY = clumpCenterY + (layer - 1) * height * 0.16 - (1 - Math.abs(side)) * height * 0.14;
+      const blobRx = (3.6 + stage * 0.7 + (i % 2) * 0.8) * worldScale;
+      const blobRy = (2.4 + stage * 0.45 + ((i + 1) % 2) * 0.6) * worldScale;
+      ctx.fillStyle = `hsla(${108 + (i % 3) * 5}deg ${44 + stage * 4}% ${28 + (i % 4) * 2}% / ${0.82 - (i % 2) * 0.08})`;
+      ctx.beginPath();
+      ctx.ellipse(blobX, blobY, blobRx, blobRy, 0, 0, TAU);
+      ctx.fill();
+    }
 
+    ctx.strokeStyle = 'hsla(110deg 40% 22% / 0.88)';
+    ctx.lineWidth = Math.max(1, 1.4 * worldScale);
     const branchCount = 5 + (stage - 1) * 2;
     for (let i = 0; i < branchCount; i += 1) {
       const pose = this.world.getNestbrushBranchPose?.(i, time / 1000);
@@ -415,13 +427,19 @@ export class Renderer {
       ctx.beginPath();
       ctx.moveTo(offsetX + pose.startX * worldScale, offsetY + pose.startY * worldScale);
       ctx.quadraticCurveTo(
-        offsetX + ((pose.startX + pose.endX) * 0.5) * worldScale,
-        offsetY + (pose.startY - (2 + (i % 3)) ) * worldScale,
+        offsetX + ((pose.startX + pose.endX) * 0.52) * worldScale,
+        offsetY + ((pose.startY + pose.endY) * 0.5 - 1.3) * worldScale,
         offsetX + pose.endX * worldScale,
         offsetY + pose.endY * worldScale
       );
       ctx.stroke();
     }
+
+    // subtle base tuft anchored to bottom
+    ctx.fillStyle = 'hsla(102deg 38% 26% / 0.72)';
+    ctx.beginPath();
+    ctx.ellipse(baseX + sway * 0.25, baseY - height * 0.08, spread * 0.62, Math.max(2, height * 0.18), 0, 0, TAU);
+    ctx.fill();
 
     ctx.restore();
   }

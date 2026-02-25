@@ -55,6 +55,8 @@ const NESTBRUSH_MAX_STAGE = 3;
 const NESTBRUSH_CAPACITY_BY_STAGE = [4, 8, 12];
 const NESTBRUSH_INCUBATION_PENALTY_MULTIPLIER = 1.18;
 const NESTBRUSH_HATCH_PENALTY_MULTIPLIER = 0.86;
+const NESTBRUSH_MIN_HEIGHT_RATIO = 0.07;
+const NESTBRUSH_MAX_HEIGHT_RATIO = 0.17;
 
 const FEMALE_NAME_POOL = Array.isArray(CONFIG.FEMALE_NAME_POOL) ? CONFIG.FEMALE_NAME_POOL : [];
 const MALE_NAME_POOL = Array.isArray(CONFIG.MALE_NAME_POOL) ? CONFIG.MALE_NAME_POOL : [];
@@ -275,7 +277,11 @@ function deserializeNestbrush(data, bounds) {
     id: Number.isFinite(source.id) ? source.id : 1,
     x: clamp(Number.isFinite(source.x) ? source.x : bounds.width * 0.5, 12, Math.max(12, bounds.width - 12)),
     bottomY: clamp(Number.isFinite(source.bottomY) ? source.bottomY : bounds.height - 3, Math.max(0, bounds.height - 14), bounds.height),
-    height: clamp(Number.isFinite(source.height) ? source.height : bounds.height * 0.2, bounds.height * 0.12, bounds.height * 0.35),
+    height: clamp(
+      Number.isFinite(source.height) ? source.height : bounds.height * 0.1,
+      bounds.height * NESTBRUSH_MIN_HEIGHT_RATIO,
+      bounds.height * NESTBRUSH_MAX_HEIGHT_RATIO
+    ),
     stage: clamp(Math.floor(Number.isFinite(source.stage) ? source.stage : 1), 1, NESTBRUSH_MAX_STAGE),
     growthProgressSec: Math.max(0, Number.isFinite(source.growthProgressSec) ? source.growthProgressSec : 0),
     swayPhase: Number.isFinite(source.swayPhase) ? source.swayPhase : rand(0, Math.PI * 2),
@@ -1361,7 +1367,7 @@ export class World {
       id: this.nextNestbrushId++,
       x: clamp(this.bounds.width * 0.5 + rand(-this.bounds.width * 0.1, this.bounds.width * 0.1), 14, Math.max(14, this.bounds.width - 14)),
       bottomY: this.bounds.height - rand(2, 5),
-      height: rand(this.bounds.height * 0.18, this.bounds.height * 0.24),
+      height: rand(this.bounds.height * 0.09, this.bounds.height * 0.13),
       stage: 1,
       growthProgressSec: 0,
       swayPhase: rand(0, Math.PI * 2),
@@ -1486,6 +1492,12 @@ export class World {
     fish.spawnTimeSec = this.simTimeSec - juvenileSeedAgeSec;
     fish.ageSecCached = juvenileSeedAgeSec;
     fish.updateLifeCycle(this.simTimeSec);
+    if (fish.lifeStage === 'BABY') {
+      const guaranteedJuvenileAgeSec = babyEndSec * 1.25;
+      fish.spawnTimeSec = this.simTimeSec - guaranteedJuvenileAgeSec;
+      fish.ageSecCached = guaranteedJuvenileAgeSec;
+      fish.updateLifeCycle(this.simTimeSec);
+    }
     this.fish.push(fish);
 
     return true;
@@ -2400,15 +2412,19 @@ export class World {
     const index = Math.max(0, Math.floor(branchIndex) % branchCount);
     const side = index % 2 === 0 ? -1 : 1;
     const tier = Math.floor(index / 2);
-    const t = clamp(0.2 + tier * (0.55 / Math.max(1, branchCount * 0.5)), 0.18, 0.88);
-    const width = 22 + (stage - 1) * 10;
-    const sway = Math.sin(timeSec * (this.nestbrush.swayRate ?? 0.001) + (this.nestbrush.swayPhase ?? 0)) * 6;
-    const localSway = Math.sin(timeSec * ((this.nestbrush.swayRate ?? 0.001) * 2.2) + index * 0.9) * 3;
-    const startX = this.nestbrush.x + sway * t;
-    const startY = this.nestbrush.bottomY - this.nestbrush.height * t;
-    const branchLen = width * (0.55 + (tier % 3) * 0.15);
+    const spreadX = 14 + (stage - 1) * 11;
+    const spreadY = this.nestbrush.height * (0.18 + (stage - 1) * 0.05);
+    const sway = Math.sin(timeSec * (this.nestbrush.swayRate ?? 0.001) + (this.nestbrush.swayPhase ?? 0)) * 4;
+    const localSway = Math.sin(timeSec * ((this.nestbrush.swayRate ?? 0.001) * 2.4) + index * 0.9) * 1.7;
+
+    const centerY = this.nestbrush.bottomY - this.nestbrush.height * 0.38;
+    const laneY = (tier - (branchCount - 1) * 0.25) * (spreadY / Math.max(1, branchCount * 0.5));
+    const startX = this.nestbrush.x + side * spreadX * 0.18 + sway * 0.45;
+    const startY = centerY + laneY;
+
+    const branchLen = spreadX * (0.55 + (tier % 3) * 0.12);
     const endX = startX + side * branchLen + localSway;
-    const endY = startY - this.nestbrush.height * (0.03 + (tier % 2) * 0.02);
+    const endY = startY + Math.sin(index * 1.17 + stage * 0.8) * 0.9 - this.nestbrush.height * 0.02;
     return { startX, startY, endX, endY };
   }
 
