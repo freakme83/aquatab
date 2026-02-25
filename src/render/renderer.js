@@ -404,13 +404,13 @@ export class Renderer {
     ctx.save();
 
     // Round-dot shrub clump with slight spacing.
-    const clumpCenterY = baseY - height * 0.24;
+    const clumpCenterY = baseY - height * 0.08;
     const rows = [
       // Bottom row is anchored to ground for a floor-attached bush silhouette.
       { y: 0, count: 6 + stage, widthFactor: 0.8 },
-      { y: -height * 0.12, count: 5 + stage, widthFactor: 0.68 },
-      { y: -height * 0.24, count: 4 + stage, widthFactor: 0.54 },
-      { y: -height * 0.35, count: 3 + stage, widthFactor: 0.40 }
+      { y: -height * 0.1, count: 5 + stage, widthFactor: 0.68 },
+      { y: -height * 0.2, count: 4 + stage, widthFactor: 0.54 },
+      { y: -height * 0.3, count: 3 + stage, widthFactor: 0.40 }
     ];
 
     for (const [rowIndex, row] of rows.entries()) {
@@ -424,7 +424,7 @@ export class Renderer {
         const norm = rowCount > 1 ? i / (rowCount - 1) : 0.5;
         const sideWeight = Math.abs(norm * 2 - 1);
         const leafX = baseX + xOffset + sway * (0.5 + (1 - sideWeight) * 0.4);
-        const leafY = clumpCenterY + row.y - sideWeight * height * 0.05;
+        const leafY = clumpCenterY + row.y - sideWeight * height * 0.035;
 
         ctx.fillStyle = `hsla(${111 + ((i + rowIndex) % 3) * 4}deg ${56 + stage * 3}% ${34 + (i % 2) * 3}% / 0.88)`;
         ctx.beginPath();

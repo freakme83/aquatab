@@ -273,10 +273,11 @@ function serializeNestbrush(plant) {
 function deserializeNestbrush(data, bounds) {
   if (!data || typeof data !== 'object') return null;
   const source = data;
+  const minBottomY = Math.max(0, bounds.height - 8);
   return {
     id: Number.isFinite(source.id) ? source.id : 1,
     x: clamp(Number.isFinite(source.x) ? source.x : bounds.width * 0.5, 12, Math.max(12, bounds.width - 12)),
-    bottomY: clamp(Number.isFinite(source.bottomY) ? source.bottomY : bounds.height - 3, Math.max(0, bounds.height - 14), bounds.height),
+    bottomY: clamp(Number.isFinite(source.bottomY) ? source.bottomY : bounds.height - 1, minBottomY, bounds.height),
     height: clamp(
       Number.isFinite(source.height) ? source.height : bounds.height * 0.1,
       bounds.height * NESTBRUSH_MIN_HEIGHT_RATIO,
@@ -1363,10 +1364,18 @@ export class World {
     if (this.nestbrush) return fail('MAX_COUNT');
     if (!Number.isFinite(this.bounds?.width) || !Number.isFinite(this.bounds?.height)) return fail('WORLD_NOT_READY');
 
+    const hasBerry = Array.isArray(this.berryReedPlants) && this.berryReedPlants.length > 0;
+    const berryAvgX = hasBerry
+      ? this.berryReedPlants.reduce((sum, plant) => sum + (plant?.x ?? this.bounds.width * 0.5), 0) / this.berryReedPlants.length
+      : this.bounds.width * 0.5;
+    const preferRight = berryAvgX < this.bounds.width * 0.5;
+    const sideAnchor = preferRight ? 0.78 : 0.22;
+    const sideJitter = rand(-0.1, 0.1) * this.bounds.width;
+
     this.nestbrush = {
       id: this.nextNestbrushId++,
-      x: clamp(this.bounds.width * 0.5 + rand(-this.bounds.width * 0.1, this.bounds.width * 0.1), 14, Math.max(14, this.bounds.width - 14)),
-      bottomY: this.bounds.height - rand(2, 5),
+      x: clamp(this.bounds.width * sideAnchor + sideJitter, 14, Math.max(14, this.bounds.width - 14)),
+      bottomY: this.bounds.height - rand(0.4, 1.6),
       height: rand(this.bounds.height * 0.09, this.bounds.height * 0.13),
       stage: 1,
       growthProgressSec: 0,
