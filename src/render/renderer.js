@@ -429,6 +429,27 @@ export class Renderer {
         ctx.arc(leafX, leafY, circleRadius, 0, TAU);
         ctx.fill();
       }
+
+      // very thin connective twigs between nearby dots
+      if (rowCount > 1) {
+        ctx.strokeStyle = 'hsla(114deg 26% 22% / 0.45)';
+        ctx.lineWidth = Math.max(0.45, 0.6 * worldScale);
+        for (let i = 0; i < rowCount - 1; i += 1) {
+          const normA = i / (rowCount - 1);
+          const normB = (i + 1) / (rowCount - 1);
+          const sideWeightA = Math.abs(normA * 2 - 1);
+          const sideWeightB = Math.abs(normB * 2 - 1);
+          const xA = baseX + (-laneHalf + spacing * i) + sway * (0.5 + (1 - sideWeightA) * 0.4);
+          const yA = clumpCenterY + row.y - sideWeightA * height * 0.07;
+          const xB = baseX + (-laneHalf + spacing * (i + 1)) + sway * (0.5 + (1 - sideWeightB) * 0.4);
+          const yB = clumpCenterY + row.y - sideWeightB * height * 0.07;
+
+          ctx.beginPath();
+          ctx.moveTo(xA, yA);
+          ctx.lineTo(xB, yB);
+          ctx.stroke();
+        }
+      }
     }
 
     // Organic pre-growth: tiny side buds appear and gradually grow before stage step.
@@ -460,11 +481,6 @@ export class Renderer {
       );
       ctx.stroke();
     }
-
-    ctx.fillStyle = 'hsla(104deg 44% 30% / 0.68)';
-    ctx.beginPath();
-    ctx.ellipse(baseX + sway * 0.25, baseY - height * 0.07, spread * 0.55, Math.max(1.8, height * 0.15), 0, 0, TAU);
-    ctx.fill();
 
     ctx.restore();
   }
