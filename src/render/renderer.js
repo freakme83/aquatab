@@ -95,7 +95,8 @@ export class Renderer {
       const dock = document.getElementById('deckToggle');
       const canvasRect = this.canvas.getBoundingClientRect();
       const dockRect = dock?.getBoundingClientRect?.();
-      if (dockRect) {
+      const dockVisible = dockRect && dockRect.height > 0 && (window.getComputedStyle(dock).display !== 'none');
+      if (dockVisible) {
         const overlapPx = Math.max(0, canvasRect.bottom - dockRect.top);
         availableHeight = Math.max(100, this.tankRect.height - overlapPx);
       }
