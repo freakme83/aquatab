@@ -499,67 +499,65 @@ input[type='range'] {
 
 @media (max-width: 860px) {
   .page-layout {
-    --controls-dock-height: 58px;
-  }
-
-  .page-layout {
     grid-template-columns: 1fr;
     align-items: start;
     min-height: 100vh;
     min-height: 100dvh;
-    padding-bottom: calc(var(--controls-dock-height) + env(safe-area-inset-bottom, 0px) + 10px);
   }
 
-  .tank-stage,
+  .tank-stage {
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    justify-content: center;
+    align-items: flex-start;
+  }
+
   .tank-shell {
     width: 100%;
-    height: calc(100vh - var(--controls-dock-height) - 24px);
-    height: calc(100dvh - var(--controls-dock-height) - 24px);
-    min-height: 360px;
+    height: auto;
+    aspect-ratio: 16 / 9;
+    max-height: min(64dvh, 540px);
+    min-height: 280px;
   }
 
   .deck-toggle {
     display: block;
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    position: static;
     width: 100%;
-    border-radius: 0;
-    border-left: 0;
-    border-right: 0;
-    border-bottom: 0;
-    padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
-    min-height: var(--controls-dock-height);
-    background: rgba(9, 21, 33, 0.95);
-    backdrop-filter: blur(6px);
-    z-index: 20;
+    margin-top: 10px;
+    padding: 10px 14px;
+    min-height: 48px;
+    border-radius: 10px;
   }
 
   .ui-deck {
-    position: fixed;
-    right: 14px;
-    bottom: calc(var(--controls-dock-height) + env(safe-area-inset-bottom, 0px) + 8px);
+    position: static;
+    right: auto;
+    bottom: auto;
     top: auto;
-    width: min(320px, calc(100vw - 28px));
+    width: 100%;
+    margin-top: 10px;
     height: auto;
-    max-height: min(76vh, 560px);
+    max-height: none;
     overflow-y: auto;
-    transform: translateY(calc(100% + 24px));
-    opacity: 0;
-    pointer-events: none;
-    transition: transform 170ms ease, opacity 170ms ease;
+    transform: none;
+    opacity: 1;
+    pointer-events: auto;
+    transition: none;
+  }
+
+  .ui-deck[data-open='false'] {
+    display: none;
   }
 
   .ui-deck[data-open='true'] {
-    transform: translateY(0);
-    opacity: 1;
-    pointer-events: auto;
+    display: flex;
   }
 
   .about-seo-footer {
     margin-top: 34px;
-    padding-bottom: calc(var(--controls-dock-height) + env(safe-area-inset-bottom, 0px) + 12px);
+    padding-bottom: 12px;
   }
 }
 
