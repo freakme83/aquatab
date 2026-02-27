@@ -14,7 +14,6 @@ const SAVE_VERSION = 1;
 const AUTOSAVE_INTERVAL_MS = 10_000;
 const INACTIVITY_AWAY_THRESHOLD_SIM_SEC = 300;
 const FULLSCREEN_HINT_SESSION_KEY = 'aquatab_fullscreen_hint_seen';
-const MOBILE_LAYOUT_MODE_STORAGE_KEY = 'aquatab_mobile_layout_mode';
 const RESIZE_DEBOUNCE_MS = 120;
 const WORLD_DESKTOP_WIDTH = 1200;
 const WORLD_DESKTOP_HEIGHT = 700;
@@ -67,13 +66,6 @@ fullscreenHint.hidden = true;
 fullscreenHint.setAttribute('data-cinema-hide', 'true');
 document.body.appendChild(fullscreenHint);
 
-const layoutModeToggle = document.createElement('button');
-layoutModeToggle.type = 'button';
-layoutModeToggle.className = 'layout-mode-toggle';
-layoutModeToggle.hidden = true;
-layoutModeToggle.setAttribute('data-cinema-hide', 'true');
-document.body.appendChild(layoutModeToggle);
-
 function computeCleanlinessTrend(simTimeSec, hygiene01) {
   const currentSimTime = Number.isFinite(simTimeSec) ? simTimeSec : 0;
   const currentHygiene = Math.max(0, Math.min(1, hygiene01 ?? 1));
@@ -119,51 +111,20 @@ function getDefaultWorldBounds() {
   return { width: WORLD_DESKTOP_WIDTH, height: WORLD_DESKTOP_HEIGHT };
 }
 
-function getWorldBoundsForLayoutPreference(preference) {
-  if (preference === 'portrait') return { width: WORLD_MOBILE_WIDTH, height: WORLD_MOBILE_HEIGHT };
-  if (preference === 'landscape') return { width: WORLD_DESKTOP_WIDTH, height: WORLD_DESKTOP_HEIGHT };
-  return null;
-}
-
-function getMobileLayoutPreference() {
-  const value = localStorage.getItem(MOBILE_LAYOUT_MODE_STORAGE_KEY);
-  return value === 'landscape' || value === 'portrait' ? value : 'auto';
-}
-
-function setMobileLayoutPreference(mode) {
-  if (mode === 'landscape' || mode === 'portrait') localStorage.setItem(MOBILE_LAYOUT_MODE_STORAGE_KEY, mode);
-  else localStorage.removeItem(MOBILE_LAYOUT_MODE_STORAGE_KEY);
-}
-
 function getEffectiveMobileLayoutMode() {
   const isCoarsePointer = window.matchMedia?.('(pointer: coarse)')?.matches ?? false;
   const isMobileViewport = window.innerWidth < 860;
   if (!isCoarsePointer && !isMobileViewport) return 'desktop';
 
-  const preference = getMobileLayoutPreference();
-  if (preference === 'landscape' || preference === 'portrait') return preference;
-
-  return window.innerWidth >= 860 ? 'landscape' : 'portrait';
+  return 'landscape';
 }
 
 function applyMobileLayoutMode() {
   const mode = getEffectiveMobileLayoutMode();
   document.body.dataset.mobileLayout = mode;
-
-  if (mode === 'desktop') {
-    layoutModeToggle.hidden = true;
-    return;
-  }
-
-  const preference = getMobileLayoutPreference();
-  layoutModeToggle.hidden = false;
-  layoutModeToggle.textContent = `Layout: ${preference[0].toUpperCase()}${preference.slice(1)}`;
 }
 
 function resolveSavedWorldBounds(payload) {
-  const preferredBounds = getWorldBoundsForLayoutPreference(getMobileLayoutPreference());
-  if (preferredBounds) return preferredBounds;
-
   const width = Number.isFinite(payload?.boundsWidth) ? payload.boundsWidth : null;
   const height = Number.isFinite(payload?.boundsHeight) ? payload.boundsHeight : null;
   if (width != null && height != null && width > 0 && height > 0) {
@@ -801,14 +762,6 @@ window.visualViewport?.addEventListener('resize', queueResize);
 new ResizeObserver(resize).observe(tankShell || canvas);
 document.addEventListener('fullscreenchange', () => {
   syncCinemaMode();
-  queueResize();
-});
-
-layoutModeToggle.addEventListener('click', () => {
-  const preference = getMobileLayoutPreference();
-  const nextPreference = preference === 'auto' ? 'landscape' : (preference === 'landscape' ? 'portrait' : 'auto');
-  setMobileLayoutPreference(nextPreference);
-  applyMobileLayoutMode();
   queueResize();
 });
 
