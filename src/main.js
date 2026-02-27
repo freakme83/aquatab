@@ -127,6 +127,13 @@ function getDefaultWorldBounds() {
 function resolveSavedWorldBounds(payload) {
   const width = Number.isFinite(payload?.boundsWidth) ? payload.boundsWidth : null;
   const height = Number.isFinite(payload?.boundsHeight) ? payload.boundsHeight : null;
+  const isCoarsePointer = window.matchMedia?.('(pointer: coarse)')?.matches ?? false;
+  const isLandscapeViewport = window.innerWidth >= window.innerHeight;
+
+  if (isCoarsePointer && isLandscapeViewport) {
+    return { width: WORLD_TOUCH_LANDSCAPE_WIDTH, height: WORLD_TOUCH_LANDSCAPE_HEIGHT };
+  }
+
   if (width != null && height != null && width > 0 && height > 0) {
     return { width, height };
   }
