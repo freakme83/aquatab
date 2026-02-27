@@ -119,6 +119,12 @@ function getDefaultWorldBounds() {
   return { width: WORLD_DESKTOP_WIDTH, height: WORLD_DESKTOP_HEIGHT };
 }
 
+function getWorldBoundsForLayoutPreference(preference) {
+  if (preference === 'portrait') return { width: WORLD_MOBILE_WIDTH, height: WORLD_MOBILE_HEIGHT };
+  if (preference === 'landscape') return { width: WORLD_DESKTOP_WIDTH, height: WORLD_DESKTOP_HEIGHT };
+  return null;
+}
+
 function getMobileLayoutPreference() {
   const value = localStorage.getItem(MOBILE_LAYOUT_MODE_STORAGE_KEY);
   return value === 'landscape' || value === 'portrait' ? value : 'auto';
@@ -155,6 +161,9 @@ function applyMobileLayoutMode() {
 }
 
 function resolveSavedWorldBounds(payload) {
+  const preferredBounds = getWorldBoundsForLayoutPreference(getMobileLayoutPreference());
+  if (preferredBounds) return preferredBounds;
+
   const width = Number.isFinite(payload?.boundsWidth) ? payload.boundsWidth : null;
   const height = Number.isFinite(payload?.boundsHeight) ? payload.boundsHeight : null;
   if (width != null && height != null && width > 0 && height > 0) {

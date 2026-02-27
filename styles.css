@@ -506,9 +506,10 @@ input[type='range'] {
 
   body[data-mobile-layout='landscape'] .page-layout {
     --tank-height: clamp(460px, 82vh, 790px);
-    grid-template-columns: minmax(0, 1fr) 288px;
-    gap: clamp(8px, 1.2vw, 16px);
-    padding: clamp(20px, 3.5vw, 48px);
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 30vw);
+    gap: 8px;
+    padding: 12px;
+    padding-bottom: 12px;
   }
 
   body[data-mobile-layout='landscape'] .tank-stage,
