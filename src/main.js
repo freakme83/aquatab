@@ -19,6 +19,8 @@ const WORLD_DESKTOP_WIDTH = 1200;
 const WORLD_DESKTOP_HEIGHT = 700;
 const WORLD_MOBILE_WIDTH = 700;
 const WORLD_MOBILE_HEIGHT = 1200;
+const WORLD_TOUCH_LANDSCAPE_WIDTH = 1200;
+const WORLD_TOUCH_LANDSCAPE_HEIGHT = 700;
 
 const startScreen = document.getElementById('startScreen');
 const appRoot = document.getElementById('appRoot');
@@ -110,9 +112,15 @@ function loadSavedWorldSnapshot() {
 function getDefaultWorldBounds() {
   const isCoarsePointer = window.matchMedia?.('(pointer: coarse)')?.matches ?? false;
   const isMobileViewport = window.innerWidth < 860;
+  const isLandscapeViewport = window.innerWidth >= window.innerHeight;
+
   if (isCoarsePointer || isMobileViewport) {
+    if (isLandscapeViewport) {
+      return { width: WORLD_TOUCH_LANDSCAPE_WIDTH, height: WORLD_TOUCH_LANDSCAPE_HEIGHT };
+    }
     return { width: WORLD_MOBILE_WIDTH, height: WORLD_MOBILE_HEIGHT };
   }
+
   return { width: WORLD_DESKTOP_WIDTH, height: WORLD_DESKTOP_HEIGHT };
 }
 

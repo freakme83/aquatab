@@ -497,7 +497,7 @@ input[type='range'] {
   display: none;
 }
 
-@media (max-width: 860px) {
+@media (max-width: 860px), (pointer: coarse) and (max-width: 1200px) {
   .page-layout {
     grid-template-columns: 1fr;
     align-items: start;
@@ -517,8 +517,8 @@ input[type='range'] {
     width: 100%;
     height: auto;
     aspect-ratio: 16 / 9;
-    max-height: min(64dvh, 540px);
-    min-height: 280px;
+    max-height: min(82dvh, 680px);
+    min-height: 320px;
   }
 
   .deck-toggle {
