@@ -594,6 +594,9 @@ export class Fish {
     const bottomBias = this.#bottomDwellerBiasVector(chasingPoop);
     desiredX += bottomBias.x;
     desiredY += bottomBias.y;
+    const bottomOrganic = this.#bottomDwellerOrganicVector();
+    desiredX += bottomOrganic.x;
+    desiredY += bottomOrganic.y;
 
     if (this.matingAnim && this.lifeState === 'ALIVE') {
       const progress = clamp01((nowSec - this.matingAnim.startSec) / Math.max(0.001, this.matingAnim.durationSec ?? 1.1));
@@ -1059,14 +1062,17 @@ export class Fish {
         this.bottomSweepLaneY = rand(laneMinY, laneMaxY);
       }
       if (Math.random() < 0.2) {
-        this.bottomSweepLaneY = clamp(this.bottomSweepLaneY + rand(-12, 12), laneMinY, laneMaxY);
+        this.bottomSweepLaneY = clamp(this.bottomSweepLaneY + rand(-16, 16), laneMinY, laneMaxY);
       }
 
       const probeChance = clamp(bottom.probeChancePerRetarget ?? 0.24, 0, 1);
       const probeUp = Math.random() < probeChance
         ? rand(bottom.probeDepthMinPx ?? 3, bottom.probeDepthMaxPx ?? 14)
         : rand(0, 3);
-      const verticalWobble = rand(-10, 10);
+      const sweepProgress01 = clamp((this.position.x - effectiveMinX) / Math.max(1, effectiveMaxX - effectiveMinX), 0, 1);
+      const directionalProgress01 = this.bottomSweepDirection > 0 ? sweepProgress01 : (1 - sweepProgress01);
+      const arcLift = Math.sin(directionalProgress01 * Math.PI) * rand(4, 12);
+      const verticalWobble = rand(-12, 12);
 
       const targetX = this.bottomSweepDirection > 0
         ? effectiveMaxX - rand(0, 12)
@@ -1074,7 +1080,7 @@ export class Fish {
 
       return {
         x: clamp(targetX, movement.minX, movement.maxX),
-        y: clamp(this.bottomSweepLaneY + verticalWobble - probeUp, movement.minY, movement.maxY)
+        y: clamp(this.bottomSweepLaneY + verticalWobble - arcLift - probeUp, movement.minY, movement.maxY)
       };
     }
 
@@ -1187,6 +1193,26 @@ export class Fish {
     const strength = (bottom.steerBiasStrength ?? 1.3) * (allowExcursion ? 0.55 : 0.72);
     const pull = clamp(distance / span, -1, 1) * strength;
     return { x: 0, y: pull };
+  }
+
+  #bottomDwellerOrganicVector() {
+    const bottom = this.species?.bottomDweller;
+    if (!bottom) return { x: 0, y: 0 };
+
+    const movement = this.#movementBounds();
+    const horizontalSpan = Math.max(1, movement.maxX - movement.minX);
+    const normalizedX = (this.position.x - movement.minX) / horizontalSpan;
+    const swayPhase = this.cruisePhase + normalizedX * Math.PI * 3.4;
+    const ySway = Math.sin(swayPhase) * 0.24 + Math.sin(swayPhase * 0.57 + Math.PI * 0.33) * 0.11;
+
+    // Keep scan direction stable, but reduce abrupt "metronome" turns at each edge.
+    const edgeProximity = Math.min(normalizedX, 1 - normalizedX);
+    const xDamp = clamp((0.12 - edgeProximity) / 0.12, 0, 1);
+    const xSway = -this.bottomSweepDirection * xDamp * 0.16;
+    return {
+      x: xSway,
+      y: ySway
+    };
   }
 
   #schoolingVector(world, nowSec) {
