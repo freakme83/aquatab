@@ -538,7 +538,12 @@ export class World {
 
     this.initialFishCount = normalizedInitialFishCount;
     this.foodsConsumedCount = 0;
+    this.foodAmountConsumedTotal = 0;
     this.birthsCount = 0;
+    this.eggsLaidCount = 0;
+    this.deathsCount = 0;
+    this.peakPopulationCount = 0;
+    this.grandparentIds = new Set();
     this.filterUnlockThreshold = this.initialFishCount * 4;
     this.filterUnlocked = false;
     this.filterDepletedThreshold01 = FILTER_DEPLETED_THRESHOLD_01;
@@ -575,6 +580,7 @@ export class World {
     };
 
     this.#generateInitialPopulation(this.initialFishCount);
+    this.peakPopulationCount = Math.max(this.peakPopulationCount, this.fish.length);
     this.#seedBubbles();
     this.#seedGroundAlgae();
   }
@@ -861,7 +867,12 @@ export class World {
       speedMultiplier: Number.isFinite(this.speedMultiplier) ? this.speedMultiplier : 1,
       initialFishCount: this.initialFishCount,
       foodsConsumedCount: this.foodsConsumedCount,
+      foodAmountConsumedTotal: this.foodAmountConsumedTotal,
       birthsCount: this.birthsCount,
+      eggsLaidCount: this.eggsLaidCount,
+      deathsCount: this.deathsCount,
+      peakPopulationCount: this.peakPopulationCount,
+      grandparentIds: [...this.grandparentIds],
       water: serializeWater(this.water),
       fish: this.fish.map((entry) => entry.toJSON()),
       fishArchive: [...this.fishArchiveById.values()].map((entry) => entry.toJSON()),
@@ -882,7 +893,12 @@ export class World {
     this.simTimeSec = Math.max(0, Number.isFinite(source.simTimeSec) ? source.simTimeSec : 0);
     this.initialFishCount = Math.max(1, Math.min(6, Math.round(Number.isFinite(source.initialFishCount) ? source.initialFishCount : this.initialFishCount)));
     this.foodsConsumedCount = Math.max(0, Math.floor(Number.isFinite(source.foodsConsumedCount) ? source.foodsConsumedCount : this.foodsConsumedCount));
+    this.foodAmountConsumedTotal = Math.max(0, Number.isFinite(source.foodAmountConsumedTotal) ? source.foodAmountConsumedTotal : this.foodAmountConsumedTotal);
     this.birthsCount = Math.max(0, Math.floor(Number.isFinite(source.birthsCount) ? source.birthsCount : 0));
+    this.eggsLaidCount = Math.max(0, Math.floor(Number.isFinite(source.eggsLaidCount) ? source.eggsLaidCount : 0));
+    this.deathsCount = Math.max(0, Math.floor(Number.isFinite(source.deathsCount) ? source.deathsCount : 0));
+    this.peakPopulationCount = Math.max(0, Math.floor(Number.isFinite(source.peakPopulationCount) ? source.peakPopulationCount : 0));
+    this.grandparentIds = new Set(Array.isArray(source.grandparentIds) ? source.grandparentIds.map((id) => String(id)) : []);
     // Compatibility note: older saves included `realTimeSec` as a parallel clock.
     // We intentionally ignore it and keep `simTimeSec` as the only canonical sim time.
     this.speedMultiplier = Math.max(MIN_SIM_SPEED_MULTIPLIER, Math.min(this.getAvailableSimSpeedMultiplierCap(), Number.isFinite(source.speedMultiplier) ? source.speedMultiplier : this.speedMultiplier));
@@ -937,6 +953,7 @@ export class World {
     this.nextFoodId = Math.max(1, ...this.food.map((entry) => Math.floor(entry.id || 0) + 1));
     this.nextPoopId = Math.max(1, ...this.poop.map((entry) => Math.floor(entry.id || 0) + 1));
     this.nextEggId = Math.max(1, ...this.eggs.map((entry) => Math.floor(entry.id || 0) + 1));
+    this.peakPopulationCount = Math.max(this.peakPopulationCount, this.fish.length);
     this.nextBerryReedPlantId = Math.max(1, ...this.berryReedPlants.map((entry) => Math.floor(entry.id || 0) + 1));
     this.nextFruitId = Math.max(1, ...this.fruits.map((entry) => Math.floor(entry.id || 0) + 1));
     this.nextNestbrushId = Math.max(1, (this.nestbrush?.id ?? 0) + 1);
@@ -1104,6 +1121,7 @@ export class World {
 
     if (consumed > 0) {
       this.foodsConsumedCount += 1;
+      this.foodAmountConsumedTotal += consumed;
 
       if (!this.filterUnlocked && this.foodsConsumedCount >= this.filterUnlockThreshold) {
         this.filterUnlocked = true;
@@ -2078,6 +2096,8 @@ export class World {
       });
     }
 
+    this.eggsLaidCount += clutchCount;
+
     female.repro.state = 'COOLDOWN';
     female.repro.cooldownUntilSec = nowSec + randRange(MOTHER_COOLDOWN_SEC, 600, 1080) * motherCooldownScale;
     female.repro.dueAtSec = null;
@@ -2176,7 +2196,10 @@ export class World {
       const fish = this.fish[i];
       if (fish.lifeState === 'DEAD') {
         if (fish.deadAtSec == null) fish.deadAtSec = this.simTimeSec;
-        if (fish.history && fish.history.deathSimTimeSec == null) fish.history.deathSimTimeSec = this.simTimeSec;
+        if (fish.history && fish.history.deathSimTimeSec == null) {
+          fish.history.deathSimTimeSec = this.simTimeSec;
+          this.deathsCount += 1;
+        }
       }
     }
   }
@@ -2337,6 +2360,7 @@ export class World {
         baby.ageSecCached = 0;
         this.fish.push(baby);
         this.birthsCount += 1;
+        this.peakPopulationCount = Math.max(this.peakPopulationCount, this.fish.length);
 
         const mother = this.getFishById(egg.motherId);
         if (mother) {
@@ -2350,6 +2374,12 @@ export class World {
           if (!father.history.childrenIds.includes(babyId)) father.history.childrenIds.push(babyId);
         }
 
+        const ancestorIds = [mother?.history?.motherId, mother?.history?.fatherId, father?.history?.motherId, father?.history?.fatherId];
+        for (const ancestorId of ancestorIds) {
+          if (ancestorId == null) continue;
+          this.grandparentIds.add(String(ancestorId));
+        }
+
         egg.state = 'HATCHED';
       } else {
         egg.state = 'FAILED';
@@ -2357,6 +2387,43 @@ export class World {
 
       this.eggs.splice(i, 1);
     }
+  }
+
+
+  getEcosystemReport() {
+    const simDurationSec = Math.max(0, this.simTimeSec);
+    const longestLived = this.#findLongestLivedFish();
+
+    return {
+      simDurationSec,
+      eggsLaidCount: Math.max(0, Math.floor(this.eggsLaidCount)),
+      birthsCount: Math.max(0, Math.floor(this.birthsCount)),
+      deathsCount: Math.max(0, Math.floor(this.deathsCount)),
+      peakPopulationCount: Math.max(0, Math.floor(this.peakPopulationCount)),
+      longestLivedFishName: longestLived?.name ?? 'Unknown',
+      grandparentCount: this.grandparentIds.size,
+      foodAmountConsumedTotal: Math.max(0, this.foodAmountConsumedTotal)
+    };
+  }
+
+  #findLongestLivedFish() {
+    let winner = null;
+    for (const fish of this.fishArchiveById.values()) {
+      const birthSec = Number.isFinite(fish.history?.birthSimTimeSec)
+        ? fish.history.birthSimTimeSec
+        : Number.isFinite(fish.spawnTimeSec)
+          ? fish.spawnTimeSec
+          : 0;
+      const deathSec = Number.isFinite(fish.history?.deathSimTimeSec)
+        ? fish.history.deathSimTimeSec
+        : this.simTimeSec;
+      const livedSec = Math.max(0, deathSec - birthSec);
+
+      if (!winner || livedSec > winner.livedSec) {
+        winner = { name: String(fish.name ?? 'Unknown'), livedSec };
+      }
+    }
+    return winner;
   }
 
   #makeBerryReedBranches() {
