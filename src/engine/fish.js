@@ -92,6 +92,8 @@ export const FISH_SAVE_KEYS = [
   'matingAnim',
   'digestBites',
   'lastPoopConsumedAtSimSec',
+  'lastEggConsumedAtSimSec',
+  'eggSnackCooldownUntilSec',
   'schoolingBias',
   'soloUntilSec',
   'nextSoloWindowAtSec',
@@ -258,6 +260,8 @@ export class Fish {
     this.matingAnim = null;
     this.digestBites = Math.max(0, Math.floor(options.digestBites ?? 0));
     this.lastPoopConsumedAtSimSec = Number.isFinite(options.lastPoopConsumedAtSimSec) ? options.lastPoopConsumedAtSimSec : null;
+    this.lastEggConsumedAtSimSec = Number.isFinite(options.lastEggConsumedAtSimSec) ? options.lastEggConsumedAtSimSec : null;
+    this.eggSnackCooldownUntilSec = Number.isFinite(options.eggSnackCooldownUntilSec) ? options.eggSnackCooldownUntilSec : 0;
 
     this.hoverUntilSec = 0;
     this.nextHoverEligibleAtSimSec = rand(HOVER_COOLDOWN_MIN_SEC, HOVER_COOLDOWN_MAX_SEC);
@@ -319,6 +323,8 @@ export class Fish {
     fish.waterPenalty01 = clamp01(Number.isFinite(fish.waterPenalty01) ? fish.waterPenalty01 : 0);
     fish.digestBites = Math.max(0, Math.floor(fish.digestBites ?? 0));
     fish.lastPoopConsumedAtSimSec = Number.isFinite(source.lastPoopConsumedAtSimSec) ? source.lastPoopConsumedAtSimSec : null;
+    fish.lastEggConsumedAtSimSec = Number.isFinite(source.lastEggConsumedAtSimSec) ? source.lastEggConsumedAtSimSec : null;
+    fish.eggSnackCooldownUntilSec = Number.isFinite(source.eggSnackCooldownUntilSec) ? source.eggSnackCooldownUntilSec : 0;
     if (!fish.behavior || typeof fish.behavior !== 'object') fish.behavior = { mode: 'wander', targetFoodId: null, targetKind: null, speedBoost: 1 };
     if (!('targetKind' in fish.behavior)) fish.behavior.targetKind = null;
     fish.bottomSweepLaneY = Number.isFinite(source.bottomSweepLaneY) ? source.bottomSweepLaneY : null;
@@ -594,6 +600,9 @@ export class Fish {
     const bottomBias = this.#bottomDwellerBiasVector(chasingPoop);
     desiredX += bottomBias.x;
     desiredY += bottomBias.y;
+    const bottomOrganic = this.#bottomDwellerOrganicVector();
+    desiredX += bottomOrganic.x;
+    desiredY += bottomOrganic.y;
 
     if (this.matingAnim && this.lifeState === 'ALIVE') {
       const progress = clamp01((nowSec - this.matingAnim.startSec) / Math.max(0.001, this.matingAnim.durationSec ?? 1.1));
@@ -685,15 +694,38 @@ export class Fish {
     const reachRadius = nearBottom ? FOOD_REACH_RADIUS * 1.7 : FOOD_REACH_RADIUS;
     if (Math.min(distHead, distBody) > reachRadius) return;
 
+    if (targetFood.kind === 'egg') {
+      const nowSec = world?.simTimeSec ?? 0;
+      if (nowSec < (this.eggSnackCooldownUntilSec ?? 0)) return;
+      if (this.hungerState !== 'STARVING') return;
+      if (Math.random() >= 0.3) {
+        this.eggSnackCooldownUntilSec = nowSec + 300;
+        this.behavior = { mode: 'wander', targetFoodId: null, targetKind: null, speedBoost: 1 };
+        return;
+      }
+    }
+
     const consumed = targetFood.kind === 'fruit'
       ? world.consumeFruit?.(targetFood.id)
       : (targetFood.kind === 'poop'
         ? world.consumePoop?.(targetFood.id, this.id)
-        : world.consumeFood(targetFood.id, targetFood.amount));
+        : (targetFood.kind === 'egg'
+          ? world.consumeEgg?.(targetFood.id, this.id)
+          : world.consumeFood(targetFood.id, targetFood.amount)));
     if (consumed <= 0) return;
     if (targetFood.kind === 'poop') this.lastPoopConsumedAtSimSec = Number.isFinite(world?.simTimeSec) ? world.simTimeSec : this.lastPoopConsumedAtSimSec;
+    if (targetFood.kind === 'egg') {
+      const nowSec = world?.simTimeSec ?? 0;
+      this.lastEggConsumedAtSimSec = Number.isFinite(nowSec) ? nowSec : this.lastEggConsumedAtSimSec;
+      this.eggSnackCooldownUntilSec = 0;
+    }
     this.eatAnimTimer = this.eatAnimDuration;
     this.eat(consumed);
+    if (targetFood.kind === 'egg') {
+      this.energy01 = 1;
+      this.hunger01 = 0;
+      this.hungerState = 'FED';
+    }
     this.history.mealsEaten += 1;
     this.digestBites += 1;
     if (this.lifeState !== 'ALIVE') return;
@@ -862,12 +894,25 @@ export class Fish {
       for (const poop of world?.poop ?? []) {
         if (!poop?.canBeEaten) continue;
         if (poop.y < this.bounds.height * 0.5 && this.behavior?.mode !== 'seekFood') continue;
-        candidates.push({ id: poop.id, x: poop.x, y: poop.y, amount: poop.nutrition ?? 0.1, kind: 'poop' });
+        candidates.push({ id: poop.id, x: poop.x, y: poop.y, amount: poop.nutrition ?? 0.5, kind: 'poop' });
+      }
+    }
+
+    const canSeekEggs = this.speciesId === 'SILT_SIFTER'
+      && this.hungerState === 'STARVING'
+      && (world?.simTimeSec ?? 0) >= (this.eggSnackCooldownUntilSec ?? 0);
+    if (canSeekEggs) {
+      for (const egg of world?.eggs ?? []) {
+        if (!egg || egg.state !== 'INCUBATING') continue;
+        if (egg.canBeEaten === false) continue;
+        if (egg.isProtectedByNestbrush === true) continue;
+        if ((egg.speciesId ?? DEFAULT_SPECIES_ID) !== LAB_MINNOW_SPECIES_ID) continue;
+        candidates.push({ id: egg.id, x: egg.x, y: egg.y, amount: egg.nutrition ?? 0.25, kind: 'egg' });
       }
     }
 
     const poopOnly = diet.includes('poop')
-      ? candidates.filter((entry) => entry.kind === 'poop')
+      ? candidates.filter((entry) => entry.kind === 'poop' || entry.kind === 'egg')
       : [];
     const pool = poopOnly.length ? poopOnly : candidates;
 
@@ -898,7 +943,20 @@ export class Fish {
     }
     if (diet.includes('poop')) {
       const poop = world?.poop?.find((entry) => entry.id === targetId && entry.canBeEaten !== false);
-      if (poop) return { ...poop, amount: poop.nutrition ?? 0.1, kind: 'poop' };
+      if (poop) return { ...poop, amount: poop.nutrition ?? 0.5, kind: 'poop' };
+
+      const canSeekEggs = this.speciesId === 'SILT_SIFTER'
+        && this.hungerState === 'STARVING'
+        && (world?.simTimeSec ?? 0) >= (this.eggSnackCooldownUntilSec ?? 0);
+      if (canSeekEggs) {
+        const egg = world?.eggs?.find((entry) => entry
+          && entry.id === targetId
+          && entry.state === 'INCUBATING'
+          && entry.canBeEaten !== false
+          && entry.isProtectedByNestbrush !== true
+          && (entry.speciesId ?? DEFAULT_SPECIES_ID) === LAB_MINNOW_SPECIES_ID);
+        if (egg) return { ...egg, amount: egg.nutrition ?? 0.25, kind: 'egg' };
+      }
     }
     return null;
   }
@@ -1059,14 +1117,17 @@ export class Fish {
         this.bottomSweepLaneY = rand(laneMinY, laneMaxY);
       }
       if (Math.random() < 0.2) {
-        this.bottomSweepLaneY = clamp(this.bottomSweepLaneY + rand(-12, 12), laneMinY, laneMaxY);
+        this.bottomSweepLaneY = clamp(this.bottomSweepLaneY + rand(-16, 16), laneMinY, laneMaxY);
       }
 
       const probeChance = clamp(bottom.probeChancePerRetarget ?? 0.24, 0, 1);
       const probeUp = Math.random() < probeChance
         ? rand(bottom.probeDepthMinPx ?? 3, bottom.probeDepthMaxPx ?? 14)
         : rand(0, 3);
-      const verticalWobble = rand(-10, 10);
+      const sweepProgress01 = clamp((this.position.x - effectiveMinX) / Math.max(1, effectiveMaxX - effectiveMinX), 0, 1);
+      const directionalProgress01 = this.bottomSweepDirection > 0 ? sweepProgress01 : (1 - sweepProgress01);
+      const arcLift = Math.sin(directionalProgress01 * Math.PI) * rand(4, 12);
+      const verticalWobble = rand(-12, 12);
 
       const targetX = this.bottomSweepDirection > 0
         ? effectiveMaxX - rand(0, 12)
@@ -1074,7 +1135,7 @@ export class Fish {
 
       return {
         x: clamp(targetX, movement.minX, movement.maxX),
-        y: clamp(this.bottomSweepLaneY + verticalWobble - probeUp, movement.minY, movement.maxY)
+        y: clamp(this.bottomSweepLaneY + verticalWobble - arcLift - probeUp, movement.minY, movement.maxY)
       };
     }
 
@@ -1187,6 +1248,26 @@ export class Fish {
     const strength = (bottom.steerBiasStrength ?? 1.3) * (allowExcursion ? 0.55 : 0.72);
     const pull = clamp(distance / span, -1, 1) * strength;
     return { x: 0, y: pull };
+  }
+
+  #bottomDwellerOrganicVector() {
+    const bottom = this.species?.bottomDweller;
+    if (!bottom) return { x: 0, y: 0 };
+
+    const movement = this.#movementBounds();
+    const horizontalSpan = Math.max(1, movement.maxX - movement.minX);
+    const normalizedX = (this.position.x - movement.minX) / horizontalSpan;
+    const swayPhase = this.cruisePhase + normalizedX * Math.PI * 3.4;
+    const ySway = Math.sin(swayPhase) * 0.24 + Math.sin(swayPhase * 0.57 + Math.PI * 0.33) * 0.11;
+
+    // Keep scan direction stable, but reduce abrupt "metronome" turns at each edge.
+    const edgeProximity = Math.min(normalizedX, 1 - normalizedX);
+    const xDamp = clamp((0.12 - edgeProximity) / 0.12, 0, 1);
+    const xSway = -this.bottomSweepDirection * xDamp * 0.16;
+    return {
+      x: xSway,
+      y: ySway
+    };
   }
 
   #schoolingVector(world, nowSec) {
