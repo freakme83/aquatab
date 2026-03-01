@@ -481,7 +481,7 @@ export class Fish {
         mode: 'seekLayTarget',
         targetFoodId: null,
         targetKind: null,
-        speedBoost: 1
+        speedBoost: 0.32
       };
       this.target = { x: this.repro.layTargetX, y: this.repro.layTargetY };
       this.#updateHoverAfterBehavior(world?.simTimeSec ?? 0);
@@ -981,7 +981,8 @@ export class Fish {
     if (this.behavior?.mode === 'seekFood' || this.behavior?.targetFoodId) return true;
     if (this.behavior?.mode === 'playChase' || this.behavior?.mode === 'playEvade') return true;
     if (this.isPlaying(nowSec)) return true;
-    if (this.repro?.state === 'LAYING' || this.repro?.state === 'GRAVID') return true;
+    if (this.repro?.state === 'GRAVID') return true;
+    if (this.repro?.state === 'LAYING' && this.behavior?.mode !== 'seekLayTarget') return true;
     if (this.matingAnim) return true;
     return false;
   }
@@ -1097,15 +1098,15 @@ export class Fish {
 
     if (this.repro?.state === 'GRAVID') {
       const dueAtSec = this.repro?.dueAtSec;
-      if (!Number.isFinite(dueAtSec)) return 0.5;
+      if (!Number.isFinite(dueAtSec)) return 0.72;
       const remainingSec = Math.max(0, dueAtSec - (world.simTimeSec ?? 0));
       const lateWindowSec = 60;
       const late01 = clamp01(1 - (remainingSec / lateWindowSec));
-      return lerp(0.45, 0.95, late01);
+      return lerp(0.68, 0.995, late01);
     }
 
     if (this.repro?.state === 'LAYING') return 1;
-    if (this.#hasIncubatingOwnEggs(world)) return 0.72;
+    if (this.#hasIncubatingOwnEggs(world)) return 0.88;
     return 0;
   }
 
@@ -1113,14 +1114,15 @@ export class Fish {
     const world = this._worldRef;
     const affinity01 = this.#nestbrushAffinity01(world);
     if (affinity01 <= 0) return null;
-    if (Math.random() > affinity01) return null;
+    const layingNow = this.repro?.state === 'LAYING';
+    if (!layingNow && Math.random() > affinity01) return null;
 
     const nestbrush = world?.nestbrush;
     if (!nestbrush) return null;
 
     const movement = this.#movementBounds();
-    const focusX = nestbrush.x + rand(-28, 28);
-    const focusY = nestbrush.bottomY - nestbrush.height * rand(0.25, 0.68) + rand(-8, 8);
+    const focusX = nestbrush.x + rand(-22, 22);
+    const focusY = nestbrush.bottomY - nestbrush.height * rand(0.28, 0.66) + rand(-6, 6);
     return {
       x: clamp(focusX, movement.minX, movement.maxX),
       y: clamp(focusY, movement.minY, movement.maxY)

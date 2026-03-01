@@ -2150,7 +2150,18 @@ export class World {
         const tx = Number.isFinite(fish.repro.layTargetX) ? fish.repro.layTargetX : fish.position.x;
         const ty = Number.isFinite(fish.repro.layTargetY) ? fish.repro.layTargetY : layTargetY;
         const d = Math.hypot(fish.position.x - tx, fish.position.y - ty);
-        if (d <= 10) this.#layEggClutch(fish, nowSec);
+
+        if (d <= 10) {
+          if (!Number.isFinite(fish.hoverUntilSec)) {
+            fish.hoverUntilSec = nowSec + rand(1.8, 2.8);
+            fish.hoverAnchor = { x: tx, y: ty };
+            fish.hoverOffset = { x: 0, y: 0 };
+          } else if (nowSec >= fish.hoverUntilSec) {
+            this.#layEggClutch(fish, nowSec);
+          }
+        } else if (d >= 16) {
+          fish.cancelHover?.();
+        }
       }
 
       if (fish.repro.state === 'COOLDOWN' && nowSec >= (fish.repro.cooldownUntilSec ?? 0)) {
