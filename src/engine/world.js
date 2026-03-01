@@ -47,6 +47,8 @@ const SILT_SIFTER_UNLOCK_BIRTHS = 10;
 const SILT_SIFTER_MAX_PLAYER_COUNT = 4;
 const SILT_SIFTER_RECENT_POOP_MIN_SEC = 180;
 const SILT_SIFTER_RECENT_POOP_MAX_SEC = 300;
+const SILT_SIFTER_EGG_MATE_BOOST_WINDOW_SEC = 300;
+const SILT_SIFTER_EGG_MATE_BOOST_MULTIPLIER = 3.2;
 const POOP_DISSOLVE_DIRT_UNITS = Math.max(0, CONFIG.world.poop?.dissolveDirtUnits ?? POOP_DIRT_PER_SEC * POOP_DEFAULT_TTL_SEC);
 const NESTBRUSH_UNLOCK_BIRTHS = 3;
 const NESTBRUSH_GROWTH_MIN_HYGIENE01 = 0.85;
@@ -1107,6 +1109,20 @@ export class World {
     return Math.max(0.05, Number.isFinite(poop?.nutrition) ? poop.nutrition : 0.5);
   }
 
+  consumeEgg(eggId, fishId = null) {
+    const index = this.eggs.findIndex((egg) => egg
+      && egg.id === eggId
+      && egg.state === 'INCUBATING'
+      && egg.canBeEaten !== false
+      && egg.isProtectedByNestbrush !== true
+      && (egg.speciesId ?? DEFAULT_SPECIES_ID) === LAB_MINNOW_SPECIES_ID);
+    if (index < 0) return 0;
+
+    const [egg] = this.eggs.splice(index, 1);
+    if (fishId != null) this.emit('egg:consume', { eggId, fishId });
+    return Math.max(0.05, Number.isFinite(egg?.nutrition) ? egg.nutrition : 0.25);
+  }
+
   consumeFood(foodId, amountToConsume = 0.5) {
     const food = this.food.find((entry) => entry.id === foodId);
     if (!food) return 0;
@@ -1132,13 +1148,22 @@ export class World {
   }
 
   // Future hook: edible target discovery.
-  // For now, fish can only eat food. Later we may include eggs/poop for certain species or traits.
+  // Kept broad intentionally; per-species logic still lives in Fish decision/consume flow.
   getEdibleTargetsForFish(fish) {
     if ((fish?.speciesId ?? DEFAULT_SPECIES_ID) === AZURE_DART_SPECIES_ID) {
       return this.fruits;
     }
     if ((fish?.speciesId ?? DEFAULT_SPECIES_ID) === SILT_SIFTER_SPECIES_ID) {
-      return [...this.poop, ...this.food];
+      const nowSec = this.simTimeSec ?? 0;
+      const canSeekEggs = fish?.hungerState === 'STARVING' && nowSec >= (fish?.eggSnackCooldownUntilSec ?? 0);
+      const eggs = canSeekEggs
+        ? this.eggs.filter((egg) => egg
+          && egg.state === 'INCUBATING'
+          && egg.canBeEaten !== false
+          && egg.isProtectedByNestbrush !== true
+          && (egg.speciesId ?? DEFAULT_SPECIES_ID) === LAB_MINNOW_SPECIES_ID)
+        : [];
+      return [...this.poop, ...eggs, ...this.food];
     }
     return this.food;
   }
@@ -1999,7 +2024,13 @@ export class World {
     const authorityStressFactor = speciesId === LAB_MINNOW_SPECIES_ID
       ? this.#getLabAuthorityStressFactor()
       : 1;
-    const pMate = MATE_BASE_CHANCE * hygieneFactor * wellbeingFactor * densityFactor * authorityStressFactor;
+    let pMate = MATE_BASE_CHANCE * hygieneFactor * wellbeingFactor * densityFactor * authorityStressFactor;
+    if (speciesId === SILT_SIFTER_SPECIES_ID) {
+      const aEggBoost = Number.isFinite(a.lastEggConsumedAtSimSec) && (nowSec - a.lastEggConsumedAtSimSec) <= SILT_SIFTER_EGG_MATE_BOOST_WINDOW_SEC;
+      const bEggBoost = Number.isFinite(b.lastEggConsumedAtSimSec) && (nowSec - b.lastEggConsumedAtSimSec) <= SILT_SIFTER_EGG_MATE_BOOST_WINDOW_SEC;
+      if (aEggBoost || bEggBoost) pMate *= SILT_SIFTER_EGG_MATE_BOOST_MULTIPLIER;
+    }
+    pMate = clamp01(pMate);
 
     if (Math.random() >= pMate) return;
 

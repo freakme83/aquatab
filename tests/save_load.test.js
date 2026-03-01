@@ -859,12 +859,16 @@ test('silt sifter species and poop-timestamp persist through save/load', () => {
   fish.speciesId = 'SILT_SIFTER';
   fish.species = SPECIES.SILT_SIFTER;
   fish.lastPoopConsumedAtSimSec = 123.45;
+  fish.lastEggConsumedAtSimSec = 77.7;
+  fish.eggSnackCooldownUntilSec = 456.7;
 
   const loaded = roundTrip(world);
   const loadedFish = loaded.getFishById(fish.id);
 
   assert.equal(loadedFish.speciesId, 'SILT_SIFTER');
   assert.equal(loadedFish.lastPoopConsumedAtSimSec, 123.45);
+  assert.equal(loadedFish.lastEggConsumedAtSimSec, 77.7);
+  assert.equal(loadedFish.eggSnackCooldownUntilSec, 456.7);
 });
 
 test('silt sifter does not schedule poop after two meals', () => {
@@ -904,6 +908,106 @@ test('silt sifter consuming poop prevents dissolve pollution', () => {
   assert.equal(world.poop.length, 0);
   assert.equal(world.pendingPoopDirt01, 0);
 });
+
+
+
+test('silt sifter can consume only unprotected lab minnow eggs, becomes fully FED, and failed egg attempt triggers cooldown', () => {
+  const world = makeWorldForTest();
+  const fish = world.fish[0];
+  fish.speciesId = 'SILT_SIFTER';
+  fish.species = SPECIES.SILT_SIFTER;
+  fish.sex = 'female';
+  fish.lifeState = 'ALIVE';
+  fish.lifeStage = 'ADULT';
+  fish.hungerState = 'STARVING';
+  fish.energy01 = 0.12;
+  fish.hunger01 = 0.88;
+  world.simTimeSec = 100;
+
+  const azureEgg = {
+    id: world.nextEggId++,
+    x: fish.position.x,
+    y: fish.position.y,
+    laidAtSec: 0,
+    hatchAtSec: 999,
+    motherId: null,
+    fatherId: null,
+    motherTraits: {},
+    fatherTraits: {},
+    speciesId: 'AZURE_DART',
+    state: 'INCUBATING',
+    canBeEaten: true,
+    nutrition: 0.25,
+    isProtectedByNestbrush: false,
+    nestbrushAttachment: null
+  };
+  const protectedLabEgg = {
+    id: world.nextEggId++,
+    x: fish.position.x,
+    y: fish.position.y,
+    laidAtSec: 0,
+    hatchAtSec: 999,
+    motherId: null,
+    fatherId: null,
+    motherTraits: {},
+    fatherTraits: {},
+    speciesId: 'LAB_MINNOW',
+    state: 'INCUBATING',
+    canBeEaten: true,
+    nutrition: 0.25,
+    isProtectedByNestbrush: true,
+    nestbrushAttachment: { branchIndex: 0, u: 0.7, v: 0 }
+  };
+  const labEgg = {
+    id: world.nextEggId++,
+    x: fish.position.x,
+    y: fish.position.y,
+    laidAtSec: 0,
+    hatchAtSec: 999,
+    motherId: null,
+    fatherId: null,
+    motherTraits: {},
+    fatherTraits: {},
+    speciesId: 'LAB_MINNOW',
+    state: 'INCUBATING',
+    canBeEaten: true,
+    nutrition: 0.25,
+    isProtectedByNestbrush: false,
+    nestbrushAttachment: null
+  };
+  world.eggs.push(azureEgg, protectedLabEgg, labEgg);
+
+  fish.behavior = { mode: 'seekFood', targetFoodId: labEgg.id, targetKind: 'egg', speedBoost: 1 };
+  withStubbedRandom(0.1, () => fish.tryConsumeFood(world));
+
+  assert.equal(world.eggs.some((egg) => egg.id === labEgg.id), false, 'unprotected lab egg should be consumed');
+  assert.equal(world.eggs.some((egg) => egg.id === azureEgg.id), true, 'azure egg should never be edible');
+  assert.equal(world.eggs.some((egg) => egg.id === protectedLabEgg.id), true, 'nestbrush-protected lab egg should remain');
+  assert.equal(fish.hungerState, 'FED');
+  assert.equal(fish.energy01, 1);
+  assert.equal(fish.hunger01, 0);
+  assert.equal(fish.lastEggConsumedAtSimSec, 100);
+
+  const failEgg = {
+    ...labEgg,
+    id: world.nextEggId++,
+    isProtectedByNestbrush: false
+  };
+  world.eggs.push(failEgg);
+  fish.hungerState = 'STARVING';
+  fish.energy01 = 0.2;
+  fish.hunger01 = 0.8;
+  fish.behavior = { mode: 'seekFood', targetFoodId: failEgg.id, targetKind: 'egg', speedBoost: 1 };
+  withStubbedRandom(0.9, () => fish.tryConsumeFood(world));
+
+  assert.equal(world.eggs.some((egg) => egg.id === failEgg.id), true, 'failed roll should not consume egg');
+  assert.equal(fish.eggSnackCooldownUntilSec, 400, 'failed roll should set 5 minute cooldown');
+
+  fish.behavior = { mode: 'wander', targetFoodId: null, targetKind: null, speedBoost: 1 };
+  fish.decideBehavior(world);
+  assert.notEqual(fish.behavior.targetKind, 'egg', 'egg should not be targeted while cooldown is active');
+});
+
 
 test('silt sifter unlock gate requires 10 births unless dev mode', () => {
   const world = makeWorldForTest();

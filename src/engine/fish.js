@@ -92,6 +92,8 @@ export const FISH_SAVE_KEYS = [
   'matingAnim',
   'digestBites',
   'lastPoopConsumedAtSimSec',
+  'lastEggConsumedAtSimSec',
+  'eggSnackCooldownUntilSec',
   'schoolingBias',
   'soloUntilSec',
   'nextSoloWindowAtSec',
@@ -258,6 +260,8 @@ export class Fish {
     this.matingAnim = null;
     this.digestBites = Math.max(0, Math.floor(options.digestBites ?? 0));
     this.lastPoopConsumedAtSimSec = Number.isFinite(options.lastPoopConsumedAtSimSec) ? options.lastPoopConsumedAtSimSec : null;
+    this.lastEggConsumedAtSimSec = Number.isFinite(options.lastEggConsumedAtSimSec) ? options.lastEggConsumedAtSimSec : null;
+    this.eggSnackCooldownUntilSec = Number.isFinite(options.eggSnackCooldownUntilSec) ? options.eggSnackCooldownUntilSec : 0;
 
     this.hoverUntilSec = 0;
     this.nextHoverEligibleAtSimSec = rand(HOVER_COOLDOWN_MIN_SEC, HOVER_COOLDOWN_MAX_SEC);
@@ -319,6 +323,8 @@ export class Fish {
     fish.waterPenalty01 = clamp01(Number.isFinite(fish.waterPenalty01) ? fish.waterPenalty01 : 0);
     fish.digestBites = Math.max(0, Math.floor(fish.digestBites ?? 0));
     fish.lastPoopConsumedAtSimSec = Number.isFinite(source.lastPoopConsumedAtSimSec) ? source.lastPoopConsumedAtSimSec : null;
+    fish.lastEggConsumedAtSimSec = Number.isFinite(source.lastEggConsumedAtSimSec) ? source.lastEggConsumedAtSimSec : null;
+    fish.eggSnackCooldownUntilSec = Number.isFinite(source.eggSnackCooldownUntilSec) ? source.eggSnackCooldownUntilSec : 0;
     if (!fish.behavior || typeof fish.behavior !== 'object') fish.behavior = { mode: 'wander', targetFoodId: null, targetKind: null, speedBoost: 1 };
     if (!('targetKind' in fish.behavior)) fish.behavior.targetKind = null;
     fish.bottomSweepLaneY = Number.isFinite(source.bottomSweepLaneY) ? source.bottomSweepLaneY : null;
@@ -688,15 +694,38 @@ export class Fish {
     const reachRadius = nearBottom ? FOOD_REACH_RADIUS * 1.7 : FOOD_REACH_RADIUS;
     if (Math.min(distHead, distBody) > reachRadius) return;
 
+    if (targetFood.kind === 'egg') {
+      const nowSec = world?.simTimeSec ?? 0;
+      if (nowSec < (this.eggSnackCooldownUntilSec ?? 0)) return;
+      if (this.hungerState !== 'STARVING') return;
+      if (Math.random() >= 0.3) {
+        this.eggSnackCooldownUntilSec = nowSec + 300;
+        this.behavior = { mode: 'wander', targetFoodId: null, targetKind: null, speedBoost: 1 };
+        return;
+      }
+    }
+
     const consumed = targetFood.kind === 'fruit'
       ? world.consumeFruit?.(targetFood.id)
       : (targetFood.kind === 'poop'
         ? world.consumePoop?.(targetFood.id, this.id)
-        : world.consumeFood(targetFood.id, targetFood.amount));
+        : (targetFood.kind === 'egg'
+          ? world.consumeEgg?.(targetFood.id, this.id)
+          : world.consumeFood(targetFood.id, targetFood.amount)));
     if (consumed <= 0) return;
     if (targetFood.kind === 'poop') this.lastPoopConsumedAtSimSec = Number.isFinite(world?.simTimeSec) ? world.simTimeSec : this.lastPoopConsumedAtSimSec;
+    if (targetFood.kind === 'egg') {
+      const nowSec = world?.simTimeSec ?? 0;
+      this.lastEggConsumedAtSimSec = Number.isFinite(nowSec) ? nowSec : this.lastEggConsumedAtSimSec;
+      this.eggSnackCooldownUntilSec = 0;
+    }
     this.eatAnimTimer = this.eatAnimDuration;
     this.eat(consumed);
+    if (targetFood.kind === 'egg') {
+      this.energy01 = 1;
+      this.hunger01 = 0;
+      this.hungerState = 'FED';
+    }
     this.history.mealsEaten += 1;
     this.digestBites += 1;
     if (this.lifeState !== 'ALIVE') return;
@@ -869,8 +898,21 @@ export class Fish {
       }
     }
 
+    const canSeekEggs = this.speciesId === 'SILT_SIFTER'
+      && this.hungerState === 'STARVING'
+      && (world?.simTimeSec ?? 0) >= (this.eggSnackCooldownUntilSec ?? 0);
+    if (canSeekEggs) {
+      for (const egg of world?.eggs ?? []) {
+        if (!egg || egg.state !== 'INCUBATING') continue;
+        if (egg.canBeEaten === false) continue;
+        if (egg.isProtectedByNestbrush === true) continue;
+        if ((egg.speciesId ?? DEFAULT_SPECIES_ID) !== LAB_MINNOW_SPECIES_ID) continue;
+        candidates.push({ id: egg.id, x: egg.x, y: egg.y, amount: egg.nutrition ?? 0.25, kind: 'egg' });
+      }
+    }
+
     const poopOnly = diet.includes('poop')
-      ? candidates.filter((entry) => entry.kind === 'poop')
+      ? candidates.filter((entry) => entry.kind === 'poop' || entry.kind === 'egg')
       : [];
     const pool = poopOnly.length ? poopOnly : candidates;
 
@@ -902,6 +944,19 @@ export class Fish {
     if (diet.includes('poop')) {
       const poop = world?.poop?.find((entry) => entry.id === targetId && entry.canBeEaten !== false);
       if (poop) return { ...poop, amount: poop.nutrition ?? 0.5, kind: 'poop' };
+
+      const canSeekEggs = this.speciesId === 'SILT_SIFTER'
+        && this.hungerState === 'STARVING'
+        && (world?.simTimeSec ?? 0) >= (this.eggSnackCooldownUntilSec ?? 0);
+      if (canSeekEggs) {
+        const egg = world?.eggs?.find((entry) => entry
+          && entry.id === targetId
+          && entry.state === 'INCUBATING'
+          && entry.canBeEaten !== false
+          && entry.isProtectedByNestbrush !== true
+          && (entry.speciesId ?? DEFAULT_SPECIES_ID) === LAB_MINNOW_SPECIES_ID);
+        if (egg) return { ...egg, amount: egg.nutrition ?? 0.25, kind: 'egg' };
+      }
     }
     return null;
   }
