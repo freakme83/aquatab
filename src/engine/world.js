@@ -112,6 +112,10 @@ const SPEED_UNLOCK_2X_AT_SEC = 30 * 60;
 const SPEED_UNLOCK_3X_AT_SEC = 120 * 60;
 const REPRO_PRESSURE_START_COUNT = Math.max(6, Math.round(WATER_REFERENCE_FISH_COUNT * 0.9));
 const REPRO_PRESSURE_CRITICAL_COUNT = Math.max(REPRO_PRESSURE_START_COUNT + 2, Math.round(WATER_REFERENCE_FISH_COUNT * 1.7));
+const LAB_AUTHORITY_STRESS_START_AZURE_COUNT = 6;
+const LAB_AUTHORITY_STRESS_MAX_PENALTY = 0.60;
+const LAB_AUTHORITY_STRESS_CURVE_POWER = 1.6;
+const LAB_AUTHORITY_STRESS_HALF_EFFECT_AZURE_DELTA = 6;
 
 const WORLD_SAVE_VERSION = 1;
 export const WATER_SAVE_KEYS = [
@@ -1916,6 +1920,25 @@ export class World {
     return clamp01((aliveCount - REPRO_PRESSURE_START_COUNT) / span);
   }
 
+  #getLabAuthorityStressFactor() {
+    let azureAliveCount = 0;
+    for (const fish of this.fish) {
+      if (fish.lifeState !== 'ALIVE') continue;
+      if ((fish.speciesId ?? DEFAULT_SPECIES_ID) !== AZURE_DART_SPECIES_ID) continue;
+      azureAliveCount += 1;
+    }
+
+    const azureDelta = Math.max(0, azureAliveCount - LAB_AUTHORITY_STRESS_START_AZURE_COUNT);
+    if (azureDelta <= 0) return 1;
+
+    const power = Math.max(1, LAB_AUTHORITY_STRESS_CURVE_POWER);
+    const k = Math.max(1, LAB_AUTHORITY_STRESS_HALF_EFFECT_AZURE_DELTA);
+    const deltaPow = azureDelta ** power;
+    const ratio = deltaPow / (deltaPow + (k ** power));
+    const penalty = LAB_AUTHORITY_STRESS_MAX_PENALTY * ratio;
+    return clamp(1 - penalty, 1 - LAB_AUTHORITY_STRESS_MAX_PENALTY, 1);
+  }
+
 
   #isMateEligible(fish, nowSec) {
     if (!fish || fish.lifeState !== 'ALIVE') return false;
@@ -1955,7 +1978,10 @@ export class World {
     const speciesId = a.speciesId ?? DEFAULT_SPECIES_ID;
     const populationPressure01 = this.#getPopulationPressure01(speciesId);
     const densityFactor = 1 - (populationPressure01 * 0.75);
-    const pMate = MATE_BASE_CHANCE * hygieneFactor * wellbeingFactor * densityFactor;
+    const authorityStressFactor = speciesId === LAB_MINNOW_SPECIES_ID
+      ? this.#getLabAuthorityStressFactor()
+      : 1;
+    const pMate = MATE_BASE_CHANCE * hygieneFactor * wellbeingFactor * densityFactor * authorityStressFactor;
 
     if (Math.random() >= pMate) return;
 
