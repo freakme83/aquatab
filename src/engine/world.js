@@ -2041,6 +2041,9 @@ export class World {
     const reproScale = getSpeciesReproductionScale(speciesId);
     const motherCooldownScale = speciesId === SILT_SIFTER_SPECIES_ID ? 1.5 : reproScale;
     const baseLayY = Math.max(0, this.#swimHeight() - 14);
+    const wantsNestbrushLay = speciesId === LAB_MINNOW_SPECIES_ID && female.repro?.layUseNestbrush === true;
+    const availableNestbrushSlots = this.#getAvailableNestbrushEggSlots();
+    const useNestbrushForClutch = wantsNestbrushLay && availableNestbrushSlots >= clutchCount;
 
     for (let i = 0; i < clutchCount; i += 1) {
       let x = clamp(female.position.x + rand(-6, 6), 0, this.bounds.width);
@@ -2051,7 +2054,9 @@ export class World {
         y = clamp(plant.bottomY - rand(1, 8), baseLayY - 6, this.#swimHeight());
       }
 
-      const nestbrushPlacement = this.#tryGetNestbrushEggPlacement(speciesId);
+      const nestbrushPlacement = useNestbrushForClutch
+        ? this.#tryGetNestbrushEggPlacement(speciesId)
+        : { protected: false, x: null, y: null, attachment: null };
       const incubationPenalty = nestbrushPlacement.protected ? 1 : NESTBRUSH_INCUBATION_PENALTY_MULTIPLIER;
 
       this.eggs.push({
@@ -2079,8 +2084,17 @@ export class World {
     female.repro.fatherId = null;
     female.repro.layTargetX = null;
     female.repro.layTargetY = null;
+    female.repro.layUseNestbrush = false;
+    female.repro.layHoverUntilSec = null;
     female.repro.pregnancyStartSec = null;
     female.repro.layingStartedAtSec = null;
+  }
+
+  #getAvailableNestbrushEggSlots() {
+    if (!this.nestbrush) return 0;
+    const capacity = this.getNestbrushCapacity(this.nestbrush.stage);
+    const occupied = this.eggs.filter((egg) => egg?.state === 'INCUBATING' && egg?.isProtectedByNestbrush).length;
+    return Math.max(0, capacity - occupied);
   }
 
   #updateReproduction(dt) {
@@ -2106,22 +2120,47 @@ export class World {
 
       if (fish.repro.state === 'GRAVID' && nowSec >= (fish.repro.dueAtSec ?? Infinity)) {
         fish.repro.state = 'LAYING';
-        if (fish.speciesId === AZURE_DART_SPECIES_ID && this.berryReedPlants.length) {
+        if (fish.speciesId === LAB_MINNOW_SPECIES_ID) {
+          const canUseNestbrush = this.#getAvailableNestbrushEggSlots() > 0;
+          fish.repro.layUseNestbrush = canUseNestbrush;
+          if (canUseNestbrush) {
+            const layPlacement = this.#tryGetNestbrushEggPlacement(fish.speciesId);
+            fish.repro.layTargetX = clamp(layPlacement.x ?? this.nestbrush?.x ?? fish.position.x, 0, this.bounds.width);
+            fish.repro.layTargetY = clamp(
+              layPlacement.y ?? (this.nestbrush?.bottomY ? this.nestbrush.bottomY - this.nestbrush.height * 0.45 : layTargetY),
+              0,
+              this.#swimHeight()
+            );
+          } else {
+            fish.repro.layTargetX = clamp(fish.position.x + rand(-20, 20), 0, this.bounds.width);
+            fish.repro.layTargetY = layTargetY;
+          }
+        } else if (fish.speciesId === AZURE_DART_SPECIES_ID && this.berryReedPlants.length) {
           const plant = this.berryReedPlants[Math.floor(rand(0, this.berryReedPlants.length))];
           fish.repro.layTargetX = clamp(plant.x + rand(-12, 12), 0, this.bounds.width);
           fish.repro.layTargetY = clamp(plant.bottomY - rand(1, 6), Math.max(0, layTargetY - 6), this.#swimHeight());
         } else {
+          fish.repro.layUseNestbrush = false;
           fish.repro.layTargetX = clamp(fish.position.x + rand(-20, 20), 0, this.bounds.width);
           fish.repro.layTargetY = layTargetY;
         }
         fish.repro.layingStartedAtSec = nowSec;
+        fish.repro.layHoverUntilSec = null;
       }
 
       if (fish.repro.state === 'LAYING') {
         const tx = Number.isFinite(fish.repro.layTargetX) ? fish.repro.layTargetX : fish.position.x;
         const ty = Number.isFinite(fish.repro.layTargetY) ? fish.repro.layTargetY : layTargetY;
         const d = Math.hypot(fish.position.x - tx, fish.position.y - ty);
-        if (d <= 10) this.#layEggClutch(fish, nowSec);
+
+        if (d <= 10) {
+          if (!Number.isFinite(fish.repro.layHoverUntilSec)) {
+            fish.repro.layHoverUntilSec = nowSec + rand(1.4, 2.2);
+          }
+          if (nowSec >= fish.repro.layHoverUntilSec) this.#layEggClutch(fish, nowSec);
+        } else if (d >= 16) {
+          fish.repro.layHoverUntilSec = null;
+        }
       }
 
       if (fish.repro.state === 'COOLDOWN' && nowSec >= (fish.repro.cooldownUntilSec ?? 0)) {

@@ -450,6 +450,7 @@ test('laying clutch uses updated egg range of 2 to 4', () => {
   femaleMin.repro.state = 'LAYING';
   femaleMin.repro.layTargetX = femaleMin.position.x;
   femaleMin.repro.layTargetY = femaleMin.position.y;
+  femaleMin.repro.layHoverUntilSec = worldMin.simTimeSec;
 
   withStubbedRandom(0, () => worldMin.update(0.01));
   assert.equal(worldMin.eggs.length, 2, 'minimum clutch should produce 2 eggs');
@@ -461,6 +462,7 @@ test('laying clutch uses updated egg range of 2 to 4', () => {
   femaleMax.repro.state = 'LAYING';
   femaleMax.repro.layTargetX = femaleMax.position.x;
   femaleMax.repro.layTargetY = femaleMax.position.y;
+  femaleMax.repro.layHoverUntilSec = worldMax.simTimeSec;
 
   withStubbedRandom(0.999999, () => worldMax.update(0.01));
   assert.equal(worldMax.eggs.length, 4, 'maximum clutch should produce 4 eggs');
@@ -656,6 +658,8 @@ test('lab minnow eggs use per-egg nestbrush protection and capacity', () => {
   female.repro.fatherId = male.id;
   female.repro.layTargetX = female.position.x;
   female.repro.layTargetY = female.position.y;
+  female.repro.layUseNestbrush = true;
+  female.repro.layHoverUntilSec = world.simTimeSec;
   withStubbedRandom(0, () => world.update(0.2));
 
   assert.equal(world.eggs.length, 2);
@@ -670,6 +674,8 @@ test('lab minnow eggs use per-egg nestbrush protection and capacity', () => {
   female.repro.fatherId = male.id;
   female.repro.layTargetX = female.position.x;
   female.repro.layTargetY = female.position.y;
+  female.repro.layUseNestbrush = true;
+  female.repro.layHoverUntilSec = world.simTimeSec;
   withStubbedRandom(0, () => world.update(0.2));
 
   const latestEggs = world.eggs.slice(-2);
