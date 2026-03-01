@@ -17,6 +17,7 @@ const FOOD_SPEED_BOOST = CONFIG.fish.hunger.foodSpeedBoost;
 const SEEK_FORCE_MULTIPLIER = CONFIG.fish.hunger.seekForceMultiplier ?? 2.0;
 const PLAY_SPEED_BOOST = 1.45;
 const PLAY_RUNNER_SPEED_BOOST = 1.18;
+const LAB_MINNOW_SPECIES_ID = 'LAB_MINNOW';
 
 const AGE_CONFIG = CONFIG.fish.age;
 const GROWTH_CONFIG = CONFIG.fish.growth;
@@ -249,6 +250,7 @@ export class Fish {
       fatherId: null,
       layTargetX: null,
       layTargetY: null,
+      layUseNestbrush: false,
       pregnancyStartSec: null,
       layingStartedAtSec: null
     };
@@ -479,7 +481,7 @@ export class Fish {
         mode: 'seekLayTarget',
         targetFoodId: null,
         targetKind: null,
-        speedBoost: 1
+        speedBoost: 0.32
       };
       this.target = { x: this.repro.layTargetX, y: this.repro.layTargetY };
       this.#updateHoverAfterBehavior(world?.simTimeSec ?? 0);
@@ -979,7 +981,8 @@ export class Fish {
     if (this.behavior?.mode === 'seekFood' || this.behavior?.targetFoodId) return true;
     if (this.behavior?.mode === 'playChase' || this.behavior?.mode === 'playEvade') return true;
     if (this.isPlaying(nowSec)) return true;
-    if (this.repro?.state === 'LAYING' || this.repro?.state === 'GRAVID') return true;
+    if (this.repro?.state === 'GRAVID') return true;
+    if (this.repro?.state === 'LAYING' && this.behavior?.mode !== 'seekLayTarget') return true;
     if (this.matingAnim) return true;
     return false;
   }
@@ -1032,6 +1035,9 @@ export class Fish {
   }
 
   #pickTarget() {
+    const nestbrushBiasTarget = this.#pickNestbrushBiasedTarget();
+    if (nestbrushBiasTarget) return nestbrushBiasTarget;
+
     const inset = clamp(Math.min(this.bounds.width, this.bounds.height) * 0.04, 8, 18);
     const swimHeight = Math.max(inset, this.bounds.height - inset);
     const bottom = this.species?.bottomDweller;
@@ -1075,6 +1081,51 @@ export class Fish {
     return {
       x: rand(inset, Math.max(inset, this.bounds.width - inset)),
       y: rand(inset, Math.max(inset, swimHeight))
+    };
+  }
+
+  #hasIncubatingOwnEggs(world) {
+    if (!world?.eggs?.length) return false;
+    for (const egg of world.eggs) {
+      if (!egg || egg.state !== 'INCUBATING') continue;
+      if ((egg.motherId ?? null) === this.id) return true;
+    }
+    return false;
+  }
+
+  #nestbrushAffinity01(world) {
+    if (this.speciesId !== LAB_MINNOW_SPECIES_ID || !world?.nestbrush || this.lifeState !== 'ALIVE') return 0;
+
+    if (this.repro?.state === 'GRAVID') {
+      const dueAtSec = this.repro?.dueAtSec;
+      if (!Number.isFinite(dueAtSec)) return 0.72;
+      const remainingSec = Math.max(0, dueAtSec - (world.simTimeSec ?? 0));
+      const lateWindowSec = 60;
+      const late01 = clamp01(1 - (remainingSec / lateWindowSec));
+      return lerp(0.68, 0.995, late01);
+    }
+
+    if (this.repro?.state === 'LAYING') return 1;
+    if (this.#hasIncubatingOwnEggs(world)) return 0.88;
+    return 0;
+  }
+
+  #pickNestbrushBiasedTarget() {
+    const world = this._worldRef;
+    const affinity01 = this.#nestbrushAffinity01(world);
+    if (affinity01 <= 0) return null;
+    const layingNow = this.repro?.state === 'LAYING';
+    if (!layingNow && Math.random() > affinity01) return null;
+
+    const nestbrush = world?.nestbrush;
+    if (!nestbrush) return null;
+
+    const movement = this.#movementBounds();
+    const focusX = nestbrush.x + rand(-22, 22);
+    const focusY = nestbrush.bottomY - nestbrush.height * rand(0.28, 0.66) + rand(-6, 6);
+    return {
+      x: clamp(focusX, movement.minX, movement.maxX),
+      y: clamp(focusY, movement.minY, movement.maxY)
     };
   }
 
