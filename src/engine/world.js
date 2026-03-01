@@ -1077,7 +1077,7 @@ export class World {
       vy: initialVy,
       type,
       canBeEaten: true,
-      nutrition: 0.1,
+      nutrition: 0.5,
       bioloadFactor
     };
     this.poop.push(poop);
@@ -1104,7 +1104,7 @@ export class World {
 
     const [poop] = this.poop.splice(index, 1);
     if (fishId != null) this.emit('poop:consume', { poopId, fishId });
-    return Math.max(0.05, Number.isFinite(poop?.nutrition) ? poop.nutrition : 0.1);
+    return Math.max(0.05, Number.isFinite(poop?.nutrition) ? poop.nutrition : 0.5);
   }
 
   consumeFood(foodId, amountToConsume = 0.5) {

@@ -865,7 +865,7 @@ export class Fish {
       for (const poop of world?.poop ?? []) {
         if (!poop?.canBeEaten) continue;
         if (poop.y < this.bounds.height * 0.5 && this.behavior?.mode !== 'seekFood') continue;
-        candidates.push({ id: poop.id, x: poop.x, y: poop.y, amount: poop.nutrition ?? 0.1, kind: 'poop' });
+        candidates.push({ id: poop.id, x: poop.x, y: poop.y, amount: poop.nutrition ?? 0.5, kind: 'poop' });
       }
     }
 
@@ -901,7 +901,7 @@ export class Fish {
     }
     if (diet.includes('poop')) {
       const poop = world?.poop?.find((entry) => entry.id === targetId && entry.canBeEaten !== false);
-      if (poop) return { ...poop, amount: poop.nutrition ?? 0.1, kind: 'poop' };
+      if (poop) return { ...poop, amount: poop.nutrition ?? 0.5, kind: 'poop' };
     }
     return null;
   }
