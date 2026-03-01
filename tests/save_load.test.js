@@ -656,6 +656,7 @@ test('lab minnow eggs use per-egg nestbrush protection and capacity', () => {
   female.repro.fatherId = male.id;
   female.repro.layTargetX = female.position.x;
   female.repro.layTargetY = female.position.y;
+  female.repro.layUseNestbrush = true;
   withStubbedRandom(0, () => world.update(0.2));
 
   assert.equal(world.eggs.length, 2);
@@ -670,6 +671,7 @@ test('lab minnow eggs use per-egg nestbrush protection and capacity', () => {
   female.repro.fatherId = male.id;
   female.repro.layTargetX = female.position.x;
   female.repro.layTargetY = female.position.y;
+  female.repro.layUseNestbrush = true;
   withStubbedRandom(0, () => world.update(0.2));
 
   const latestEggs = world.eggs.slice(-2);
