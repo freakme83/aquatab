@@ -13,6 +13,8 @@ export class Panel {
     this.currentInspectorSelectedFishId = null;
     this.currentInspectorDetailTab = 'info';
     this.currentInspectorSpeciesTab = 'LAB_MINNOW';
+    this.inspectorAzureUnlocked = false;
+    this.inspectorSiltUnlocked = false;
     this.lastInspectorSignature = null;
     this.lastObservedSelectedFishId = null;
     this.inspectorRenderThrottleMs = 200;
@@ -582,6 +584,8 @@ export class Panel {
     const siltRequiredBirths = Math.max(1, Math.floor(siltSifterUnlockBirths ?? 10));
     const siltBirthProgress = Math.max(0, Math.floor(birthsCount ?? 0));
     const siltUnlocked = Boolean(canAddSiltSifter);
+    this.inspectorAzureUnlocked = azureUnlocked;
+    this.inspectorSiltUnlocked = siltUnlocked;
     if (this.siltSifterReqBirths) {
       this.siltSifterReqBirths.textContent = `Requires: ${siltRequiredBirths} births (${Math.min(siltBirthProgress, siltRequiredBirths)}/${siltRequiredBirths})${isDevMode() ? ' ✓' : ''}`;
     }
@@ -640,6 +644,13 @@ export class Panel {
     }
     this.lastObservedSelectedFishId = selectedFishId ?? null;
 
+    const visibleSpeciesTabs = ['LAB_MINNOW'];
+    if (this.inspectorAzureUnlocked) visibleSpeciesTabs.push('AZURE_DART');
+    if (this.inspectorSiltUnlocked) visibleSpeciesTabs.push('SILT_SIFTER');
+    if (!visibleSpeciesTabs.includes(this.currentInspectorSpeciesTab)) {
+      this.currentInspectorSpeciesTab = 'LAB_MINNOW';
+    }
+
     const filtered = sorted.filter((fish) => (fish.speciesId ?? 'LAB_MINNOW') === this.currentInspectorSpeciesTab);
     const selectedFish = filtered.find((fish) => fish.id === selectedFishId) ?? null;
     const selectedLiveAgeSec = selectedFish ? Math.floor(selectedFish.ageSeconds(simTimeSec)) : -1;
@@ -691,8 +702,12 @@ export class Panel {
     const speciesTabsHtml = `
       <div class="inspector-species-tabs" role="tablist" aria-label="Fish species">
         <button type="button" class="inspector-species-tab${labActive ? ' active' : ''}" data-inspector-species-tab="LAB_MINNOW" role="tab" aria-selected="${labActive}">Lab Minnow</button>
-        <button type="button" class="inspector-species-tab${azureActive ? ' active' : ''}" data-inspector-species-tab="AZURE_DART" role="tab" aria-selected="${azureActive}">Azure Dart</button>
-        <button type="button" class="inspector-species-tab${siltActive ? ' active' : ''}" data-inspector-species-tab="SILT_SIFTER" role="tab" aria-selected="${siltActive}">Silt Sifter</button>
+        ${this.inspectorAzureUnlocked
+    ? `<button type="button" class="inspector-species-tab${azureActive ? ' active' : ''}" data-inspector-species-tab="AZURE_DART" role="tab" aria-selected="${azureActive}">Azure Dart</button>`
+    : ''}
+        ${this.inspectorSiltUnlocked
+    ? `<button type="button" class="inspector-species-tab${siltActive ? ' active' : ''}" data-inspector-species-tab="SILT_SIFTER" role="tab" aria-selected="${siltActive}">Silt Sifter</button>`
+    : ''}
       </div>
     `;
 
@@ -718,7 +733,7 @@ export class Panel {
   }
 
   #fishDetailsMarkup(fish, simTimeSec) {
-    const canDiscard = fish.lifeState !== 'ALIVE';
+    const canDiscard = fish.lifeState === 'DEAD' && !fish.corpseRemoved;
     const liveName = fish.name?.trim() || '';
     const draftName = this.nameDraftByFishId.get(fish.id) ?? liveName;
     const aquariumTime = this.#formatMMSS(fish.ageSeconds(simTimeSec));
@@ -737,7 +752,7 @@ export class Panel {
       <div class="stat-row"><span>Species</span><strong>${speciesLabel}</strong></div>
       <div class="stat-row"><span>Sex</span><strong>${fish.sex}</strong></div>
       <div class="stat-row"><span>Life Stage</span><strong>${typeof fish.lifeStageLabel === 'function' ? fish.lifeStageLabel() : (fish.lifeStage ?? '')}</strong></div>
-      <div class="stat-row"><span>Hunger</span><strong>${fish.hungerState} (${Math.round(fish.hunger01 * 100)}%)</strong></div>
+      <div class="stat-row"><span>Hunger</span><strong>${fish.hungerState}</strong></div>
       <div class="stat-row"><span>Wellbeing</span><strong>${Math.round(fish.wellbeing01 * 100)}%</strong></div>
       <div class="stat-row"><span>Growth</span><strong>${Math.round((fish.growth01 ?? 0) * 100)}%</strong></div>
       <div class="stat-row"><span>Aquarium Time</span><strong>${aquariumTime}</strong></div>
