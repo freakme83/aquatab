@@ -451,7 +451,7 @@ test('laying clutch uses updated egg range of 2 to 4', () => {
   femaleMin.repro.layTargetX = femaleMin.position.x;
   femaleMin.repro.layTargetY = femaleMin.position.y;
 
-  withStubbedRandom(0, () => worldMin.update(0.01));
+  withStubbedRandom(0, () => { worldMin.update(3); worldMin.update(3); });
   assert.equal(worldMin.eggs.length, 2, 'minimum clutch should produce 2 eggs');
 
   const worldMax = makeWorldForTest();
@@ -462,7 +462,7 @@ test('laying clutch uses updated egg range of 2 to 4', () => {
   femaleMax.repro.layTargetX = femaleMax.position.x;
   femaleMax.repro.layTargetY = femaleMax.position.y;
 
-  withStubbedRandom(0.999999, () => worldMax.update(0.01));
+  withStubbedRandom(0.999999, () => { worldMax.update(3); worldMax.update(3); });
   assert.equal(worldMax.eggs.length, 4, 'maximum clutch should produce 4 eggs');
 });
 
@@ -609,6 +609,90 @@ function withMockedDevMode(enabled, fn) {
   }
 }
 
+
+
+test('nestbrush unlock, single-instance cap, and growth gating work', () => {
+  const world = makeWorldForTest();
+
+  world.birthsCount = 2;
+  assert.equal(world.canAddNestbrush(), false);
+  assert.equal(world.addNestbrush().ok, false);
+
+  world.birthsCount = 3;
+  assert.equal(world.canAddNestbrush(), true);
+  assert.equal(world.addNestbrush().ok, true);
+  assert.equal(world.addNestbrush().reason, 'MAX_COUNT');
+
+  assert.equal(world.nestbrush.stage, 1);
+  const initialProgress = world.nestbrush.growthProgressSec;
+  world.water.hygiene01 = 0.84;
+  world.update(500);
+  assert.equal(world.nestbrush.stage, 1);
+  assert.equal(world.nestbrush.growthProgressSec, initialProgress);
+
+  world.water.hygiene01 = 0.95;
+  world.update(720);
+  assert.equal(world.nestbrush.stage, 2);
+  world.update(720);
+  assert.equal(world.nestbrush.stage, 3);
+  assert.equal(world.getNestbrushCapacity(), 12);
+});
+
+test('lab minnow eggs use per-egg nestbrush protection and capacity', () => {
+  const world = makeWorldForTest();
+  world.simTimeSec = 20;
+  world.birthsCount = 3;
+  world.water.hygiene01 = 1;
+  world.addNestbrush();
+
+  const female = world.fish[0];
+  const male = world.fish[1] ?? female;
+  female.speciesId = 'LAB_MINNOW';
+  male.speciesId = 'LAB_MINNOW';
+  female.sex = 'female';
+  forceFishAliveAdultFed(female);
+
+  female.repro.state = 'LAYING';
+  female.repro.fatherId = male.id;
+  female.repro.layTargetX = female.position.x;
+  female.repro.layTargetY = female.position.y;
+  female.repro.layUseNestbrush = true;
+  withStubbedRandom(0, () => { world.update(3); world.update(3); });
+
+  assert.equal(world.eggs.length, 2);
+  assert.equal(world.eggs.every((egg) => egg.isProtectedByNestbrush), true);
+  assert.equal(world.eggs.every((egg) => egg.nestbrushAttachment != null), true);
+
+  world.nestbrush.stage = 1;
+  world.eggs.push({ ...world.eggs[0], id: world.nextEggId++ });
+  world.eggs.push({ ...world.eggs[1], id: world.nextEggId++ });
+
+  female.repro.state = 'LAYING';
+  female.repro.fatherId = male.id;
+  female.repro.layTargetX = female.position.x;
+  female.repro.layTargetY = female.position.y;
+  female.repro.layUseNestbrush = true;
+  withStubbedRandom(0, () => { world.update(3); world.update(3); });
+
+  const latestEggs = world.eggs.slice(-2);
+  assert.equal(latestEggs.every((egg) => egg.isProtectedByNestbrush === false), true);
+
+  const unprotectedEgg = latestEggs[0];
+  const protectedEgg = world.eggs[0];
+  const protectedIncubation = protectedEgg.hatchAtSec - protectedEgg.laidAtSec;
+  const unprotectedIncubation = unprotectedEgg.hatchAtSec - unprotectedEgg.laidAtSec;
+  assert.ok(unprotectedIncubation > protectedIncubation);
+
+  const json = world.toJSON();
+  const loaded = World.fromJSON({ saveVersion: 1, worldState: json }, {
+    width: world.bounds.width,
+    height: world.bounds.height,
+    initialFishCount: world.initialFishCount
+  });
+  assert.ok(loaded.nestbrush);
+  assert.equal(loaded.eggs.some((egg) => egg.isProtectedByNestbrush), true);
+});
+
 test('dev mode bypasses feature unlock gates and grants extended speed range', () => {
   withMockedDevMode(true, () => {
     const world = makeWorldForTest();
@@ -617,6 +701,7 @@ test('dev mode bypasses feature unlock gates and grants extended speed range', (
     world.foodsConsumedCount = 0;
     world.filterUnlocked = false;
 
+    assert.equal(world.canAddNestbrush(), true);
     assert.equal(world.canAddBerryReedPlant(), true);
     assert.equal(world.installWaterFilter(), true);
 
@@ -774,12 +859,16 @@ test('silt sifter species and poop-timestamp persist through save/load', () => {
   fish.speciesId = 'SILT_SIFTER';
   fish.species = SPECIES.SILT_SIFTER;
   fish.lastPoopConsumedAtSimSec = 123.45;
+  fish.lastEggConsumedAtSimSec = 77.7;
+  fish.eggSnackCooldownUntilSec = 456.7;
 
   const loaded = roundTrip(world);
   const loadedFish = loaded.getFishById(fish.id);
 
   assert.equal(loadedFish.speciesId, 'SILT_SIFTER');
   assert.equal(loadedFish.lastPoopConsumedAtSimSec, 123.45);
+  assert.equal(loadedFish.lastEggConsumedAtSimSec, 77.7);
+  assert.equal(loadedFish.eggSnackCooldownUntilSec, 456.7);
 });
 
 test('silt sifter does not schedule poop after two meals', () => {
@@ -819,6 +908,106 @@ test('silt sifter consuming poop prevents dissolve pollution', () => {
   assert.equal(world.poop.length, 0);
   assert.equal(world.pendingPoopDirt01, 0);
 });
+
+
+
+test('silt sifter can consume only unprotected lab minnow eggs, becomes fully FED, and failed egg attempt triggers cooldown', () => {
+  const world = makeWorldForTest();
+  const fish = world.fish[0];
+  fish.speciesId = 'SILT_SIFTER';
+  fish.species = SPECIES.SILT_SIFTER;
+  fish.sex = 'female';
+  fish.lifeState = 'ALIVE';
+  fish.lifeStage = 'ADULT';
+  fish.hungerState = 'STARVING';
+  fish.energy01 = 0.12;
+  fish.hunger01 = 0.88;
+  world.simTimeSec = 100;
+
+  const azureEgg = {
+    id: world.nextEggId++,
+    x: fish.position.x,
+    y: fish.position.y,
+    laidAtSec: 0,
+    hatchAtSec: 999,
+    motherId: null,
+    fatherId: null,
+    motherTraits: {},
+    fatherTraits: {},
+    speciesId: 'AZURE_DART',
+    state: 'INCUBATING',
+    canBeEaten: true,
+    nutrition: 0.25,
+    isProtectedByNestbrush: false,
+    nestbrushAttachment: null
+  };
+  const protectedLabEgg = {
+    id: world.nextEggId++,
+    x: fish.position.x,
+    y: fish.position.y,
+    laidAtSec: 0,
+    hatchAtSec: 999,
+    motherId: null,
+    fatherId: null,
+    motherTraits: {},
+    fatherTraits: {},
+    speciesId: 'LAB_MINNOW',
+    state: 'INCUBATING',
+    canBeEaten: true,
+    nutrition: 0.25,
+    isProtectedByNestbrush: true,
+    nestbrushAttachment: { branchIndex: 0, u: 0.7, v: 0 }
+  };
+  const labEgg = {
+    id: world.nextEggId++,
+    x: fish.position.x,
+    y: fish.position.y,
+    laidAtSec: 0,
+    hatchAtSec: 999,
+    motherId: null,
+    fatherId: null,
+    motherTraits: {},
+    fatherTraits: {},
+    speciesId: 'LAB_MINNOW',
+    state: 'INCUBATING',
+    canBeEaten: true,
+    nutrition: 0.25,
+    isProtectedByNestbrush: false,
+    nestbrushAttachment: null
+  };
+  world.eggs.push(azureEgg, protectedLabEgg, labEgg);
+
+  fish.behavior = { mode: 'seekFood', targetFoodId: labEgg.id, targetKind: 'egg', speedBoost: 1 };
+  withStubbedRandom(0.1, () => fish.tryConsumeFood(world));
+
+  assert.equal(world.eggs.some((egg) => egg.id === labEgg.id), false, 'unprotected lab egg should be consumed');
+  assert.equal(world.eggs.some((egg) => egg.id === azureEgg.id), true, 'azure egg should never be edible');
+  assert.equal(world.eggs.some((egg) => egg.id === protectedLabEgg.id), true, 'nestbrush-protected lab egg should remain');
+  assert.equal(fish.hungerState, 'FED');
+  assert.equal(fish.energy01, 1);
+  assert.equal(fish.hunger01, 0);
+  assert.equal(fish.lastEggConsumedAtSimSec, 100);
+
+  const failEgg = {
+    ...labEgg,
+    id: world.nextEggId++,
+    isProtectedByNestbrush: false
+  };
+  world.eggs.push(failEgg);
+  fish.hungerState = 'STARVING';
+  fish.energy01 = 0.2;
+  fish.hunger01 = 0.8;
+  fish.behavior = { mode: 'seekFood', targetFoodId: failEgg.id, targetKind: 'egg', speedBoost: 1 };
+  withStubbedRandom(0.9, () => fish.tryConsumeFood(world));
+
+  assert.equal(world.eggs.some((egg) => egg.id === failEgg.id), true, 'failed roll should not consume egg');
+  assert.equal(fish.eggSnackCooldownUntilSec, 400, 'failed roll should set 5 minute cooldown');
+
+  fish.behavior = { mode: 'wander', targetFoodId: null, targetKind: null, speedBoost: 1 };
+  fish.decideBehavior(world);
+  assert.notEqual(fish.behavior.targetKind, 'egg', 'egg should not be targeted while cooldown is active');
+});
+
 
 test('silt sifter unlock gate requires 10 births unless dev mode', () => {
   const world = makeWorldForTest();

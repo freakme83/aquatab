@@ -29,6 +29,11 @@ export class Panel {
     this.fishCountStat = this.root.querySelector('[data-stat="fishCount"]');
     this.cleanlinessStat = this.root.querySelector('[data-stat="cleanliness"]');
     this.cleanlinessTrendStat = this.root.querySelector('[data-stat="cleanlinessTrend"]');
+    this.eggsSummaryRoot = this.root.querySelector('[data-stat="eggsSummary"]');
+    this.statsPanel = this.root.querySelector('[data-content="stats"]');
+    this.devWaterStatsRoot = document.createElement('div');
+    this.devWaterStatsRoot.hidden = true;
+    this.statsPanel?.appendChild(this.devWaterStatsRoot);
     if (!this.cleanlinessTrendStat && this.cleanlinessStat?.closest('.stat-row')) {
       const row = document.createElement('div');
       row.className = 'stat-row';
@@ -68,6 +73,9 @@ export class Panel {
     this.speciesAccordion = this.root.querySelector('[data-species-accordion]');
     this.speciesAccordionToggle = this.root.querySelector('[data-control="toggleSpeciesAccordion"]');
     this.speciesContent = this.root.querySelector('[data-species-content]');
+    this.addNestbrushButton = this.root.querySelector('[data-control="addNestbrush"]');
+    this.nestbrushState = this.root.querySelector('[data-nestbrush-state]');
+    this.nestbrushReqBirths = this.root.querySelector('[data-nestbrush-req-births]');
     this.addBerryReedButton = this.root.querySelector('[data-control="addBerryReed"]');
     this.berryState = this.root.querySelector('[data-berry-state]');
     this.berryReqBirths = this.root.querySelector('[data-berry-req-births]');
@@ -188,6 +196,12 @@ export class Panel {
       if (this.speciesAccordion) this.speciesAccordion.dataset.open = String(nextOpen);
       this.speciesAccordionToggle?.setAttribute('aria-expanded', String(nextOpen));
       if (this.speciesContent) this.speciesContent.hidden = !nextOpen;
+    });
+
+    this.addNestbrushButton?.addEventListener('pointerup', (event) => {
+      event.preventDefault();
+      const result = this.handlers.onAddNestbrush?.();
+      return result;
     });
 
     this.addBerryReedButton?.addEventListener('pointerup', (event) => {
@@ -316,8 +330,12 @@ export class Panel {
   }
 
   updateDevSection() {
-    if (!this.devSection) return;
-    this.devSection.hidden = !isDevMode();
+    const devMode = isDevMode();
+    if (this.devSection) this.devSection.hidden = !devMode;
+    if (this.devWaterStatsRoot) {
+      this.devWaterStatsRoot.hidden = !devMode;
+      if (!devMode) this.devWaterStatsRoot.innerHTML = '';
+    }
   }
 
   sync({ speedMultiplier, paused, speedCap = getMaxSimSpeedMultiplier() }) {
@@ -357,6 +375,9 @@ export class Panel {
     maintenanceCooldownSec,
     filterDepletedThreshold01,
     birthsCount,
+    nestbrushUnlockBirths,
+    canAddNestbrush,
+    nestbrushAdded,
     berryReedUnlockBirths,
     berryReedUnlockCleanlinessPct,
     canAddBerryReed,
@@ -367,7 +388,9 @@ export class Panel {
     siltSifterCount,
     siltSifterUnlockBirths,
     simSpeedCap,
-    simSpeedPendingUnlocks
+    simSpeedPendingUnlocks,
+    eggsBySpecies = [],
+    waterDebug = null
   }) {
     this.updateDevSection();
     this.refreshSpeedControl(simSpeedCap ?? getMaxSimSpeedMultiplier());
@@ -408,6 +431,41 @@ export class Panel {
         Dropping: '#f0a13a',
         'Dropping fast': '#ea5f5f'
       }[trendLabel];
+    }
+
+    if (this.eggsSummaryRoot) {
+      const eggRows = Array.isArray(eggsBySpecies)
+        ? eggsBySpecies
+          .filter((entry) => Number.isFinite(entry?.count) && entry.count > 0)
+          .map((entry) => {
+            const species = this.#escapeHtml(entry.speciesLabel || 'Unknown');
+            const count = Math.floor(entry.count);
+            return `<div class="stat-row stat-row--eggs"><span>${count} eggs in the tank (${species})</span></div>`;
+          })
+        : [];
+      this.eggsSummaryRoot.innerHTML = eggRows.join('');
+    }
+
+    if (this.devWaterStatsRoot) {
+      const debug = waterDebug && typeof waterDebug === 'object' ? waterDebug : {};
+      if (isDevMode()) {
+        const hygiene01 = Number.isFinite(debug.hygiene01) ? debug.hygiene01 : 0;
+        const dirt01 = Number.isFinite(debug.dirt01) ? debug.dirt01 : 0;
+        const filter01Value = Number.isFinite(debug.filter01) ? debug.filter01 : 0;
+        const effectiveFilter01 = Number.isFinite(debug.effectiveFilter01) ? debug.effectiveFilter01 : 0;
+        const filterEnabled = Boolean(debug.filterEnabled);
+        this.devWaterStatsRoot.hidden = false;
+        this.devWaterStatsRoot.innerHTML = `
+          <div class="stat-row"><span>DEV · hygiene01</span><strong>${hygiene01.toFixed(4)}</strong></div>
+          <div class="stat-row"><span>DEV · dirt01</span><strong>${dirt01.toFixed(4)}</strong></div>
+          <div class="stat-row"><span>DEV · filter01</span><strong>${filter01Value.toFixed(4)}</strong></div>
+          <div class="stat-row"><span>DEV · effectiveFilter01</span><strong>${effectiveFilter01.toFixed(4)}</strong></div>
+          <div class="stat-row"><span>DEV · filterEnabled</span><strong>${filterEnabled ? 'true' : 'false'}</strong></div>
+        `;
+      } else {
+        this.devWaterStatsRoot.hidden = true;
+        this.devWaterStatsRoot.innerHTML = '';
+      }
     }
 
     const consumed = Math.max(0, Math.floor(foodsConsumedCount ?? 0));
@@ -521,13 +579,39 @@ export class Panel {
       this.maintainFilterButton.disabled = !canMaintain;
     }
 
+    const nestbrushRequiredBirths = Math.max(1, Math.floor(nestbrushUnlockBirths ?? 3));
+    const nestbrushBirthProgress = Math.max(0, Math.floor(birthsCount ?? 0));
+    const nestbrushAlreadyAdded = Boolean(nestbrushAdded);
+
+    if (this.nestbrushReqBirths) {
+      this.nestbrushReqBirths.textContent = `Requires: ${nestbrushRequiredBirths} births (${Math.min(nestbrushBirthProgress, nestbrushRequiredBirths)}/${nestbrushRequiredBirths})`;
+    }
+
+    if (this.addNestbrushButton) {
+      if (nestbrushAlreadyAdded) {
+        this.addNestbrushButton.disabled = true;
+        this.addNestbrushButton.textContent = 'Added ✓';
+      } else {
+        this.addNestbrushButton.disabled = !canAddNestbrush;
+        this.addNestbrushButton.textContent = 'Nestbrush';
+      }
+      this.#setSpeciesButtonReady(this.addNestbrushButton, canAddNestbrush && !nestbrushAlreadyAdded);
+    }
+
+    if (this.nestbrushState) {
+      this.nestbrushState.textContent = nestbrushAlreadyAdded ? 'Added' : (canAddNestbrush ? 'Ready' : 'Locked');
+      this.nestbrushState.style.color = nestbrushAlreadyAdded
+        ? '#84e89a'
+        : (canAddNestbrush ? '#cfeeff' : '');
+    }
+
     const roundedCleanlinessPct = Math.round((cleanliness01 ?? 1) * 100);
     const requiredBirths = Math.max(1, Math.floor(berryReedUnlockBirths ?? 4));
     const birthProgress = Math.max(0, Math.floor(birthsCount ?? 0));
     const requiredCleanlinessPct = Math.max(1, Math.min(100, Math.floor(berryReedUnlockCleanlinessPct ?? 80)));
     const alreadyAdded = (berryReedPlantCount ?? 0) >= 1;
 
-    if (this.speciesAccordion) this.speciesAccordion.classList.toggle('is-dim', !canAddBerryReed && !alreadyAdded);
+    if (this.speciesAccordion) this.speciesAccordion.classList.toggle('is-dim', !canAddNestbrush && !nestbrushAlreadyAdded && !canAddBerryReed && !alreadyAdded);
 
     if (this.berryReqBirths) {
       this.berryReqBirths.textContent = `Requires: ${requiredBirths} births (${Math.min(birthProgress, requiredBirths)}/${requiredBirths})`;
@@ -639,7 +723,11 @@ export class Panel {
 
     const selectedFishAnySpecies = sorted.find((fish) => fish.id === selectedFishId) ?? null;
     const selectedChanged = selectedFishId !== this.lastObservedSelectedFishId;
-    if (selectedChanged && (selectedFishAnySpecies?.speciesId === 'AZURE_DART' || selectedFishAnySpecies?.speciesId === 'LAB_MINNOW')) {
+    if (selectedChanged && (
+      selectedFishAnySpecies?.speciesId === 'AZURE_DART'
+      || selectedFishAnySpecies?.speciesId === 'SILT_SIFTER'
+      || selectedFishAnySpecies?.speciesId === 'LAB_MINNOW'
+    )) {
       this.currentInspectorSpeciesTab = selectedFishAnySpecies.speciesId;
     }
     this.lastObservedSelectedFishId = selectedFishId ?? null;
@@ -682,11 +770,13 @@ export class Panel {
         const deadClass = fish.lifeState !== 'ALIVE' ? ' fishRow--dead' : '';
         const stageLabel = typeof fish.lifeStageLabel === 'function' ? fish.lifeStageLabel() : (fish.lifeStage ?? '');
         const state = `${stageLabel} · ${fish.hungerState}`;
+        const isPregnant = fish.sex === 'female' && (fish.repro?.state === 'GRAVID' || fish.repro?.state === 'LAYING');
         const liveName = fish.name?.trim() || '';
         const draftName = this.nameDraftByFishId.get(fish.id) ?? liveName;
         const rawLabel = draftName || 'Unnamed';
         const label = this.#escapeHtml(rawLabel);
-        return `<button type="button" class="fish-row${selectedClass}${deadClass}" data-fish-id="${fish.id}">${label} · ${fish.sex} · ${state}</button>`;
+        const pregnantClass = isPregnant ? ' fish-row__name--pregnant' : '';
+        return `<button type="button" class="fish-row${selectedClass}${deadClass}" data-fish-id="${fish.id}"><span class="fish-row__name${pregnantClass}">${label}</span> · ${fish.sex} · ${state}</button>`;
       })
       .join('');
 
@@ -736,7 +826,10 @@ export class Panel {
     const canDiscard = fish.lifeState === 'DEAD' && !fish.corpseRemoved;
     const liveName = fish.name?.trim() || '';
     const draftName = this.nameDraftByFishId.get(fish.id) ?? liveName;
-    const aquariumTime = this.#formatMMSS(fish.ageSeconds(simTimeSec));
+    const aquariumClockSec = fish.lifeState === 'DEAD' && Number.isFinite(fish.deadAtSec)
+      ? fish.deadAtSec
+      : simTimeSec;
+    const aquariumTime = this.#formatMMSS(fish.ageSeconds(aquariumClockSec));
 
     const isPregnant = fish.sex === 'female' && (fish.repro?.state === 'GRAVID' || fish.repro?.state === 'LAYING');
     const pregnantMarkup = isPregnant
@@ -754,7 +847,6 @@ export class Panel {
       <div class="stat-row"><span>Life Stage</span><strong>${typeof fish.lifeStageLabel === 'function' ? fish.lifeStageLabel() : (fish.lifeStage ?? '')}</strong></div>
       <div class="stat-row"><span>Hunger</span><strong>${fish.hungerState}</strong></div>
       <div class="stat-row"><span>Wellbeing</span><strong>${Math.round(fish.wellbeing01 * 100)}%</strong></div>
-      <div class="stat-row"><span>Growth</span><strong>${Math.round((fish.growth01 ?? 0) * 100)}%</strong></div>
       <div class="stat-row"><span>Aquarium Time</span><strong>${aquariumTime}</strong></div>
       ${pregnantMarkup}
     `;
@@ -763,7 +855,7 @@ export class Panel {
     const motherValue = this.#historyFishReference(history.motherId);
     const fatherValue = this.#historyFishReference(history.fatherId);
     const lifetimeValue = this.#formatMMSS(typeof fish.getLifeTimeSec === 'function' ? fish.getLifeTimeSec(simTimeSec) : 0);
-    const [childrenSummary, childrenMarkup] = this.#historyFishReferenceList(history.childrenIds);
+    const [childrenSummary] = this.#historyFishReferenceList(history.childrenIds);
 
     const historyRows = `
       <div class="stat-row"><span>Mother</span><strong>${motherValue}</strong></div>
@@ -774,7 +866,6 @@ export class Panel {
       <div class="stat-row"><span>Meals eaten</span><strong>${Math.max(0, Math.floor(history.mealsEaten ?? 0))}</strong></div>
       <div class="stat-row"><span>Times mated</span><strong>${Math.max(0, Math.floor(history.mateCount ?? 0))}</strong></div>
       <div class="stat-row"><span>Children</span><strong>${childrenSummary}</strong></div>
-      <div class="history-children-list">${childrenMarkup}</div>
     `;
 
     const tabInfoActive = this.currentInspectorDetailTab !== 'history';
@@ -787,7 +878,7 @@ export class Panel {
       </div>
       <div class="fish-detail-pane${tabInfoActive ? ' active' : ''}" data-fish-detail-pane="info">${infoRows}</div>
       <div class="fish-detail-pane${tabHistoryActive ? ' active' : ''}" data-fish-detail-pane="history">${historyRows}</div>
-      ${canDiscard ? '<div class="button-row"><button type="button" data-fish-discard>Discard</button></div>' : ''}
+      ${canDiscard ? '<div class="button-row"><button type="button" data-fish-discard>Remove from tank</button></div>' : ''}
     `;
   }
 
