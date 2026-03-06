@@ -20,6 +20,11 @@ const WORLD_DESKTOP_HEIGHT = 700;
 const WORLD_MOBILE_WIDTH = 700;
 const WORLD_MOBILE_HEIGHT = 1200;
 
+function trackGa4Event(eventName, params = {}) {
+  if (typeof window.gtag !== 'function') return;
+  window.gtag('event', eventName, params);
+}
+
 const startScreen = document.getElementById('startScreen');
 const appRoot = document.getElementById('appRoot');
 const startFishSlider = document.querySelector('[data-start-control="initialFishCount"]');
@@ -870,6 +875,19 @@ function checkEcosystemFailure() {
 function triggerEcosystemFailed() {
   if (!started || ecosystemFailed || !world) return;
 
+  const report = world.getEcosystemReport?.();
+  if (report) {
+    trackGa4Event('aquchi_end_report_view', {
+      sim_duration_sec: Math.max(0, Math.floor(report.simDurationSec ?? 0)),
+      eggs_laid_count: report.eggsLaidCount ?? 0,
+      births_count: report.birthsCount ?? 0,
+      deaths_count: report.deathsCount ?? 0,
+      peak_population_count: report.peakPopulationCount ?? 0,
+      grandparent_count: report.grandparentCount ?? 0,
+      food_amount_consumed_total: Number(report.foodAmountConsumedTotal ?? 0)
+    });
+  }
+
   ecosystemFailed = true;
   world.paused = true;
   stopRaf();
@@ -1267,6 +1285,15 @@ continueSimButton?.addEventListener('click', () => {
   if (!pendingSavePayload) refreshSavedStartPanel();
   if (!pendingSavePayload) return;
 
+  const saveAgeSec = Number.isFinite(pendingSavePayload?.savedAtEpochMs)
+    ? Math.max(0, Math.floor((Date.now() - pendingSavePayload.savedAtEpochMs) / 1000))
+    : null;
+  trackGa4Event('aquchi_continue_sim', {
+    has_save: true,
+    save_age_sec: saveAgeSec,
+    saved_bounds: `${pendingSavePayload?.boundsWidth ?? 'unknown'}x${pendingSavePayload?.boundsHeight ?? 'unknown'}`
+  });
+
   startSimulation({ savedPayload: pendingSavePayload });
 });
 
@@ -1288,6 +1315,12 @@ buyCoffeeButton?.addEventListener('click', () => {
 });
 
 startSimButton?.addEventListener('click', () => {
+  const selectedFishCount = Number.parseInt(startFishSlider?.value ?? String(DEFAULT_INITIAL_FISH_COUNT), 10);
+  const initialFishCount = Number.isFinite(selectedFishCount) ? selectedFishCount : DEFAULT_INITIAL_FISH_COUNT;
+  trackGa4Event('aquchi_start_sim', {
+    initial_fish_count: initialFishCount,
+    has_save: Boolean(pendingSavePayload)
+  });
   startSimulation();
 });
 
