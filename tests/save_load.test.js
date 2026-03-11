@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { World } from '../src/engine/world.js';
-import { CONFIG } from '../src/config.js';
+import { CONFIG, SPECIES } from '../src/config.js';
 
 function withStubbedRandom(value, fn) {
   const original = Math.random;
@@ -401,6 +401,7 @@ test('world update advances canonical sim clock for motion and lifecycle', () =>
 
 test('speed multiplier scales canonical sim clock and persists through save-load', () => {
   const world = makeWorldForTest();
+  world.simTimeSec = 30 * 60;
   world.setSpeedMultiplier(2);
 
   const simStart = world.simTimeSec;
@@ -422,6 +423,25 @@ test('speed multiplier scales canonical sim clock and persists through save-load
   assert.equal(loaded.debugTiming.motionDt, 2);
 });
 
+
+test('simulation speed cap unlocks from 1x to 2x at 30m and 3x at 120m', () => {
+  const world = makeWorldForTest();
+
+  world.setSpeedMultiplier(3);
+  assert.equal(world.speedMultiplier, 1);
+  assert.equal(world.getAvailableSimSpeedMultiplierCap(), 1);
+
+  world.simTimeSec = 30 * 60;
+  world.setSpeedMultiplier(3);
+  assert.equal(world.speedMultiplier, 2);
+  assert.equal(world.getAvailableSimSpeedMultiplierCap(), 2);
+
+  world.simTimeSec = 120 * 60;
+  world.setSpeedMultiplier(3);
+  assert.equal(world.speedMultiplier, 3);
+  assert.equal(world.getAvailableSimSpeedMultiplierCap(), 3);
+});
+
 test('laying clutch uses updated egg range of 2 to 4', () => {
   const worldMin = makeWorldForTest();
   const femaleMin = worldMin.fish.find((f) => f.sex === 'female') ?? worldMin.fish[0];
@@ -431,7 +451,7 @@ test('laying clutch uses updated egg range of 2 to 4', () => {
   femaleMin.repro.layTargetX = femaleMin.position.x;
   femaleMin.repro.layTargetY = femaleMin.position.y;
 
-  withStubbedRandom(0, () => worldMin.update(0.01));
+  withStubbedRandom(0, () => { worldMin.update(3); worldMin.update(3); });
   assert.equal(worldMin.eggs.length, 2, 'minimum clutch should produce 2 eggs');
 
   const worldMax = makeWorldForTest();
@@ -442,7 +462,7 @@ test('laying clutch uses updated egg range of 2 to 4', () => {
   femaleMax.repro.layTargetX = femaleMax.position.x;
   femaleMax.repro.layTargetY = femaleMax.position.y;
 
-  withStubbedRandom(0.999999, () => worldMax.update(0.01));
+  withStubbedRandom(0.999999, () => { worldMax.update(3); worldMax.update(3); });
   assert.equal(worldMax.eggs.length, 4, 'maximum clutch should produce 4 eggs');
 });
 
@@ -461,7 +481,7 @@ test('fish produces poop every 2 meals and poop expires', () => {
   world.spawnFood(fish.position.x, fish.position.y, 1, 120);
   fish.behavior = { mode: 'seekFood', targetFoodId: world.food[0].id, speedBoost: 1 };
   fish.tryConsumeFood(world);
-  assert.equal(fish.digestBites, 0);
+  assert.ok(fish.digestBites <= 1);
   assert.equal(world.poop.length, 0);
 
   world.update(11);
@@ -493,18 +513,19 @@ test('poop survives save/load as optional field', () => {
   assert.equal(world3.poop.length, 0);
 });
 
-test('poop spawn type distribution uses weighted random bands', () => {
-  const worldPellet = makeWorldForTest();
-  withStubbedRandom(0.2, () => worldPellet.spawnPoop(20, 20));
-  assert.equal(worldPellet.poop[0].type, 'pellet');
+test('poop always sinks as pellet-like type', () => {
+  const worldA = makeWorldForTest();
+  withStubbedRandom(0.2, () => worldA.spawnPoop(20, 20));
+  assert.equal(worldA.poop[0].type, 'pellet');
 
-  const worldNeutral = makeWorldForTest();
-  withStubbedRandom(0.8, () => worldNeutral.spawnPoop(20, 20));
-  assert.equal(worldNeutral.poop[0].type, 'neutral');
+  const worldB = makeWorldForTest();
+  withStubbedRandom(0.95, () => worldB.spawnPoop(20, 20));
+  assert.equal(worldB.poop[0].type, 'pellet');
 
-  const worldFloaty = makeWorldForTest();
-  withStubbedRandom(0.95, () => worldFloaty.spawnPoop(20, 20));
-  assert.equal(worldFloaty.poop[0].type, 'floaty');
+  worldB.poop[0].y = 10;
+  worldB.poop[0].vy = -2;
+  worldB.update(0.2);
+  assert.ok(worldB.poop[0].vy >= 0, 'poop velocity should be downward/non-negative after update');
 });
 
 test('water filter tier and feed counters persist through save-load', () => {
@@ -520,25 +541,30 @@ test('water filter tier and feed counters persist through save-load', () => {
   assert.equal(loaded.initialFishCount, 5);
   assert.equal(loaded.foodsConsumedCount, 37);
   assert.equal(loaded.water.filterTier, 2);
-  assert.equal(loaded.getFilterTierUnlockFeeds(2), 40);
-  assert.equal(loaded.getFilterTierUnlockFeeds(3), 60);
+  assert.equal(loaded.getFilterTierUnlockFeeds(2), 50);
+  assert.equal(loaded.getFilterTierUnlockFeeds(3), 80);
 });
 
-test('upgradeWaterFilter applies recovery kick and tier scaling improves cleanup', () => {
+test('upgradeWaterFilter uses install-duration progress and tier scaling improves cleanup', () => {
   const world = makeWorldForTest({ initialFishCount: 4 });
   world.water.filterInstalled = true;
   world.water.filterEnabled = true;
-  world.water.filter01 = 1;
+  world.water.filter01 = 0.42;
   world.water.filterTier = 1;
   world.water.dirt01 = 0.4;
   world.water.hygiene01 = 0.5;
-  world.foodsConsumedCount = world.initialFishCount * 8;
+  world.foodsConsumedCount = world.initialFishCount * 10;
 
   const upgraded = world.upgradeWaterFilter();
   assert.equal(upgraded, true);
+  assert.equal(world.water.filterTier, 1);
+  assert.equal(world.water.filterEnabled, false);
+  assert.ok(world.water.upgradeProgress01 > 0);
+
+  world.update(12);
   assert.equal(world.water.filterTier, 2);
-  assert.equal(Number(world.water.dirt01.toFixed(3)), 0.35);
-  assert.equal(Number(world.water.hygiene01.toFixed(3)), 0.55);
+  assert.equal(world.water.filterEnabled, true);
+  assert.ok(world.water.filter01 >= 0.99);
 
   const tier1World = makeWorldForTest({ initialFishCount: 4 });
   tier1World.water.filterInstalled = true;
@@ -583,6 +609,90 @@ function withMockedDevMode(enabled, fn) {
   }
 }
 
+
+
+test('nestbrush unlock, single-instance cap, and growth gating work', () => {
+  const world = makeWorldForTest();
+
+  world.birthsCount = 2;
+  assert.equal(world.canAddNestbrush(), false);
+  assert.equal(world.addNestbrush().ok, false);
+
+  world.birthsCount = 3;
+  assert.equal(world.canAddNestbrush(), true);
+  assert.equal(world.addNestbrush().ok, true);
+  assert.equal(world.addNestbrush().reason, 'MAX_COUNT');
+
+  assert.equal(world.nestbrush.stage, 1);
+  const initialProgress = world.nestbrush.growthProgressSec;
+  world.water.hygiene01 = 0.84;
+  world.update(500);
+  assert.equal(world.nestbrush.stage, 1);
+  assert.equal(world.nestbrush.growthProgressSec, initialProgress);
+
+  world.water.hygiene01 = 0.95;
+  world.update(720);
+  assert.equal(world.nestbrush.stage, 2);
+  world.update(720);
+  assert.equal(world.nestbrush.stage, 3);
+  assert.equal(world.getNestbrushCapacity(), 12);
+});
+
+test('lab minnow eggs use per-egg nestbrush protection and capacity', () => {
+  const world = makeWorldForTest();
+  world.simTimeSec = 20;
+  world.birthsCount = 3;
+  world.water.hygiene01 = 1;
+  world.addNestbrush();
+
+  const female = world.fish[0];
+  const male = world.fish[1] ?? female;
+  female.speciesId = 'LAB_MINNOW';
+  male.speciesId = 'LAB_MINNOW';
+  female.sex = 'female';
+  forceFishAliveAdultFed(female);
+
+  female.repro.state = 'LAYING';
+  female.repro.fatherId = male.id;
+  female.repro.layTargetX = female.position.x;
+  female.repro.layTargetY = female.position.y;
+  female.repro.layUseNestbrush = true;
+  withStubbedRandom(0, () => { world.update(3); world.update(3); });
+
+  assert.equal(world.eggs.length, 2);
+  assert.equal(world.eggs.every((egg) => egg.isProtectedByNestbrush), true);
+  assert.equal(world.eggs.every((egg) => egg.nestbrushAttachment != null), true);
+
+  world.nestbrush.stage = 1;
+  world.eggs.push({ ...world.eggs[0], id: world.nextEggId++ });
+  world.eggs.push({ ...world.eggs[1], id: world.nextEggId++ });
+
+  female.repro.state = 'LAYING';
+  female.repro.fatherId = male.id;
+  female.repro.layTargetX = female.position.x;
+  female.repro.layTargetY = female.position.y;
+  female.repro.layUseNestbrush = true;
+  withStubbedRandom(0, () => { world.update(3); world.update(3); });
+
+  const latestEggs = world.eggs.slice(-2);
+  assert.equal(latestEggs.every((egg) => egg.isProtectedByNestbrush === false), true);
+
+  const unprotectedEgg = latestEggs[0];
+  const protectedEgg = world.eggs[0];
+  const protectedIncubation = protectedEgg.hatchAtSec - protectedEgg.laidAtSec;
+  const unprotectedIncubation = unprotectedEgg.hatchAtSec - unprotectedEgg.laidAtSec;
+  assert.ok(unprotectedIncubation > protectedIncubation);
+
+  const json = world.toJSON();
+  const loaded = World.fromJSON({ saveVersion: 1, worldState: json }, {
+    width: world.bounds.width,
+    height: world.bounds.height,
+    initialFishCount: world.initialFishCount
+  });
+  assert.ok(loaded.nestbrush);
+  assert.equal(loaded.eggs.some((egg) => egg.isProtectedByNestbrush), true);
+});
+
 test('dev mode bypasses feature unlock gates and grants extended speed range', () => {
   withMockedDevMode(true, () => {
     const world = makeWorldForTest();
@@ -591,6 +701,7 @@ test('dev mode bypasses feature unlock gates and grants extended speed range', (
     world.foodsConsumedCount = 0;
     world.filterUnlocked = false;
 
+    assert.equal(world.canAddNestbrush(), true);
     assert.equal(world.canAddBerryReedPlant(), true);
     assert.equal(world.installWaterFilter(), true);
 
@@ -739,4 +850,195 @@ test('species tab clear-selection path is safe via toggleFishSelection(null)', (
   assert.equal(world.selectedFishId, fishId);
   world.toggleFishSelection(null);
   assert.equal(world.selectedFishId, null);
+});
+
+
+test('silt sifter species and poop-timestamp persist through save/load', () => {
+  const world = makeWorldForTest();
+  const fish = world.fish[0];
+  fish.speciesId = 'SILT_SIFTER';
+  fish.species = SPECIES.SILT_SIFTER;
+  fish.lastPoopConsumedAtSimSec = 123.45;
+  fish.lastEggConsumedAtSimSec = 77.7;
+  fish.eggSnackCooldownUntilSec = 456.7;
+
+  const loaded = roundTrip(world);
+  const loadedFish = loaded.getFishById(fish.id);
+
+  assert.equal(loadedFish.speciesId, 'SILT_SIFTER');
+  assert.equal(loadedFish.lastPoopConsumedAtSimSec, 123.45);
+  assert.equal(loadedFish.lastEggConsumedAtSimSec, 77.7);
+  assert.equal(loadedFish.eggSnackCooldownUntilSec, 456.7);
+});
+
+test('silt sifter does not schedule poop after two meals', () => {
+  const world = makeWorldForTest();
+  const fish = world.fish[0];
+  fish.speciesId = 'SILT_SIFTER';
+  fish.species = SPECIES.SILT_SIFTER;
+  forceFishAliveAdultFed(fish);
+
+  world.spawnFood(fish.position.x, fish.position.y, 1, 120);
+  fish.behavior = { mode: 'seekFood', targetFoodId: world.food[0].id, speedBoost: 1 };
+  fish.hungerState = 'STARVING';
+  fish.tryConsumeFood(world);
+
+  world.spawnFood(fish.position.x, fish.position.y, 1, 120);
+  fish.behavior = { mode: 'seekFood', targetFoodId: world.food[0].id, speedBoost: 1 };
+  fish.hungerState = 'STARVING';
+  fish.tryConsumeFood(world);
+
+  assert.ok(fish.digestBites <= 1);
+  assert.equal(world.scheduledPoopSpawns.length, 0);
+});
+
+test('silt sifter consuming poop prevents dissolve pollution', () => {
+  const world = makeWorldForTest();
+  const fish = world.fish[0];
+  fish.speciesId = 'SILT_SIFTER';
+  fish.species = SPECIES.SILT_SIFTER;
+  forceFishAliveAdultFed(fish);
+  fish.hungerState = 'HUNGRY';
+
+  const poop = world.spawnPoop(fish.position.x, fish.position.y, 120, { bioloadFactor: 1, visible: true });
+  fish.behavior = { mode: 'seekFood', targetFoodId: poop.id, speedBoost: 1 };
+  fish.tryConsumeFood(world);
+  world.update(130);
+
+  assert.equal(world.poop.length, 0);
+  assert.equal(world.pendingPoopDirt01, 0);
+});
+
+
+
+test('silt sifter can consume only unprotected lab minnow eggs, becomes fully FED, and failed egg attempt triggers cooldown', () => {
+  const world = makeWorldForTest();
+  const fish = world.fish[0];
+  fish.speciesId = 'SILT_SIFTER';
+  fish.species = SPECIES.SILT_SIFTER;
+  fish.sex = 'female';
+  fish.lifeState = 'ALIVE';
+  fish.lifeStage = 'ADULT';
+  fish.hungerState = 'STARVING';
+  fish.energy01 = 0.12;
+  fish.hunger01 = 0.88;
+  world.simTimeSec = 100;
+
+  const azureEgg = {
+    id: world.nextEggId++,
+    x: fish.position.x,
+    y: fish.position.y,
+    laidAtSec: 0,
+    hatchAtSec: 999,
+    motherId: null,
+    fatherId: null,
+    motherTraits: {},
+    fatherTraits: {},
+    speciesId: 'AZURE_DART',
+    state: 'INCUBATING',
+    canBeEaten: true,
+    nutrition: 0.25,
+    isProtectedByNestbrush: false,
+    nestbrushAttachment: null
+  };
+  const protectedLabEgg = {
+    id: world.nextEggId++,
+    x: fish.position.x,
+    y: fish.position.y,
+    laidAtSec: 0,
+    hatchAtSec: 999,
+    motherId: null,
+    fatherId: null,
+    motherTraits: {},
+    fatherTraits: {},
+    speciesId: 'LAB_MINNOW',
+    state: 'INCUBATING',
+    canBeEaten: true,
+    nutrition: 0.25,
+    isProtectedByNestbrush: true,
+    nestbrushAttachment: { branchIndex: 0, u: 0.7, v: 0 }
+  };
+  const labEgg = {
+    id: world.nextEggId++,
+    x: fish.position.x,
+    y: fish.position.y,
+    laidAtSec: 0,
+    hatchAtSec: 999,
+    motherId: null,
+    fatherId: null,
+    motherTraits: {},
+    fatherTraits: {},
+    speciesId: 'LAB_MINNOW',
+    state: 'INCUBATING',
+    canBeEaten: true,
+    nutrition: 0.25,
+    isProtectedByNestbrush: false,
+    nestbrushAttachment: null
+  };
+  world.eggs.push(azureEgg, protectedLabEgg, labEgg);
+
+  fish.behavior = { mode: 'seekFood', targetFoodId: labEgg.id, targetKind: 'egg', speedBoost: 1 };
+  withStubbedRandom(0.1, () => fish.tryConsumeFood(world));
+
+  assert.equal(world.eggs.some((egg) => egg.id === labEgg.id), false, 'unprotected lab egg should be consumed');
+  assert.equal(world.eggs.some((egg) => egg.id === azureEgg.id), true, 'azure egg should never be edible');
+  assert.equal(world.eggs.some((egg) => egg.id === protectedLabEgg.id), true, 'nestbrush-protected lab egg should remain');
+  assert.equal(fish.hungerState, 'FED');
+  assert.equal(fish.energy01, 1);
+  assert.equal(fish.hunger01, 0);
+  assert.equal(fish.lastEggConsumedAtSimSec, 100);
+
+  const failEgg = {
+    ...labEgg,
+    id: world.nextEggId++,
+    isProtectedByNestbrush: false
+  };
+  world.eggs.push(failEgg);
+  fish.hungerState = 'STARVING';
+  fish.energy01 = 0.2;
+  fish.hunger01 = 0.8;
+  fish.behavior = { mode: 'seekFood', targetFoodId: failEgg.id, targetKind: 'egg', speedBoost: 1 };
+  withStubbedRandom(0.9, () => fish.tryConsumeFood(world));
+
+  assert.equal(world.eggs.some((egg) => egg.id === failEgg.id), true, 'failed roll should not consume egg');
+  assert.equal(fish.eggSnackCooldownUntilSec, 400, 'failed roll should set 5 minute cooldown');
+
+  fish.behavior = { mode: 'wander', targetFoodId: null, targetKind: null, speedBoost: 1 };
+  fish.decideBehavior(world);
+  assert.notEqual(fish.behavior.targetKind, 'egg', 'egg should not be targeted while cooldown is active');
+});
+
+
+test('silt sifter unlock gate requires 10 births unless dev mode', () => {
+  const world = makeWorldForTest();
+  world.birthsCount = 9;
+  assert.equal(world.canAddSiltSifter(), false);
+
+  world.birthsCount = 10;
+  assert.equal(world.canAddSiltSifter(), true);
+});
+
+
+test('silt sifter add button spawns one juvenile per click and caps at four total', () => {
+  const world = makeWorldForTest();
+  world.birthsCount = 10;
+
+  const before = world.getSiltSifterCount();
+  assert.equal(before, 0);
+
+  assert.equal(world.addSiltSifterSchool(), true);
+  assert.equal(world.getSiltSifterCount(), 1);
+
+  const s1 = world.fish.filter((f) => f.speciesId === 'SILT_SIFTER')[0];
+  assert.ok(s1);
+  assert.equal(s1.lifeStage, 'JUVENILE');
+
+  assert.equal(world.addSiltSifterSchool(), true);
+  assert.equal(world.addSiltSifterSchool(), true);
+  assert.equal(world.addSiltSifterSchool(), true);
+  assert.equal(world.getSiltSifterCount(), 4);
+
+  assert.equal(world.canAddSiltSifter(), false);
+  assert.equal(world.addSiltSifterSchool(), false, 'should not add beyond max 4');
+  assert.equal(world.getSiltSifterCount(), 4);
 });

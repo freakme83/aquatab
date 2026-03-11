@@ -3,7 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Aquchi</title>
+    <title>Aquchi — Cozy Aquarium Simulation</title>
+    <meta name="description" content="Aquchi is a cozy browser-based aquarium simulation where fish live, reproduce and react to water conditions in a fragile micro-ecosystem.">
+    <link rel="canonical" href="https://dizgioyunu.com/aquchi/">
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-GVVFCT9J5D"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag() { dataLayer.push(arguments); }
+      gtag('js', new Date());
+      gtag('config', 'G-GVVFCT9J5D');
+    </script>
     <!-- Favicon -->
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
@@ -30,6 +39,15 @@
           <button type="button" class="start-btn" data-info-modal="about">About</button>
           <button type="button" class="start-btn" id="buyCoffeeButton">Buy me a coffee</button>
         </div>
+
+        <a class="home-link" href="https://dizgioyunu.com/">← Back to Obi Game Studios</a>
+
+        <details class="about-seo" id="aboutSeoStart" open>
+          <summary>About Aquchi (in a nutshell)</summary>
+          <p>Aquchi is a cozy aquarium simulation game that runs directly in your browser — a calm, system-driven experience designed for slow balance rather than spectacle.</p>
+          <p>Fish eat, reproduce, and respond to subtle shifts in their environment. Water cleanliness, filter upgrades, and environmental stress gradually shape how the tank evolves over time.</p>
+          <p>Rather than chasing constant expansion, Aquchi models feedback and equilibrium. Small actions ripple through the system, nudging the micro-ecosystem toward stability — or collapse.</p>
+        </details>
 
         <p class="saved-start-meta" data-saved-start-meta>Saved simulation found: no</p>
       </div>
@@ -74,14 +92,16 @@
           <div class="stat-row"><span>Fish</span><strong data-stat="fishCount">0</strong></div>
           <div class="stat-row"><span>Cleanliness</span><strong data-stat="cleanliness">100%</strong></div>
           <div class="stat-row"><span>Water quality trend</span><strong data-stat="cleanlinessTrend">Stable</strong></div>
+          <div data-stat="eggsSummary"></div>
         </section>
 
         <section class="tab-content" data-content="controls" role="tabpanel">
           <h2>Controls</h2>
 
-          <label class="control-group">
+          <label class="control-group" data-sim-speed-group>
             <span>Simulation Speed: <strong data-value="simSpeed">1.0x</strong></span>
             <input type="range" min="0.5" max="3" value="1" step="0.1" data-control="simSpeed" />
+            <p class="control-hint" data-sim-speed-condition hidden></p>
           </label>
 
           <div class="button-row split">
@@ -105,7 +125,7 @@
               <div class="button-row"><button type="button" data-control="installFilter" hidden>Install water filter</button></div>
               <div class="button-row" data-filter-toggle-row hidden><button type="button" data-control="toggleFilterPower">On / Off</button></div>
               <div class="button-row"><button type="button" data-control="upgradeFilter" hidden>Upgrade filter ⚡</button></div>
-              <div class="button-row"><button type="button" data-control="maintainFilter" hidden>Maintain filter</button></div>
+              <div class="button-row"><button type="button" data-control="maintainFilter" hidden>Change filter</button></div>
             </div>
           </section>
 
@@ -115,6 +135,12 @@
               <span class="filter-accordion-chevron">▾</span>
             </button>
             <div class="filter-accordion-content" data-species-content hidden>
+              <div class="species-row" data-nestbrush-row>
+                <button type="button" data-control="addNestbrush">Nestbrush</button>
+                <strong data-nestbrush-state>Locked</strong>
+              </div>
+              <p class="filter-message" data-nestbrush-req-births>Requires: 3 births (0/3)</p>
+
               <div class="species-row" data-berry-row>
                 <button type="button" data-control="addBerryReed">Berry Reed</button>
                 <strong data-berry-state>Locked</strong>
@@ -128,6 +154,12 @@
               </div>
               <p class="filter-message" data-azure-req-berry>Requires: Berry Reed added</p>
               <p class="filter-message" data-azure-req-cleanliness>Requires: Cleanliness 80%+</p>
+
+              <div class="species-row" data-silt-sifter-row>
+                <button type="button" data-control="addSiltSifter">Silt Sifter</button>
+                <strong data-silt-sifter-state>Locked</strong>
+              </div>
+              <p class="filter-message" data-silt-sifter-req-births>Requires: 10 births (0/10)</p>
             </div>
           </section>
 
@@ -148,6 +180,15 @@
         </section>
       </aside>
     </main>
+
+    <section class="about-seo-footer" id="aboutSeoFooter" aria-label="About Aquchi" hidden>
+      <details class="about-seo" id="aboutSeoInGame">
+        <summary>About Aquchi (in a nutshell)</summary>
+        <p>Aquchi is a cozy aquarium simulation game that runs directly in your browser — a calm, system-driven experience designed for slow balance rather than spectacle.</p>
+        <p>Fish eat, reproduce, and respond to subtle shifts in their environment. Water cleanliness, filter upgrades, and environmental stress gradually shape how the tank evolves over time.</p>
+        <p>Rather than chasing constant expansion, Aquchi models feedback and equilibrium. Small actions ripple through the system, nudging the micro-ecosystem toward stability — or collapse.</p>
+      </details>
+    </section>
 
     <script type="module" src="src/main.js"></script>
   </body>

@@ -15,6 +15,15 @@ const AUTOSAVE_INTERVAL_MS = 10_000;
 const INACTIVITY_AWAY_THRESHOLD_SIM_SEC = 300;
 const FULLSCREEN_HINT_SESSION_KEY = 'aquatab_fullscreen_hint_seen';
 const RESIZE_DEBOUNCE_MS = 120;
+const WORLD_DESKTOP_WIDTH = 1200;
+const WORLD_DESKTOP_HEIGHT = 700;
+const WORLD_MOBILE_WIDTH = 700;
+const WORLD_MOBILE_HEIGHT = 1200;
+
+function trackGa4Event(eventName, params = {}) {
+  if (typeof window.gtag !== 'function') return;
+  window.gtag('event', eventName, params);
+}
 
 const startScreen = document.getElementById('startScreen');
 const appRoot = document.getElementById('appRoot');
@@ -29,6 +38,9 @@ const infoModalContent = document.getElementById('infoModalContent');
 const infoModalClose = document.getElementById('infoModalClose');
 const infoModalButtons = Array.from(document.querySelectorAll('[data-info-modal]'));
 const buyCoffeeButton = document.getElementById('buyCoffeeButton');
+const aboutSeoStart = document.getElementById('aboutSeoStart');
+const aboutSeoFooter = document.getElementById('aboutSeoFooter');
+const aboutSeoInGame = document.getElementById('aboutSeoInGame');
 
 const canvas = document.getElementById('aquariumCanvas');
 const panelRoot = document.getElementById('panelRoot');
@@ -54,6 +66,8 @@ let lastTrendSampleSimTimeSec = null;
 let lastTrendSampleHygiene01 = null;
 let smoothedHygieneDeltaPerMin = 0;
 let resizeDebounceId = null;
+let worldUsesSavedBounds = false;
+
 
 const fullscreenHint = document.createElement('div');
 fullscreenHint.className = 'fullscreen-hint';
@@ -99,6 +113,39 @@ function loadSavedWorldSnapshot() {
   }
 }
 
+function getDefaultWorldBounds() {
+  const isCoarsePointer = window.matchMedia?.('(pointer: coarse)')?.matches ?? false;
+  const isLandscapeViewport = window.innerWidth > window.innerHeight;
+  const isMobileViewport = window.innerWidth < 860;
+
+  if (isCoarsePointer) {
+    if (isLandscapeViewport) {
+      return { width: WORLD_DESKTOP_WIDTH, height: WORLD_DESKTOP_HEIGHT };
+    }
+    return { width: WORLD_MOBILE_WIDTH, height: WORLD_MOBILE_HEIGHT };
+  }
+
+  if (isMobileViewport) {
+    return { width: WORLD_MOBILE_WIDTH, height: WORLD_MOBILE_HEIGHT };
+  }
+
+  return { width: WORLD_DESKTOP_WIDTH, height: WORLD_DESKTOP_HEIGHT };
+}
+
+function getSavedWorldBounds(payload) {
+  const width = Number.isFinite(payload?.boundsWidth) ? payload.boundsWidth : null;
+  const height = Number.isFinite(payload?.boundsHeight) ? payload.boundsHeight : null;
+  if (width != null && height != null && width > 0 && height > 0) {
+    return { width, height };
+  }
+
+  return null;
+}
+
+function resolveSavedWorldBounds(payload) {
+  return getSavedWorldBounds(payload) ?? getDefaultWorldBounds();
+}
+
 function formatRelativeSavedAt(epochMs) {
   if (!Number.isFinite(epochMs) || epochMs <= 0) return 'unknown';
   const deltaMs = Math.max(0, Date.now() - epochMs);
@@ -127,6 +174,8 @@ function saveWorldSnapshot() {
     const payload = {
       saveVersion: SAVE_VERSION,
       savedAtEpochMs: Date.now(),
+      boundsWidth: world.bounds.width,
+      boundsHeight: world.bounds.height,
       worldState: world.toJSON()
     };
     localStorage.setItem(SAVE_STORAGE_KEY, JSON.stringify(payload));
@@ -223,9 +272,24 @@ ecosystemFailedTitle.style.fontSize = '22px';
 ecosystemFailedTitle.style.color = '#eaf7ff';
 
 const ecosystemFailedBody = document.createElement('p');
-ecosystemFailedBody.textContent = 'All fish are gone. This run cannot be continued.';
-ecosystemFailedBody.style.margin = '0 0 16px';
+ecosystemFailedBody.textContent = 'Echo system failed. All fish are gone. This run cannot be continued.';
+ecosystemFailedBody.style.margin = '0 0 12px';
 ecosystemFailedBody.style.color = 'rgba(232, 244, 255, 0.9)';
+
+const ecosystemFailedReport = document.createElement('pre');
+ecosystemFailedReport.style.margin = '0 0 14px';
+ecosystemFailedReport.style.padding = '10px 12px';
+ecosystemFailedReport.style.maxHeight = '44vh';
+ecosystemFailedReport.style.overflow = 'auto';
+ecosystemFailedReport.style.whiteSpace = 'pre-wrap';
+ecosystemFailedReport.style.wordBreak = 'break-word';
+ecosystemFailedReport.style.fontSize = '13px';
+ecosystemFailedReport.style.lineHeight = '1.5';
+ecosystemFailedReport.style.borderRadius = '10px';
+ecosystemFailedReport.style.border = '1px solid rgba(110, 173, 255, 0.36)';
+ecosystemFailedReport.style.background = 'rgba(6, 14, 20, 0.85)';
+ecosystemFailedReport.style.color = 'rgba(220, 236, 255, 0.96)';
+ecosystemFailedReport.style.userSelect = 'text';
 
 const ecosystemFailedActions = document.createElement('div');
 ecosystemFailedActions.style.display = 'flex';
@@ -243,7 +307,7 @@ ecosystemFailedRestartButton.style.fontWeight = '600';
 ecosystemFailedRestartButton.style.cursor = 'pointer';
 
 ecosystemFailedActions.append(ecosystemFailedRestartButton);
-ecosystemFailedCard.append(ecosystemFailedTitle, ecosystemFailedBody, ecosystemFailedActions);
+ecosystemFailedCard.append(ecosystemFailedTitle, ecosystemFailedBody, ecosystemFailedReport, ecosystemFailedActions);
 ecosystemFailedOverlay.append(ecosystemFailedCard);
 document.body.appendChild(ecosystemFailedOverlay);
 ecosystemFailedOverlay.setAttribute('data-cinema-hide', 'true');
@@ -497,7 +561,22 @@ function showFilterToast(textValue) {
 }
 
 function speciesLabel(speciesId) {
-  return speciesId === 'AZURE_DART' ? 'Azure Dart' : 'Lab Minnow';
+  if (speciesId === 'AZURE_DART') return 'Azure Dart';
+  if (speciesId === 'SILT_SIFTER') return 'Silt Sifter';
+  return 'Lab Minnow';
+}
+
+function summarizeEggsBySpecies() {
+  if (!world) return [];
+  const counts = new Map();
+  for (const egg of world.eggs ?? []) {
+    const speciesId = egg?.speciesId ?? 'LAB_MINNOW';
+    counts.set(speciesId, (counts.get(speciesId) ?? 0) + 1);
+  }
+
+  return [...counts.entries()]
+    .map(([speciesId, count]) => ({ speciesLabel: speciesLabel(speciesId), count }))
+    .sort((a, b) => a.speciesLabel.localeCompare(b.speciesLabel));
 }
 
 function fishDisplayName(fish) {
@@ -657,20 +736,17 @@ function refreshDevModeUI() {
   if (!panel) return;
   panel.sync({
     speedMultiplier: world?.speedMultiplier ?? 1,
-    paused: world?.paused ?? false
+    paused: world?.paused ?? false,
+    speedCap: world?.getAvailableSimSpeedMultiplierCap?.() ?? 1
   });
 }
 
 function worldToClientPoint(worldX, worldY) {
   if (!renderer || !world) return null;
+  const screenPoint = renderer.toScreenPoint(worldX, worldY);
+  if (!screenPoint) return null;
   const canvasRect = canvas.getBoundingClientRect();
-  const { x, y, width, height } = renderer.tankRect;
-  if (!width || !height || world.bounds.width <= 0 || world.bounds.height <= 0) return null;
-
-  return {
-    x: canvasRect.left + x + (worldX / world.bounds.width) * width,
-    y: canvasRect.top + y + (worldY / world.bounds.height) * height
-  };
+  return { x: canvasRect.left + screenPoint.x, y: canvasRect.top + screenPoint.y };
 }
 
 function hideCorpseAction() {
@@ -711,8 +787,15 @@ corpseActionButton.addEventListener('click', () => {
 
 function resize() {
   if (!started || !world || !renderer) return;
+
+  if (!worldUsesSavedBounds) {
+    const defaultBounds = getDefaultWorldBounds();
+    if (world.bounds.width !== defaultBounds.width || world.bounds.height !== defaultBounds.height) {
+      world.resize(defaultBounds.width, defaultBounds.height);
+    }
+  }
+
   const { width, height } = measureCanvasSize();
-  world.resize(width, height);
   renderer.resize(width, height);
 }
 
@@ -746,6 +829,39 @@ const VISIBLE_MAX_STEP_SEC = 0.25;
 const HIDDEN_STEP_SEC = 0.25;
 const HIDDEN_TICK_MS = 1000;
 
+function formatDurationMmSs(totalSec) {
+  const safe = Math.max(0, Math.floor(Number.isFinite(totalSec) ? totalSec : 0));
+  const minutes = Math.floor(safe / 60);
+  const seconds = safe % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function buildEcosystemFailureReport() {
+  if (!world || typeof world.getEcosystemReport !== 'function') return '';
+  const report = world.getEcosystemReport();
+  const quant = (value, unit = '') => `<span style="color:#7fd1ff;font-weight:700;">${escapeHtml(value)}</span>${unit}`;
+  const lines = [
+    `Simulation lasted ${quant(formatDurationMmSs(report.simDurationSec))}.`,
+    `There were ${quant(report.eggsLaidCount)} eggs in the aquarium, and ${quant(report.birthsCount)} births occurred.`,
+    `There were ${quant(report.deathsCount)} deaths in the aquarium.`,
+    `At peak population, the aquarium had ${quant(report.peakPopulationCount)} fish.`,
+    `The longest-living fish was ${quant(report.longestLivedFishName)}.`,
+    `${quant(report.grandparentCount)} fish became grandparents.`,
+    `A total of ${quant(report.foodAmountConsumedTotal.toFixed(1))} feed was consumed.`
+  ];
+
+  return ['RUN REPORT', ...lines].join('\n');
+}
+
 function checkEcosystemFailure() {
   if (!world || ecosystemFailed) return;
 
@@ -759,6 +875,19 @@ function checkEcosystemFailure() {
 function triggerEcosystemFailed() {
   if (!started || ecosystemFailed || !world) return;
 
+  const report = world.getEcosystemReport?.();
+  if (report) {
+    trackGa4Event('aquchi_end_report_view', {
+      sim_duration_sec: Math.max(0, Math.floor(report.simDurationSec ?? 0)),
+      eggs_laid_count: report.eggsLaidCount ?? 0,
+      births_count: report.birthsCount ?? 0,
+      deaths_count: report.deathsCount ?? 0,
+      peak_population_count: report.peakPopulationCount ?? 0,
+      grandparent_count: report.grandparentCount ?? 0,
+      food_amount_consumed_total: Number(report.foodAmountConsumedTotal ?? 0)
+    });
+  }
+
   ecosystemFailed = true;
   world.paused = true;
   stopRaf();
@@ -769,6 +898,7 @@ function triggerEcosystemFailed() {
   autoPauseOverlayOpen = false;
   clearAwaySnapshot();
   localStorage.removeItem(SAVE_STORAGE_KEY);
+  ecosystemFailedReport.innerHTML = buildEcosystemFailureReport();
   ecosystemFailedOverlay.hidden = false;
 }
 
@@ -809,6 +939,8 @@ function tick(now) {
   if (ecosystemFailed) return;
   renderer.render(now, renderDelta);
 
+  const speedUnlockState = world.getSpeedUnlockState?.() ?? { speedCap: world.getAvailableSimSpeedMultiplierCap?.() ?? 1, pendingUnlocks: [] };
+
   panel.updateStats({
     simTimeSec: world.simTimeSec,
     fishCount: world.fish.length,
@@ -824,16 +956,33 @@ function tick(now) {
     filterNextTierUnlockFeeds: world.getFilterTierUnlockFeeds?.((world.water.filterTier ?? 0) + 1) ?? 0,
     foodsNeededForNextTier: Math.max(0, (world.getFilterTierUnlockFeeds?.((world.water.filterTier ?? 0) + 1) ?? 0) - world.foodsConsumedCount),
     installProgress01: world.water.installProgress01,
+    upgradeProgress01: world.water.upgradeProgress01,
     maintenanceProgress01: world.water.maintenanceProgress01,
     maintenanceCooldownSec: world.water.maintenanceCooldownSec,
     filterDepletedThreshold01: world.filterDepletedThreshold01,
     birthsCount: world.birthsCount,
+    nestbrushUnlockBirths: 3,
+    canAddNestbrush: world.canAddNestbrush?.() ?? false,
+    nestbrushAdded: Boolean(world.nestbrush),
     berryReedUnlockBirths: 4,
     berryReedUnlockCleanlinessPct: 80,
     canAddBerryReed: world.canAddBerryReedPlant?.() ?? false,
     berryReedPlantCount: world.berryReedPlants?.length ?? 0,
     canAddAzureDart: world.canAddAzureDart?.() ?? false,
-    azureDartCount: world.getAzureDartCount?.() ?? 0
+    azureDartCount: world.getAzureDartCount?.() ?? 0,
+    canAddSiltSifter: world.canAddSiltSifter?.() ?? false,
+    siltSifterCount: world.getSiltSifterCount?.() ?? 0,
+    siltSifterUnlockBirths: 10,
+    simSpeedCap: speedUnlockState.speedCap,
+    simSpeedPendingUnlocks: speedUnlockState.pendingUnlocks,
+    eggsBySpecies: summarizeEggsBySpecies(),
+    waterDebug: {
+      hygiene01: world.water?.hygiene01,
+      dirt01: world.water?.dirt01,
+      filter01: world.water?.filter01,
+      effectiveFilter01: world.water?.effectiveFilter01,
+      filterEnabled: world.water?.filterEnabled
+    }
   });
   panel.updateFishInspector(world.getFishInspectorList?.() ?? world.fish, world.selectedFishId, world.simTimeSec);
   updateCorpseActionButton();
@@ -977,11 +1126,23 @@ function restartToStartScreen() {
 
   appRoot.hidden = true;
   startScreen.hidden = false;
+  if (aboutSeoFooter) aboutSeoFooter.hidden = true;
+  if (aboutSeoStart) aboutSeoStart.open = true;
   refreshSavedStartPanel();
+}
+
+function syncAboutSeoForSimulation() {
+  if (!aboutSeoStart || !aboutSeoFooter || !aboutSeoInGame) return;
+
+  aboutSeoStart.open = false;
+  aboutSeoInGame.open = false;
+  aboutSeoFooter.hidden = false;
 }
 
 function startSimulation({ savedPayload = null } = {}) {
   if (started) return;
+
+  syncAboutSeoForSimulation();
 
   const selectedFishCount = Number.parseInt(startFishSlider?.value ?? String(DEFAULT_INITIAL_FISH_COUNT), 10);
   const initialFishCount = Number.isFinite(selectedFishCount) ? selectedFishCount : DEFAULT_INITIAL_FISH_COUNT;
@@ -995,15 +1156,19 @@ function startSimulation({ savedPayload = null } = {}) {
   autoPauseOverlayOpen = false;
   clearAwaySnapshot();
 
-  const initialSize = measureCanvasSize();
   if (savedPayload?.saveVersion === SAVE_VERSION) {
+    const savedBounds = getSavedWorldBounds(savedPayload);
+    worldUsesSavedBounds = savedBounds != null;
+    const { width, height } = savedBounds ?? getDefaultWorldBounds();
     world = World.fromJSON(savedPayload, {
-      width: initialSize.width,
-      height: initialSize.height,
+      width,
+      height,
       initialFishCount
     });
   } else {
-    world = new World(initialSize.width, initialSize.height, initialFishCount);
+    worldUsesSavedBounds = false;
+    const { width, height } = getDefaultWorldBounds();
+    world = new World(width, height, initialFishCount);
   }
   renderer = new Renderer(canvas, world);
   lastInteractionSimTimeSec = world.simTimeSec;
@@ -1023,6 +1188,19 @@ function startSimulation({ savedPayload = null } = {}) {
     onFilterMaintain: () => world.maintainWaterFilter?.(),
     onFilterTogglePower: () => world.toggleWaterFilterEnabled?.(),
     onFilterUpgrade: () => world.upgradeWaterFilter?.(),
+    onAddNestbrush: () => {
+      const result = world.addNestbrush?.() ?? { ok: false, reason: 'WORLD_NOT_READY' };
+      if (result.ok) {
+        showFilterToast('Nestbrush added');
+        return result;
+      }
+
+      if (result.reason === 'MAX_COUNT') showFilterToast('Nestbrush already added');
+      else if (result.reason === 'LOCKED') showFilterToast('Nestbrush locked');
+      else if (result.reason === 'WORLD_NOT_READY') showFilterToast('Not ready yet');
+
+      return result;
+    },
     onAddBerryReed: () => {
       const result = world.addBerryReedPlant?.() ?? { ok: false, reason: 'WORLD_NOT_READY' };
       if (result.ok) {
@@ -1047,6 +1225,7 @@ function startSimulation({ savedPayload = null } = {}) {
       return result;
     },
     onAddAzureDart: () => world.addAzureDartSchool?.(),
+    onAddSiltSifter: () => world.addSiltSifterSchool?.(),
     onGrantUnlockPrereqs: () => world.grantAllUnlockPrerequisites?.(),
     onRestartConfirm: () => restartToStartScreen()
   };
@@ -1086,7 +1265,8 @@ function startSimulation({ savedPayload = null } = {}) {
 
   panel.sync({
     speedMultiplier: world.speedMultiplier,
-    paused: world.paused
+    paused: world.paused,
+    speedCap: world.getAvailableSimSpeedMultiplierCap?.() ?? 1
   });
 
   resize();
@@ -1104,6 +1284,15 @@ function startSimulation({ savedPayload = null } = {}) {
 continueSimButton?.addEventListener('click', () => {
   if (!pendingSavePayload) refreshSavedStartPanel();
   if (!pendingSavePayload) return;
+
+  const saveAgeSec = Number.isFinite(pendingSavePayload?.savedAtEpochMs)
+    ? Math.max(0, Math.floor((Date.now() - pendingSavePayload.savedAtEpochMs) / 1000))
+    : null;
+  trackGa4Event('aquchi_continue_sim', {
+    has_save: true,
+    save_age_sec: saveAgeSec,
+    saved_bounds: `${pendingSavePayload?.boundsWidth ?? 'unknown'}x${pendingSavePayload?.boundsHeight ?? 'unknown'}`
+  });
 
   startSimulation({ savedPayload: pendingSavePayload });
 });
@@ -1126,6 +1315,12 @@ buyCoffeeButton?.addEventListener('click', () => {
 });
 
 startSimButton?.addEventListener('click', () => {
+  const selectedFishCount = Number.parseInt(startFishSlider?.value ?? String(DEFAULT_INITIAL_FISH_COUNT), 10);
+  const initialFishCount = Number.isFinite(selectedFishCount) ? selectedFishCount : DEFAULT_INITIAL_FISH_COUNT;
+  trackGa4Event('aquchi_start_sim', {
+    initial_fish_count: initialFishCount,
+    has_save: Boolean(pendingSavePayload)
+  });
   startSimulation();
 });
 

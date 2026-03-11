@@ -7,6 +7,7 @@ import { CONFIG } from '../config.js';
 
 const TAU = Math.PI * 2;
 const rand = (min, max) => min + Math.random() * (max - min);
+const SELECTION_PULSE_DURATION_MS = 2000;
 
 export class Renderer {
   constructor(canvas, world) {
@@ -16,6 +17,7 @@ export class Renderer {
 
     this.dpr = window.devicePixelRatio || 1;
     this.tankRect = { x: 0, y: 0, width: 0, height: 0 };
+    this.camera = { scale: 1, offsetX: 0, offsetY: 0, viewWidth: 0, viewHeight: 0 };
     this.quality = 'high';
     this.debugBounds = false;
 
@@ -24,6 +26,9 @@ export class Renderer {
 
     this.backgroundCanvas = document.createElement('canvas');
     this.vignetteCanvas = document.createElement('canvas');
+    this.lastObservedSelectedFishId = null;
+    this.selectionPulse = { fishId: null, startedAtMs: 0 };
+    this.#buildPlants();
   }
 
   setQuality(quality) {
@@ -39,7 +44,10 @@ export class Renderer {
     this.canvas.width = Math.floor(width * this.dpr);
     this.canvas.height = Math.floor(height * this.dpr);
 
-    const margin = Math.max(12, Math.min(width, height) * 0.035);
+    const baseMargin = Math.max(12, Math.min(width, height) * 0.035);
+    const isMobilePortrait = (window.matchMedia?.('(pointer: coarse)')?.matches ?? false)
+      && window.innerHeight > window.innerWidth;
+    const margin = isMobilePortrait ? Math.max(8, Math.min(12, baseMargin)) : baseMargin;
     this.tankRect = {
       x: margin,
       y: margin,
@@ -47,8 +55,9 @@ export class Renderer {
       height: Math.max(100, height - margin * 2)
     };
 
+    this.#updateCamera();
+
     this.#buildStaticLayers();
-    this.#buildPlants();
 
     for (const p of this.waterParticles) {
       p.x = Math.min(width, Math.max(0, p.x));
@@ -61,13 +70,54 @@ export class Renderer {
     const localX = clientX - rect.left;
     const localY = clientY - rect.top;
 
-    const { x, y, width, height } = this.tankRect;
-    if (localX < x || localX > x + width || localY < y || localY > y + height) return null;
+    const { offsetX, offsetY, viewWidth, viewHeight, scale } = this.camera;
+    if (localX < offsetX || localX > offsetX + viewWidth || localY < offsetY || localY > offsetY + viewHeight) return null;
 
     return {
-      x: ((localX - x) / width) * this.world.bounds.width,
-      y: ((localY - y) / height) * this.world.bounds.height
+      x: (localX - offsetX) / scale,
+      y: (localY - offsetY) / scale
     };
+  }
+
+  toScreenPoint(worldX, worldY) {
+    const { offsetX, offsetY, scale } = this.camera;
+    if (!Number.isFinite(scale) || scale <= 0) return null;
+    return {
+      x: offsetX + worldX * scale,
+      y: offsetY + worldY * scale
+    };
+  }
+
+  #updateCamera() {
+    const worldWidth = Math.max(1, this.world.bounds.width);
+    const worldHeight = Math.max(1, this.world.bounds.height);
+    const isCoarsePointer = window.matchMedia?.('(pointer: coarse)')?.matches ?? false;
+
+    let availableHeight = this.tankRect.height;
+    if (isCoarsePointer) {
+      const dock = document.getElementById('deckToggle');
+      const isDockVisible = dock && dock.offsetParent !== null;
+
+      if (isDockVisible) {
+        const canvasRect = this.canvas.getBoundingClientRect();
+        const dockRect = dock.getBoundingClientRect();
+        const hasDockArea = dockRect.height > 0;
+        const hasHorizontalOverlap = dockRect.right > canvasRect.left && dockRect.left < canvasRect.right;
+        const hasVerticalOverlap = dockRect.bottom > canvasRect.top && dockRect.top < canvasRect.bottom;
+
+        if (hasDockArea && hasHorizontalOverlap && hasVerticalOverlap) {
+          const overlapPx = Math.max(0, Math.min(canvasRect.bottom, dockRect.bottom) - Math.max(canvasRect.top, dockRect.top));
+          availableHeight = Math.max(100, this.tankRect.height - overlapPx);
+        }
+      }
+    }
+
+    const scale = Math.min(this.tankRect.width / worldWidth, availableHeight / worldHeight);
+    const viewWidth = worldWidth * scale;
+    const viewHeight = worldHeight * scale;
+    const offsetX = this.tankRect.x + (this.tankRect.width - viewWidth) * 0.5;
+    const offsetY = this.tankRect.y + (availableHeight - viewHeight) * 0.5;
+    this.camera = { scale, offsetX, offsetY, viewWidth, viewHeight };
   }
 
   isFilterModuleHit(clientX, clientY) {
@@ -96,10 +146,12 @@ export class Renderer {
 
     ctx.save();
     this.#clipTankWater(ctx);
+    this.#syncSelectionPulse(time);
     this.#drawCachedBackground(ctx);
     this.#drawPollutionTint(ctx);
     this.#drawWaterPlants(ctx, time);
     this.#drawBerryReed(ctx, time);
+    this.#drawNestbrush(ctx, time);
     this.#drawGroundAlgae(ctx, time);
     this.#drawPlayEffects(ctx, time);
     this.#drawWaterParticles(ctx, delta);
@@ -107,7 +159,7 @@ export class Renderer {
     this.#drawFilterModule(ctx, time);
     this.#drawFood(ctx);
     this.#drawPoop(ctx);
-    this.#drawEggs(ctx);
+    this.#drawEggs(ctx, time);
     this.#drawFxParticles(ctx);
     this.#drawFishSchool(ctx, time);
     this.#drawCachedVignette(ctx);
@@ -115,6 +167,28 @@ export class Renderer {
 
     this.#drawTankFrame(ctx);
     if (this.debugBounds) this.#drawDebugBounds(ctx);
+  }
+
+  #syncSelectionPulse(timeMs) {
+    const selectedFishId = this.world.selectedFishId ?? null;
+    if (selectedFishId !== this.lastObservedSelectedFishId) {
+      this.lastObservedSelectedFishId = selectedFishId;
+      this.selectionPulse = {
+        fishId: selectedFishId,
+        startedAtMs: selectedFishId ? timeMs : 0
+      };
+    }
+  }
+
+  #selectionPulseProgress(fishId, timeMs) {
+    if (!fishId || fishId !== this.selectionPulse.fishId) return 0;
+
+    const elapsedMs = timeMs - this.selectionPulse.startedAtMs;
+    if (!Number.isFinite(elapsedMs) || elapsedMs < 0 || elapsedMs > SELECTION_PULSE_DURATION_MS) {
+      return 0;
+    }
+
+    return 1 - elapsedMs / SELECTION_PULSE_DURATION_MS;
   }
 
   #createParticles(count) {
@@ -128,8 +202,8 @@ export class Renderer {
   }
 
   #buildStaticLayers() {
-    const w = Math.max(1, Math.floor(this.tankRect.width));
-    const h = Math.max(1, Math.floor(this.tankRect.height));
+    const w = Math.max(1, Math.floor(this.camera.viewWidth));
+    const h = Math.max(1, Math.floor(this.camera.viewHeight));
 
     this.backgroundCanvas.width = w;
     this.backgroundCanvas.height = h;
@@ -176,22 +250,21 @@ export class Renderer {
   }
 
   #drawWaterPlants(ctx, time) {
-    const sx = this.tankRect.width / this.world.bounds.width;
-    const sy = this.tankRect.height / this.world.bounds.height;
+    const { scale: worldScale, offsetX, offsetY } = this.camera;
 
     ctx.save();
     ctx.lineCap = 'round';
 
     for (const plant of this.plants) {
-      const baseX = this.tankRect.x + plant.x * sx;
-      const baseY = this.tankRect.y + plant.bottomY * sy;
-      const h = plant.height * sy;
-      const w = plant.width * sx;
+      const baseX = offsetX + plant.x * worldScale;
+      const baseY = offsetY + plant.bottomY * worldScale;
+      const h = plant.height * worldScale;
+      const w = plant.width * worldScale;
 
       ctx.strokeStyle = plant.color;
       ctx.lineWidth = Math.max(1, w * 0.22);
 
-      const sway = Math.sin(time * plant.swayRate + plant.phase) * plant.swayAmp * sx;
+      const sway = Math.sin(time * plant.swayRate + plant.phase) * plant.swayAmp * worldScale;
       ctx.beginPath();
       ctx.moveTo(baseX, baseY);
       ctx.bezierCurveTo(baseX - w * 0.5 + sway * 0.25, baseY - h * 0.33, baseX + w * 0.5 + sway, baseY - h * 0.66, baseX + sway, baseY - h);
@@ -207,8 +280,7 @@ export class Renderer {
   }
 
   #drawBerryReed(ctx, time) {
-    const sx = this.tankRect.width / this.world.bounds.width;
-    const sy = this.tankRect.height / this.world.bounds.height;
+    const { scale: worldScale } = this.camera;
     const plants = this.world.berryReedPlants ?? [];
     const fruits = this.world.fruits ?? [];
     if (!plants.length) return;
@@ -217,21 +289,21 @@ export class Renderer {
     ctx.lineCap = 'round';
 
     for (const plant of plants) {
-      const plantPose = this.#getBerryReedPlantPose(plant, time, sx, sy);
+      const plantPose = this.#getBerryReedPlantPose(plant, time, worldScale);
       const { baseX, baseY, h, swayPx } = plantPose;
 
       ctx.strokeStyle = 'hsla(26deg 30% 36% / 0.9)';
-      ctx.lineWidth = Math.max(1.4, 2 * sx);
+      ctx.lineWidth = Math.max(1.4, 2 * worldScale);
       ctx.beginPath();
       ctx.moveTo(baseX, baseY);
-      ctx.bezierCurveTo(baseX - 4 * sx + swayPx * 0.2, baseY - h * 0.34, baseX + 3 * sx + swayPx, baseY - h * 0.72, baseX + swayPx, baseY - h);
+      ctx.bezierCurveTo(baseX - 4 * worldScale + swayPx * 0.2, baseY - h * 0.34, baseX + 3 * worldScale + swayPx, baseY - h * 0.72, baseX + swayPx, baseY - h);
       ctx.stroke();
 
       for (const [branchIndex, branch] of (plant.branches ?? []).entries()) {
-        const branchPose = this.#getBerryReedBranchPose(plant, branch, branchIndex, time, sx, sy);
+        const branchPose = this.#getBerryReedBranchPose(plant, branch, branchIndex, time, worldScale);
         const { startX, startY, controlX, controlY, endX, endY } = branchPose;
 
-        ctx.lineWidth = Math.max(1.1, 1.5 * sx);
+        ctx.lineWidth = Math.max(1.1, 1.5 * worldScale);
         ctx.beginPath();
         ctx.moveTo(startX, startY);
         ctx.quadraticCurveTo(controlX, controlY, endX, endY);
@@ -240,13 +312,13 @@ export class Renderer {
     }
 
     for (const fruit of fruits) {
-      const fruitPose = this.#getBerryReedFruitPose(fruit, time, sx, sy);
+      const fruitPose = this.#getBerryReedFruitPose(fruit, time, worldScale);
       if (!fruitPose) continue;
       const { x, y, branchX, branchY } = fruitPose;
-      const r = Math.max(1, (fruit.radius ?? 2.2) * ((sx + sy) * 0.5));
+      const r = Math.max(1, (fruit.radius ?? 2.2) * worldScale);
 
       ctx.strokeStyle = 'hsla(28deg 24% 34% / 0.72)';
-      ctx.lineWidth = Math.max(0.8, 1.05 * sx);
+      ctx.lineWidth = Math.max(0.8, 1.05 * worldScale);
       ctx.beginPath();
       ctx.moveTo(branchX, branchY);
       ctx.lineTo(x, y);
@@ -261,29 +333,30 @@ export class Renderer {
     ctx.restore();
   }
 
-  #getBerryReedPlantPose(plant, time, sx, sy) {
-    const baseX = this.tankRect.x + (plant?.x ?? 0) * sx;
-    const baseY = this.tankRect.y + (plant?.bottomY ?? 0) * sy;
-    const h = (plant?.height ?? 0) * sy;
+  #getBerryReedPlantPose(plant, time, worldScale) {
+    const { offsetX, offsetY } = this.camera;
+    const baseX = offsetX + (plant?.x ?? 0) * worldScale;
+    const baseY = offsetY + (plant?.bottomY ?? 0) * worldScale;
+    const h = (plant?.height ?? 0) * worldScale;
     const swayRate = plant?.swayRate ?? 0.0012;
     const swayPhase = plant?.swayPhase ?? 0;
-    const swayPx = Math.sin(time * swayRate + swayPhase) * (2.4 * sx);
+    const swayPx = Math.sin(time * swayRate + swayPhase) * (2.4 * worldScale);
     return { baseX, baseY, h, swayPx };
   }
 
-  #getBerryReedBranchPose(plant, branch, branchIndex, time, sx, sy) {
-    const { baseX, baseY, h, swayPx } = this.#getBerryReedPlantPose(plant, time, sx, sy);
+  #getBerryReedBranchPose(plant, branch, branchIndex, time, worldScale) {
+    const { baseX, baseY, h, swayPx } = this.#getBerryReedPlantPose(plant, time, worldScale);
     const t = Math.max(0.1, Math.min(0.95, branch?.t ?? 0.5));
     const dir = branch?.side === -1 ? -1 : 1;
     const len = Math.max(0.08, Math.min(0.5, branch?.len ?? 0.26));
     const localRate = (plant?.swayRate ?? 0.0012) * 1.7;
     const localPhase = (plant?.swayPhase ?? 0) + branchIndex * 1.3;
-    const localSway = Math.sin(time * localRate + localPhase) * (0.9 * sx) * len;
+    const localSway = Math.sin(time * localRate + localPhase) * (0.9 * worldScale) * len;
     const startX = baseX + swayPx * t;
     const startY = baseY - h * t;
     const endX = startX + dir * h * len * 0.32 + localSway;
     const endY = startY - h * len * 0.08;
-    const controlX = startX + dir * 4 * sx + localSway * 0.6;
+    const controlX = startX + dir * 4 * worldScale + localSway * 0.6;
     const controlY = startY - h * 0.03;
     const angle = Math.atan2(endY - startY, endX - startX);
     return {
@@ -297,7 +370,7 @@ export class Renderer {
     };
   }
 
-  #getBerryReedFruitPose(fruit, time, sx, sy) {
+  #getBerryReedFruitPose(fruit, time, worldScale) {
     const plants = this.world.berryReedPlants ?? [];
     const plant = plants.find((entry) => entry.id === fruit?.plantId);
     if (!plant) return null;
@@ -305,7 +378,7 @@ export class Renderer {
     const branch = plant.branches?.[branchIndex];
     if (!branch) return null;
 
-    const branchPose = this.#getBerryReedBranchPose(plant, branch, branchIndex, time, sx, sy);
+    const branchPose = this.#getBerryReedBranchPose(plant, branch, branchIndex, time, worldScale);
     const u = Math.max(0, Math.min(1, fruit?.u ?? 0.9));
     const v = Number.isFinite(fruit?.v) ? fruit.v : 0;
     const branchX = branchPose.startX + (branchPose.endX - branchPose.startX) * u;
@@ -321,19 +394,120 @@ export class Renderer {
   }
 
 
+  #drawNestbrush(ctx, time) {
+    const { scale: worldScale, offsetX, offsetY } = this.camera;
+    const nestbrush = this.world.nestbrush;
+    if (!nestbrush) return;
+
+    const stage = Math.max(1, Math.min(3, Math.floor(nestbrush.stage ?? 1)));
+    const baseX = offsetX + nestbrush.x * worldScale;
+    const baseY = offsetY + nestbrush.bottomY * worldScale;
+    const height = nestbrush.height * worldScale;
+    const stageProgress01 = Math.max(0, Math.min(1, (nestbrush.growthProgressSec ?? 0) / 720));
+    const previewGrowth01 = stage < 3 ? Math.pow(stageProgress01, 1.8) : 0;
+    const organicStage = stage + previewGrowth01;
+    const spread = (22 + (organicStage - 1) * 18) * worldScale;
+    const sway = Math.sin((time / 1000) * (nestbrush.swayRate ?? 0.001) + (nestbrush.swayPhase ?? 0)) * (3 * worldScale);
+
+    ctx.save();
+
+    // Round-dot shrub clump with slight spacing.
+    const clumpCenterY = baseY - height * 0.08;
+    const rows = [
+      // Bottom row is anchored to ground for a floor-attached bush silhouette.
+      { y: 0, count: 6 + stage, widthFactor: 0.8 },
+      { y: -height * 0.1, count: 5 + stage, widthFactor: 0.68 },
+      { y: -height * 0.2, count: 4 + stage, widthFactor: 0.54 },
+      { y: -height * 0.3, count: 3 + stage, widthFactor: 0.40 }
+    ];
+
+    for (const [rowIndex, row] of rows.entries()) {
+      const rowCount = row.count;
+      const laneHalf = spread * row.widthFactor;
+      const spacing = rowCount > 1 ? (laneHalf * 2) / (rowCount - 1) : 0;
+      const circleRadius = (2.05 + rowIndex * 0.4 + stage * 0.32) * worldScale;
+
+      for (let i = 0; i < rowCount; i += 1) {
+        const xOffset = rowCount > 1 ? (-laneHalf + spacing * i) : 0;
+        const norm = rowCount > 1 ? i / (rowCount - 1) : 0.5;
+        const sideWeight = Math.abs(norm * 2 - 1);
+        const leafX = baseX + xOffset + sway * (0.5 + (1 - sideWeight) * 0.4);
+        const leafY = clumpCenterY + row.y - sideWeight * height * 0.035;
+
+        ctx.fillStyle = `hsla(${111 + ((i + rowIndex) % 3) * 4}deg ${56 + stage * 3}% ${34 + (i % 2) * 3}% / 0.88)`;
+        ctx.beginPath();
+        ctx.arc(leafX, leafY, circleRadius, 0, TAU);
+        ctx.fill();
+      }
+
+      // very thin connective twigs between nearby dots
+      if (rowCount > 1) {
+        ctx.strokeStyle = 'hsla(114deg 26% 22% / 0.45)';
+        ctx.lineWidth = Math.max(0.45, 0.6 * worldScale);
+        for (let i = 0; i < rowCount - 1; i += 1) {
+          const normA = i / (rowCount - 1);
+          const normB = (i + 1) / (rowCount - 1);
+          const sideWeightA = Math.abs(normA * 2 - 1);
+          const sideWeightB = Math.abs(normB * 2 - 1);
+          const xA = baseX + (-laneHalf + spacing * i) + sway * (0.5 + (1 - sideWeightA) * 0.4);
+          const yA = clumpCenterY + row.y - sideWeightA * height * 0.07;
+          const xB = baseX + (-laneHalf + spacing * (i + 1)) + sway * (0.5 + (1 - sideWeightB) * 0.4);
+          const yB = clumpCenterY + row.y - sideWeightB * height * 0.07;
+
+          ctx.beginPath();
+          ctx.moveTo(xA, yA);
+          ctx.lineTo(xB, yB);
+          ctx.stroke();
+        }
+      }
+    }
+
+    // Organic pre-growth: tiny side buds appear and gradually grow before stage step.
+    if (stage < 3 && previewGrowth01 > 0.001) {
+      const budRadius = (0.9 + 3.1 * previewGrowth01) * worldScale;
+      const budInset = spread * (0.94 + 0.12 * previewGrowth01);
+      const budY = clumpCenterY - height * (0.11 + 0.05 * previewGrowth01);
+      for (const dir of [-1, 1]) {
+        ctx.fillStyle = 'hsla(116deg 62% 37% / 0.9)';
+        ctx.beginPath();
+        ctx.arc(baseX + dir * budInset + sway * 0.6, budY, budRadius, 0, TAU);
+        ctx.fill();
+      }
+    }
+
+    ctx.strokeStyle = 'hsla(112deg 35% 24% / 0.72)';
+    ctx.lineWidth = Math.max(0.8, 1.1 * worldScale);
+    const branchCount = 5 + (stage - 1) * 2;
+    for (let i = 0; i < branchCount; i += 1) {
+      const pose = this.world.getNestbrushBranchPose?.(i, time / 1000);
+      if (!pose) continue;
+      ctx.beginPath();
+      ctx.moveTo(offsetX + pose.startX * worldScale, offsetY + pose.startY * worldScale);
+      ctx.quadraticCurveTo(
+        offsetX + ((pose.startX + pose.endX) * 0.52) * worldScale,
+        offsetY + ((pose.startY + pose.endY) * 0.5 - 0.8) * worldScale,
+        offsetX + pose.endX * worldScale,
+        offsetY + pose.endY * worldScale
+      );
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+
   #drawGroundAlgae(ctx, time) {
-    const sx = this.tankRect.width / this.world.bounds.width;
-    const sy = this.tankRect.height / this.world.bounds.height;
+    const { scale: worldScale, offsetX, offsetY } = this.camera;
 
     ctx.save();
     ctx.lineCap = 'round';
 
     for (const algae of this.world.groundAlgae ?? []) {
-      const baseX = this.tankRect.x + algae.x * sx;
-      const baseY = this.tankRect.y + algae.y * sy;
-      const h = algae.height * sy;
-      const w = algae.width * sx;
-      const sway = Math.sin(time * algae.swayRate + algae.phase) * algae.swayAmp * sx;
+      const baseX = offsetX + algae.x * worldScale;
+      const baseY = offsetY + algae.y * worldScale;
+      const h = algae.height * worldScale;
+      const w = algae.width * worldScale;
+      const sway = Math.sin(time * algae.swayRate + algae.phase) * algae.swayAmp * worldScale;
 
       ctx.strokeStyle = 'hsla(115deg 58% 62% / 0.52)';
       ctx.lineWidth = Math.max(0.9, w * 0.21);
@@ -353,17 +527,16 @@ export class Renderer {
   }
 
   #drawPlayEffects(ctx, time) {
-    const sx = this.tankRect.width / this.world.bounds.width;
-    const sy = this.tankRect.height / this.world.bounds.height;
+    const { scale: worldScale, offsetX, offsetY } = this.camera;
 
     for (const session of this.world.playSessions ?? []) {
       if (!session.startedNearAlgae) continue;
-      const x = this.tankRect.x + session.origin.x * sx;
-      const y = this.tankRect.y + session.origin.y * sy;
+      const x = offsetX + session.origin.x * worldScale;
+      const y = offsetY + session.origin.y * worldScale;
       const life = Math.max(0, session.untilSec - this.world.simTimeSec);
       const pulse = (Math.sin(time * 0.007 + session.id) + 1) * 0.5;
-      const r1 = (16 + pulse * 8) * sx;
-      const r2 = (28 + pulse * 12) * sx;
+      const r1 = (16 + pulse * 8) * worldScale;
+      const r2 = (28 + pulse * 12) * worldScale;
       const alpha = Math.min(0.34, 0.14 + life * 0.02);
 
       ctx.beginPath();
@@ -381,7 +554,7 @@ export class Renderer {
   }
 
   #drawTankDropShadow(ctx) {
-    const { x, y, width, height } = this.tankRect;
+    const { offsetX: x, offsetY: y, viewWidth: width, viewHeight: height } = this.camera;
     const g = ctx.createRadialGradient(x + width * 0.5, y + height + 8, width * 0.2, x + width * 0.5, y + height + 8, width * 0.8);
     g.addColorStop(0, 'rgba(0,0,0,0.22)');
     g.addColorStop(1, 'rgba(0,0,0,0)');
@@ -390,20 +563,20 @@ export class Renderer {
   }
 
   #clipTankWater(ctx) {
-    const { x, y, width, height } = this.tankRect;
+    const { offsetX: x, offsetY: y, viewWidth: width, viewHeight: height } = this.camera;
     ctx.beginPath();
     ctx.rect(x, y, width, height);
     ctx.clip();
   }
 
   #drawCachedBackground(ctx) {
-    const { x, y } = this.tankRect;
-    ctx.drawImage(this.backgroundCanvas, x, y);
+    const { offsetX, offsetY } = this.camera;
+    ctx.drawImage(this.backgroundCanvas, offsetX, offsetY);
   }
 
 
   #drawPollutionTint(ctx) {
-    const { x, y, width, height } = this.tankRect;
+    const { offsetX: x, offsetY: y, viewWidth: width, viewHeight: height } = this.camera;
     const dirt01 = Math.max(0, Math.min(1, this.world.water?.dirt01 ?? 0));
     if (dirt01 <= 0.001) return;
 
@@ -452,7 +625,7 @@ export class Renderer {
   #drawWaterParticles(ctx, delta) {
     if (this.quality === 'low') return;
 
-    const { x, y, width, height } = this.tankRect;
+    const { offsetX: x, offsetY: y, viewWidth: width, viewHeight: height } = this.camera;
     for (const p of this.waterParticles) {
       p.y -= p.speed * delta;
       if (p.y < y - 4 || p.x < x || p.x > x + width) {
@@ -468,18 +641,17 @@ export class Renderer {
   }
 
   #drawBubbles(ctx) {
-    const sx = this.tankRect.width / this.world.bounds.width;
-    const sy = this.tankRect.height / this.world.bounds.height;
+    const { scale: worldScale, offsetX, offsetY } = this.camera;
 
     for (const b of this.world.bubbles) {
-      const bx = this.tankRect.x + b.x * sx;
-      const by = this.tankRect.y + b.y * sy;
+      const bx = offsetX + b.x * worldScale;
+      const by = offsetY + b.y * worldScale;
 
       ctx.beginPath();
       ctx.strokeStyle = 'rgba(196,236,255,0.38)';
       ctx.fillStyle = 'rgba(175,220,248,0.1)';
       ctx.lineWidth = 1;
-      ctx.arc(bx, by, b.radius, 0, TAU);
+      ctx.arc(bx, by, b.radius * worldScale, 0, TAU);
       ctx.fill();
       ctx.stroke();
     }
@@ -490,16 +662,15 @@ export class Renderer {
     const water = this.world.water;
     if (!water?.filterInstalled) return null;
 
-    const sx = this.tankRect.width / this.world.bounds.width;
-    const sy = this.tankRect.height / this.world.bounds.height;
+    const { scale: worldScale, offsetX, offsetY, viewWidth, viewHeight } = this.camera;
     const tier = Math.max(1, Math.min(3, Math.floor(water.filterTier ?? 1)));
-    const width = Math.max(16, 28 * sx);
-    const tierHeightScale = 1 + (tier - 1) * 0.1;
-    const height = Math.max(26, 52 * sy * tierHeightScale);
+    const width = Math.max(16, 28 * worldScale);
+    const tierHeightScale = 1 + (tier - 1) * 0.14;
+    const height = Math.max(26, 52 * worldScale * tierHeightScale);
 
     return {
-      x: this.tankRect.x + this.tankRect.width - width - 10,
-      y: this.tankRect.y + this.tankRect.height - height - 10,
+      x: offsetX + viewWidth - width - 10,
+      y: offsetY + viewHeight - height - 10,
       width,
       height
     };
@@ -530,13 +701,11 @@ export class Renderer {
     let ledColor = 'rgba(170, 180, 188, 0.45)';
     if (water.filterEnabled) {
       if (health <= depletedThreshold01) {
-        ledColor = 'rgba(255, 82, 82, 0.96)';
+        ledColor = isBlinkOn ? 'rgba(255, 82, 82, 0.96)' : 'rgba(122, 46, 46, 0.45)';
       } else if (health <= warningThreshold01) {
         ledColor = 'rgba(246, 163, 74, 0.96)';
-      } else if (isBlinkOn) {
-        ledColor = 'rgba(96, 255, 140, 0.95)';
       } else {
-        ledColor = 'rgba(52, 120, 72, 0.45)';
+        ledColor = 'rgba(96, 255, 140, 0.95)';
       }
     }
 
@@ -560,7 +729,7 @@ export class Renderer {
     if ((water.effectiveFilter01 ?? 0) > 0) {
       const bubbleCount = this.quality === 'high' ? 4 : 2;
       for (let i = 0; i < bubbleCount; i += 1) {
-        const bubbleY = y + moduleH * 0.88 - ((time * 0.05 + i * 8) % (moduleH * 0.75));
+        const bubbleY = y + moduleH * 0.82 - ((time * 0.05 + i * 8) % (moduleH * 0.9));
         const bubbleX = x - 4 - Math.sin(time * 0.004 + i * 1.3) * 2;
         ctx.beginPath();
         ctx.fillStyle = 'rgba(188, 234, 255, 0.33)';
@@ -573,13 +742,12 @@ export class Renderer {
   }
 
   #drawFood(ctx) {
-    const sx = this.tankRect.width / this.world.bounds.width;
-    const sy = this.tankRect.height / this.world.bounds.height;
+    const { scale: worldScale, offsetX, offsetY } = this.camera;
 
     for (const item of this.world.food) {
-      const x = this.tankRect.x + item.x * sx;
-      const y = this.tankRect.y + item.y * sy;
-      const radius = 1.4 + item.amount * 1.1;
+      const x = offsetX + item.x * worldScale;
+      const y = offsetY + item.y * worldScale;
+      const radius = (1.4 + item.amount * 1.1) * worldScale;
 
       ctx.beginPath();
       ctx.fillStyle = 'rgba(146, 228, 148, 0.95)';
@@ -595,12 +763,11 @@ export class Renderer {
 
 
   #drawPoop(ctx) {
-    const sx = this.tankRect.width / this.world.bounds.width;
-    const sy = this.tankRect.height / this.world.bounds.height;
+    const { scale: worldScale, offsetX, offsetY } = this.camera;
 
     for (const item of this.world.poop ?? []) {
-      const x = this.tankRect.x + item.x * sx;
-      const y = this.tankRect.y + item.y * sy;
+      const x = offsetX + item.x * worldScale;
+      const y = offsetY + item.y * worldScale;
       const maxTtl = Math.max(1, Number.isFinite(item.maxTtlSec) ? item.maxTtlSec : 120);
       const ttlSec = Math.max(0, Number.isFinite(item.ttlSec) ? item.ttlSec : maxTtl);
       const life01 = Math.max(0, Math.min(1, ttlSec / maxTtl));
@@ -608,25 +775,29 @@ export class Renderer {
 
       ctx.beginPath();
       ctx.fillStyle = `rgba(116, 73, 44, ${alpha})`;
-      ctx.ellipse(x, y, 3.4, 2.1, 0.2, 0, TAU);
+      ctx.ellipse(x, y, 3.4 * worldScale, 2.1 * worldScale, 0.2, 0, TAU);
       ctx.fill();
 
       ctx.beginPath();
       ctx.fillStyle = `rgba(154, 109, 72, ${alpha * 0.5})`;
-      ctx.ellipse(x - 0.8, y - 0.5, 1.3, 0.9, 0.2, 0, TAU);
+      ctx.ellipse(x - 0.8 * worldScale, y - 0.5 * worldScale, 1.3 * worldScale, 0.9 * worldScale, 0.2, 0, TAU);
       ctx.fill();
     }
   }
 
 
-  #drawEggs(ctx) {
-    const sx = this.tankRect.width / this.world.bounds.width;
-    const sy = this.tankRect.height / this.world.bounds.height;
+  #drawEggs(ctx, time) {
+    const { scale: worldScale, offsetX, offsetY } = this.camera;
 
     for (const egg of this.world.eggs ?? []) {
-      const x = this.tankRect.x + egg.x * sx;
-      const y = this.tankRect.y + egg.y * sy;
-      const r = 2.2;
+      const nestbrushPos = egg?.isProtectedByNestbrush
+        ? this.world.getNestbrushEggWorldPosition?.(egg, time / 1000)
+        : null;
+      const eggX = nestbrushPos?.x ?? egg.x;
+      const eggY = nestbrushPos?.y ?? egg.y;
+      const x = offsetX + eggX * worldScale;
+      const y = offsetY + eggY * worldScale;
+      const r = 2.2 * worldScale;
 
       ctx.beginPath();
       ctx.fillStyle = 'rgba(245, 243, 233, 0.95)';
@@ -641,50 +812,48 @@ export class Renderer {
   }
 
   #drawFxParticles(ctx) {
-    const sx = this.tankRect.width / this.world.bounds.width;
-    const sy = this.tankRect.height / this.world.bounds.height;
+    const { scale: worldScale, offsetX, offsetY } = this.camera;
 
     for (const p of this.world.fxParticles ?? []) {
       if (p.kind !== 'MATING_BUBBLE') continue;
       const life01 = Math.max(0, Math.min(1, p.ttlSec / Math.max(0.001, p.lifeSec ?? 0.8)));
       const alpha = 0.65 * life01;
-      const x = this.tankRect.x + p.x * sx;
-      const y = this.tankRect.y + p.y * sy;
+      const x = offsetX + p.x * worldScale;
+      const y = offsetY + p.y * worldScale;
 
       ctx.beginPath();
       ctx.fillStyle = `rgba(221, 246, 255, ${alpha})`;
-      ctx.arc(x, y, p.radius, 0, TAU);
+      ctx.arc(x, y, p.radius * worldScale, 0, TAU);
       ctx.fill();
     }
   }
 
   #drawFishSchool(ctx, time) {
-    const sx = this.tankRect.width / this.world.bounds.width;
-    const sy = this.tankRect.height / this.world.bounds.height;
+    const { scale: worldScale, offsetX, offsetY } = this.camera;
 
     for (const fish of this.world.fish) {
       const pos = {
-        x: this.tankRect.x + fish.position.x * sx,
-        y: this.tankRect.y + fish.position.y * sy
+        x: offsetX + fish.position.x * worldScale,
+        y: offsetY + fish.position.y * worldScale
       };
-      this.#drawFish(ctx, fish, pos, time);
+      this.#drawFish(ctx, fish, pos, time, worldScale);
     }
   }
 
-  #drawFish(ctx, fish, position, time) {
+  #drawFish(ctx, fish, position, time, worldScale) {
     const orientation = fish.heading();
     const rp = typeof fish.getRenderParams === 'function'
       ? fish.getRenderParams()
       : { radius: fish.size, bodyLength: fish.size * 1.32, bodyHeight: fish.size * 0.73, tailWagAmp: fish.size * 0.13, eyeScale: 1, saturationMult: 1, lightnessMult: 1 };
 
     const pregnancySwell = fish.pregnancySwell01?.(this.world.simTimeSec) ?? 0;
-    const bodyLength = rp.bodyLength * (1 + pregnancySwell * 0.35);
-    const bodyHeight = rp.bodyHeight * (1 + pregnancySwell);
+    const bodyLength = rp.bodyLength * (1 + pregnancySwell * 0.35) * worldScale;
+    const bodyHeight = rp.bodyHeight * (1 + pregnancySwell) * worldScale;
     const isDead = fish.lifeState === 'DEAD';
     const isSkeleton = fish.lifeState === 'SKELETON';
     const isHovering = Boolean(fish.isHovering?.(this.world.simTimeSec));
     const tailWagScale = isHovering ? 0.18 : 1;
-    const tailWag = isDead || isSkeleton ? 0 : Math.sin(time * 0.004 + position.x * 0.008) * rp.tailWagAmp * tailWagScale;
+    const tailWag = isDead || isSkeleton ? 0 : Math.sin(time * 0.004 + position.x * 0.008) * rp.tailWagAmp * tailWagScale * worldScale;
     const tint = Math.sin((fish.colorHue + rp.radius) * 0.14) * 3;
 
     const baseLight = 54 + Math.sin(rp.radius * 0.33) * 4;
@@ -692,6 +861,7 @@ export class Renderer {
 
     const sat = Math.max(18, Math.min(76, 52 * (rp.saturationMult ?? 1)));
     const isAzureDart = fish.speciesId === 'AZURE_DART';
+    const isSiltSifter = fish.speciesId === 'SILT_SIFTER';
 
     ctx.save();
     ctx.translate(position.x, position.y);
@@ -699,7 +869,16 @@ export class Renderer {
     ctx.scale(orientation.facing, 1);
 
     const bodyPath = new Path2D();
-    bodyPath.ellipse(0, 0, bodyLength * 0.5, bodyHeight * 0.5, 0, 0, TAU);
+    if (isSiltSifter) {
+      bodyPath.moveTo(-bodyLength * 0.56, 0);
+      bodyPath.quadraticCurveTo(-bodyLength * 0.36, bodyHeight * 0.58, bodyLength * 0.1, bodyHeight * 0.48);
+      bodyPath.quadraticCurveTo(bodyLength * 0.46, bodyHeight * 0.22, bodyLength * 0.56, 0);
+      bodyPath.quadraticCurveTo(bodyLength * 0.44, -bodyHeight * 0.22, bodyLength * 0.08, -bodyHeight * 0.48);
+      bodyPath.quadraticCurveTo(-bodyLength * 0.34, -bodyHeight * 0.58, -bodyLength * 0.56, 0);
+      bodyPath.closePath();
+    } else {
+      bodyPath.ellipse(0, 0, bodyLength * 0.5, bodyHeight * 0.5, 0, 0, TAU);
+    }
 
     if (isSkeleton) {
       ctx.fillStyle = 'hsl(36deg 8% 72%)';
@@ -707,6 +886,23 @@ export class Renderer {
     } else if (isDead) {
       ctx.fillStyle = 'hsl(0deg 0% 56%)';
       ctx.fill(bodyPath);
+    } else if (isSiltSifter) {
+      const grad = ctx.createLinearGradient(-bodyLength * 0.52, 0, bodyLength * 0.56, 0);
+      grad.addColorStop(0, 'hsl(38deg 18% 46%)');
+      grad.addColorStop(0.42, 'hsl(70deg 16% 41%)');
+      grad.addColorStop(1, 'hsl(55deg 11% 35%)');
+      ctx.fillStyle = grad;
+      ctx.fill(bodyPath);
+
+      ctx.strokeStyle = 'rgba(48, 64, 52, 0.35)';
+      ctx.lineWidth = Math.max(1, bodyHeight * 0.1);
+      for (let i = 0; i < 3; i += 1) {
+        const yy = (-0.24 + i * 0.24) * bodyHeight;
+        ctx.beginPath();
+        ctx.moveTo(-bodyLength * 0.18, yy);
+        ctx.lineTo(bodyLength * 0.33, yy + Math.sin(i + time * 0.002) * bodyHeight * 0.04);
+        ctx.stroke();
+      }
     } else if (isAzureDart) {
       const baseHue = Math.max(190, Math.min(232, fish.colorHue ?? 212));
       const pattern = Math.max(0, Math.min(1, fish.traits?.colorPatternSeed ?? 0.5));
@@ -742,10 +938,17 @@ export class Renderer {
       }
     }
 
-    if (fish.id === this.world.selectedFishId) {
-      ctx.strokeStyle = 'rgba(152, 230, 255, 0.8)';
-      ctx.lineWidth = 1.1;
-      ctx.stroke(bodyPath);
+    const selectionPulse = this.#selectionPulseProgress(fish.id, time);
+    if (selectionPulse > 0) {
+      const pulseElapsedMs = (1 - selectionPulse) * SELECTION_PULSE_DURATION_MS;
+      const blink = 0.62 + Math.sin((pulseElapsedMs / 1000) * TAU * 2.1) * 0.22;
+      const radius = Math.max(bodyLength, bodyHeight) * 0.58 + worldScale * 5;
+      const alpha = Math.max(0, Math.min(1, selectionPulse * blink));
+      ctx.strokeStyle = `rgba(166, 236, 255, ${alpha})`;
+      ctx.lineWidth = Math.max(1, worldScale * 2.1);
+      ctx.beginPath();
+      ctx.arc(0, 0, radius, 0, TAU);
+      ctx.stroke();
     }
 
     if (this.quality === 'high' && !isSkeleton) {
@@ -756,13 +959,23 @@ export class Renderer {
     ctx.strokeStyle = 'rgba(205, 230, 245, 0.13)';
     ctx.stroke(bodyPath);
 
-    ctx.fillStyle = isSkeleton ? 'hsl(35deg 9% 54%)' : (isDead ? 'hsl(0deg 0% 42%)' : (isAzureDart ? 'hsl(206deg 84% 68%)' : `hsl(${fish.colorHue + tint - 8}deg ${Math.max(12, sat - 12)}% ${light - 12}%)`));
+    ctx.fillStyle = isSkeleton
+      ? 'hsl(35deg 9% 54%)'
+      : (isDead
+        ? 'hsl(0deg 0% 42%)'
+        : (isAzureDart
+          ? 'hsl(206deg 84% 68%)'
+          : (isSiltSifter ? 'hsl(46deg 14% 34%)' : `hsl(${fish.colorHue + tint - 8}deg ${Math.max(12, sat - 12)}% ${light - 12}%)`)));
     ctx.beginPath();
     ctx.moveTo(-bodyLength * 0.52, 0);
     if (isAzureDart) {
       ctx.lineTo(-bodyLength * 0.86, bodyHeight * 0.22 + tailWag * 0.8);
       ctx.lineTo(-bodyLength * 0.98, 0);
       ctx.lineTo(-bodyLength * 0.86, -bodyHeight * 0.22 - tailWag * 0.8);
+    } else if (isSiltSifter) {
+      ctx.lineTo(-bodyLength * 0.82, bodyHeight * 0.25 + tailWag * 0.42);
+      ctx.lineTo(-bodyLength * 0.95, 0);
+      ctx.lineTo(-bodyLength * 0.82, -bodyHeight * 0.25 - tailWag * 0.42);
     } else {
       ctx.lineTo(-bodyLength * 0.84, bodyHeight * 0.35 + tailWag);
       ctx.lineTo(-bodyLength * 0.84, -bodyHeight * 0.35 - tailWag);
@@ -770,32 +983,74 @@ export class Renderer {
     ctx.closePath();
     ctx.fill();
 
+    if (isSiltSifter && !isSkeleton) {
+      const dorsalBaseX = bodyLength * 0.02;
+      ctx.beginPath();
+      ctx.fillStyle = isDead ? 'rgba(95,95,95,0.6)' : 'rgba(86, 102, 78, 0.9)';
+      ctx.moveTo(dorsalBaseX - bodyLength * 0.1, -bodyHeight * 0.16);
+      ctx.lineTo(dorsalBaseX + bodyLength * 0.01, -bodyHeight * 0.86);
+      ctx.lineTo(dorsalBaseX + bodyLength * 0.16, -bodyHeight * 0.12);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.strokeStyle = isDead ? 'rgba(90,90,90,0.52)' : 'rgba(62, 72, 60, 0.52)';
+      ctx.lineWidth = Math.max(0.8, bodyHeight * 0.07);
+      for (let i = 0; i < 4; i += 1) {
+        const yy = (-0.3 + i * 0.2) * bodyHeight;
+        ctx.beginPath();
+        ctx.moveTo(-bodyLength * 0.4 + i * bodyLength * 0.15, yy);
+        ctx.lineTo(-bodyLength * 0.2 + i * bodyLength * 0.15, yy + bodyHeight * 0.08);
+        ctx.stroke();
+      }
+
+      ctx.strokeStyle = isDead ? 'rgba(110,110,110,0.45)' : 'rgba(220, 206, 158, 0.68)';
+      ctx.lineWidth = Math.max(0.9, bodyHeight * 0.05);
+      ctx.beginPath();
+      ctx.moveTo(bodyLength * 0.44, bodyHeight * 0.03);
+      ctx.lineTo(bodyLength * 0.58, bodyHeight * 0.12);
+      ctx.moveTo(bodyLength * 0.45, 0);
+      ctx.lineTo(bodyLength * 0.62, 0.03 * bodyHeight);
+      ctx.moveTo(bodyLength * 0.44, -bodyHeight * 0.03);
+      ctx.lineTo(bodyLength * 0.58, -bodyHeight * 0.12);
+      ctx.stroke();
+
+      ctx.fillStyle = isDead ? 'rgba(85,85,85,0.35)' : 'rgba(46, 56, 43, 0.26)';
+      for (let i = 0; i < 16; i += 1) {
+        const px = -bodyLength * 0.42 + (i % 8) * bodyLength * 0.11 + ((Math.floor(i / 8)) * bodyLength * 0.04);
+        const py = -bodyHeight * 0.28 + (Math.floor(i / 8)) * bodyHeight * 0.3;
+        ctx.beginPath();
+        ctx.arc(px, py, Math.max(0.7, bodyHeight * 0.04), 0, TAU);
+        ctx.fill();
+      }
+    }
+
     if (!isSkeleton) {
       ctx.fillStyle = 'rgba(255,255,255,0.7)';
       ctx.beginPath();
-      ctx.arc(bodyLength * 0.22, -bodyHeight * 0.12, rp.radius * 0.07 * (rp.eyeScale ?? 1), 0, TAU);
+      ctx.arc(bodyLength * 0.22, -bodyHeight * 0.12, rp.radius * 0.07 * (rp.eyeScale ?? 1) * worldScale, 0, TAU);
       ctx.fill();
 
       ctx.fillStyle = isDead ? '#47515a' : '#0c1f2f';
       ctx.beginPath();
-      ctx.arc(bodyLength * 0.24, -bodyHeight * 0.12, rp.radius * 0.034 * (rp.eyeScale ?? 1), 0, TAU);
+      ctx.arc(bodyLength * 0.24, -bodyHeight * 0.12, rp.radius * 0.034 * (rp.eyeScale ?? 1) * worldScale, 0, TAU);
       ctx.fill();
     }
 
     const mouthOpen = isSkeleton ? 0 : (fish.mouthOpen01?.() ?? 0);
-    const mouthSize = rp.radius * 0.05 + mouthOpen * rp.radius * 0.055;
+    const mouthSize = (rp.radius * 0.05 + mouthOpen * rp.radius * 0.055) * worldScale;
     const mouthX = bodyLength * 0.49;
+    const mouthY = isSiltSifter ? bodyHeight * 0.1 : 0;
 
     ctx.fillStyle = 'rgba(18, 28, 34, 0.8)';
     if (mouthOpen > 0.02) {
       ctx.beginPath();
-      ctx.moveTo(mouthX, 0);
-      ctx.lineTo(mouthX + mouthSize * 1.2, mouthSize * 0.9);
-      ctx.lineTo(mouthX + mouthSize * 1.2, -mouthSize * 0.9);
+      ctx.moveTo(mouthX, mouthY);
+      ctx.lineTo(mouthX + mouthSize * 1.2, mouthY + mouthSize * 0.9);
+      ctx.lineTo(mouthX + mouthSize * 1.2, mouthY - mouthSize * 0.9);
       ctx.closePath();
       ctx.fill();
     } else {
-      ctx.fillRect(mouthX - 0.6, -0.35, 1.2, 0.7);
+      ctx.fillRect(mouthX - 0.6, mouthY - 0.35, 1.2, 0.7);
     }
 
     ctx.restore();
@@ -820,13 +1075,13 @@ export class Renderer {
   }
 
   #drawCachedVignette(ctx) {
-    const { x, y } = this.tankRect;
-    ctx.drawImage(this.vignetteCanvas, x, y);
+    const { offsetX, offsetY } = this.camera;
+    ctx.drawImage(this.vignetteCanvas, offsetX, offsetY);
   }
 
 
   #drawDebugBounds(ctx) {
-    const { x, y, width, height } = this.tankRect;
+    const { offsetX: x, offsetY: y, viewWidth: width, viewHeight: height, scale } = this.camera;
 
     ctx.save();
     ctx.strokeStyle = 'rgba(255, 209, 102, 0.9)';
@@ -837,15 +1092,12 @@ export class Renderer {
     const sampleFish = this.world.fish[0];
     if (sampleFish && typeof sampleFish.debugMovementBounds === 'function') {
       const bounds = sampleFish.debugMovementBounds();
-      const sx = width / this.world.bounds.width;
-      const sy = height / this.world.bounds.height;
-
       ctx.strokeStyle = 'rgba(123, 255, 182, 0.9)';
       ctx.strokeRect(
-        x + bounds.x * sx + 0.5,
-        y + bounds.y * sy + 0.5,
-        Math.max(0, bounds.width * sx - 1),
-        Math.max(0, bounds.height * sy - 1)
+        x + bounds.x * scale + 0.5,
+        y + bounds.y * scale + 0.5,
+        Math.max(0, bounds.width * scale - 1),
+        Math.max(0, bounds.height * scale - 1)
       );
     }
 
@@ -854,7 +1106,7 @@ export class Renderer {
   }
 
   #drawTankFrame(ctx) {
-    const { x, y, width, height } = this.tankRect;
+    const { offsetX: x, offsetY: y, viewWidth: width, viewHeight: height } = this.camera;
 
     ctx.strokeStyle = 'rgba(224, 241, 255, 0.31)';
     ctx.lineWidth = 1.3;
